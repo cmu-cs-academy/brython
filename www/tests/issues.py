@@ -1983,6 +1983,17 @@ b = B()
 b.a += 10
 assert b.a == 10
 
+# issue 873
+str(globals())
+
+
+from traceback import *
+try:
+    1/0
+except:
+    import traceback
+    assert '1/0' in traceback.format_exc()
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================

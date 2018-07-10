@@ -6,7 +6,7 @@ import os
 import re
 
 import python_minifier
-
+import git
 class Visitor(ast.NodeVisitor):
     """Used to list all the modules imported by a script."""
 
