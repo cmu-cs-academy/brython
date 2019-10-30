@@ -8,6 +8,8 @@ matrix:
           chrome: "stable"
           firefox: "latest"
       before_install:
+        - export DISPLAY=:99.0
+        - Xvfb $DISPLAY &
         - python --version
         - mkdir qunit
         - wget -O qunit/qunit-1.18.0.css http://code.jquery.com/qunit/qunit-1.18.0.css
@@ -20,8 +22,6 @@ matrix:
         - sudo apt-get --only-upgrade install libnss3
 
       before_script:
-        - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
         - (cd scripts && python make_doc.py)
         - (cd scripts && python make_dist.py)
 
