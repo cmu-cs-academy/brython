@@ -64,7 +64,8 @@ try:
     import msvcrt
     import _winapi
     _mswindows = True
-except ModuleNotFoundError:
+# Brython: import msvcrt raises an ImportError
+except (ImportError, ModuleNotFoundError):
     _mswindows = False
     import _posixsubprocess
     import select
