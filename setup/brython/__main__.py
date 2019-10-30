@@ -99,11 +99,14 @@ if __name__ == "__main__":
             os.path.join(os.getcwd(), 'brython_modules.js'))
 
     if args.modules:
-        print('Create brython_modules.js with all the modules used by the application')
+        print('Create brython_modules.js for cmu_graphics_bry')
         from . import list_modules
 
         finder = list_modules.ModulesFinder()
-        finder.inspect()
+        # finder.inspect()
+        finder.modules = {
+            'cmu_graphics_bry', 'sys', 'traceback', 'hashlib', 'random', 'math', 'linecache',
+        }
         finder.make_brython_modules()
 
     if args.make_dist:
