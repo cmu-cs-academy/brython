@@ -12,6 +12,13 @@
   --text-color: #5c821a;
 }
 
+@font-face{
+    font-family: "libra_bt";
+    src: url("../fonts/libra_bt.ttf") format("truetype");
+    font-weight: normal;
+    font-style: normal
+}
+
 html {
 
 }
@@ -96,6 +103,11 @@ a.glink {
   text-decoration:underline
 }
 
+h1.brython{
+    font-family: libra_bt;
+    font-size: 300%;
+}
+
 img.logo {
   border-width:0;
   height:auto;
@@ -136,6 +148,7 @@ select.language {
     border-color:#888;
     border-radius: 10px;
     width:auto;
+    font-family: "Monaco";
 }
 
 .xml{
@@ -148,6 +161,15 @@ select.language {
     border-color:#888;
     border-radius: 10px;
     color:#114;
+    width:auto;
+}
+
+.console{
+    font-size: 0.9em;
+    display: inline-block;
+    background-color:#000;
+    padding:3px 8px 8px 8px;
+    color:#fff;
     width:auto;
 }
 

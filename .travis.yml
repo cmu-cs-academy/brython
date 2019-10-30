@@ -3,7 +3,7 @@ language: python
 
 matrix:
   include:
-    - python: 3.6
+    - python: 3.8
       addons:
           chrome: "stable"
           firefox: "latest"
@@ -21,7 +21,7 @@ matrix:
 
       before_script:
         - export DISPLAY=:99.0
-        - sh -e /etc/init.d/xvfb start
+        - Xvfb $DISPLAY &
         - (cd scripts && python make_doc.py)
         - (cd scripts && python make_dist.py)
 
