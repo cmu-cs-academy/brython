@@ -92,6 +92,7 @@ setup/data/*.js
 setup/data/demo.html
 www/static_doc
 www/src/brython.js
+www/src/brython_no_static.js
 www/src/brython_stdlib.js
 www/src/brython_dist.js
 www/src/version_info.js
