@@ -21,31 +21,36 @@ if ($B.isNode){
 
 var $path
 
-if($B.brython_path === undefined){
-    // Get url of this script brython_builtins.js
-    var this_url;
-    if($B.isWebWorker){
-        this_url = _window.location.href;
-        if(this_url.startsWith("blob:")){
-            this_url = this_url.substr(5)
-        }
-    }else{
-        var scripts = document.getElementsByTagName('script')
-        this_url = scripts[scripts.length - 1].src
-    }
+$path = $B.brython_path = '/';
+
+// if($B.brython_path === undefined){
+//     // Get url of this script brython_builtins.js
+//     var this_url;
+//     if($B.isWebWorker){
+//         this_url = _window.location.href;
+//         if(this_url.startsWith("blob:")){
+//             this_url = this_url.substr(5)
+//         }
+//     }else{
+//         var scripts = document.getElementsByTagName('script')
+//         this_url = scripts[scripts.length - 1].src
+//     }
 
 
-    var elts = this_url.split('/')
-    elts.pop()
-    // brython_path is the url of the directory holding brython core scripts
-    // It is used to import modules of the standard library
-    $path = $B.brython_path = elts.join('/') + '/'
-}else{
-    if(! $B.brython_path.endsWith("/")){
-        $B.brython_path += "/"
-    }
-    $path = $B.brython_path
-}
+//     var elts = this_url.split('/')
+//     elts.pop()
+//     // Evan added this because our brython js file is hosted one level deeper than
+//     // our brython libs.
+//     elts.pop()
+//     // brython_path is the url of the directory holding brython core scripts
+//     // It is used to import modules of the standard library
+//     $path = $B.brython_path = elts.join('/') + '/'
+// }else{
+//     if(! $B.brython_path.endsWith("/")){
+//         $B.brython_path += "/"
+//     }
+//     $path = $B.brython_path
+// }
 
 
 // Get the URL of the directory where the script stands
