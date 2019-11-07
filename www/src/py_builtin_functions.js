@@ -113,11 +113,15 @@ function abs(obj){
     if(isinstance(obj, _b_.float)){return _b_.float.$factory(Math.abs(obj))}
     var klass = obj.__class__ || $B.get_class(obj)
     try{
-        return $B.$call($B.$getattr(klass, "__abs__"))(obj)
+        var method = $B.$getattr(klass, "__abs__")
     }catch(err){
-        throw _b_.TypeError.$factory("Bad operand type for abs(): '" +
-            $B.class_name(obj) + "'")
+        if(err.__class__ === _b_.AttributeError){
+            throw _b_.TypeError.$factory("Bad operand type for abs(): '" +
+                $B.class_name(obj) + "'")
+        }
+        throw err
     }
+    return $B.$call(method)(obj)
 }
 
 function all(obj){
@@ -192,23 +196,32 @@ function $builtin_base_convert_helper(obj, base) {
   return '-' + prefix + (-value).toString(base)
 }
 
+function bin_hex_oct(base, obj){
+    // Used by built-in function bin, hex and oct
+    // base is respectively 2, 16 and 8
+    if(isinstance(obj, _b_.int)){
+        return $builtin_base_convert_helper(obj, base)
+    }else{
+        try{
+            var klass = obj.__class__ || $B.get_class(obj),
+                method = $B.$getattr(klass, '__index__')
+        }catch(err){
+            if(err.__class__ === _b_.AttributeError){
+                throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
+                    "' object cannot be interpreted as an integer")
+            }
+            throw err
+        }
+        var res = $B.$call(method)(obj)
+        return $builtin_base_convert_helper(res, base)
+    }
+}
 
 // bin() (built in function)
 function bin(obj) {
     check_nb_args('bin', 1, arguments)
     check_no_kw('bin', obj)
-    if(isinstance(obj, _b_.int)){
-        return $builtin_base_convert_helper(obj, 2)
-    }else{
-        try{
-            var klass = obj.__class__ || $B.get_class(obj),
-                res = $B.$call($B.$getattr(klass, '__index__'))(obj)
-            return $builtin_base_convert_helper(res, 2)
-        }catch(err){
-            throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
-                "' object cannot be interpreted as an integer")
-        }
-    }
+    return bin_hex_oct(2, obj)
 }
 
 function callable(obj) {
@@ -564,7 +577,7 @@ function $$eval(src, _globals, _locals){
             obj = {}
         eval(ex) // needed for generators
         for(var attr in gobj){
-            if((! attr.startsWith("$")) || attr.startsWith('$$')){
+            if((! attr.startsWith("$"))){
                 obj[attr] = gobj[attr]
             }
         }
@@ -585,6 +598,7 @@ function $$eval(src, _globals, _locals){
             }
         }
     }
+    _globals.$is_namespace = true
 
     // Initialise block locals
 
@@ -618,6 +632,7 @@ function $$eval(src, _globals, _locals){
         // NameError instead of UnboundLocalError
         eval("$locals_" + locals_id + ".$exec_locals = true")
     }
+    _locals.$is_namespace = true
 
     if(_globals === _b_.None && _locals === _b_.None &&
             current_frame[0] == current_frame[2]){
@@ -675,7 +690,7 @@ function $$eval(src, _globals, _locals){
         }
 
         js = root.to_js()
-
+        
         if(is_exec){
             var locals_obj = eval("$locals_" + locals_id),
                 globals_obj = eval("$locals_" + globals_id)
@@ -727,13 +742,13 @@ function $$eval(src, _globals, _locals){
             for(var attr in gns){
                 attr1 = $B.from_alias(attr)
                 if(attr1.charAt(0) != '$'){
-                    if(_globals.$jsobj){_globals.$jsobj[attr] = gns[attr]}
-                    else{_globals.$string_dict[attr1] = gns[attr]}
+                    if(_globals.$jsobj){_globals.$jsobj[attr1] = gns[attr]}
+                    else{_globals.$string_dict[attr] = gns[attr]}
                 }
             }
             // Remove attributes starting with $
             for(var attr in _globals.$string_dict){
-                if(attr.startsWith("$")){
+                if(attr.startsWith("$") && !attr.startsWith("$$")){
                     delete _globals.$string_dict[attr]
                 }
             }
@@ -820,12 +835,19 @@ filter.__next__ = function(self) {
 $B.set_func_names(filter, "builtins")
 
 function format(value, format_spec) {
-  var args = $B.args("format", 2, {value: null, format_spec: null},
-      ["value", "format_spec"], arguments, {format_spec: ''}, null, null)
-  var fmt = $B.$getattr(args.value, '__format__', null)
-  if(fmt !== null){return fmt(args.format_spec)}
-  throw _b_.NotImplementedError("__format__ is not implemented for object '" +
-      _b_.str.$factory(args.value) + "'")
+    var $ = $B.args("format", 2, {value: null, format_spec: null},
+        ["value", "format_spec"], arguments, {format_spec: ''}, null, null)
+    var klass = value.__class__ || $B.get_class(value)
+    try{
+        var method = $B.$getattr(klass, '__format__')
+    }catch(err){
+        if(err.__class__ === _b_.AttributeError){
+            throw _b_.NotImplementedError("__format__ is not implemented " +
+                "for object '" + _b_.str.$factory(value) + "'")
+        }
+        throw err
+    }
+    return $B.$call(method)(value, $.format_spec)
 }
 
 function attr_error(attr, cname){
@@ -1129,6 +1151,7 @@ function globals(){
     check_nb_args('globals', 0, arguments)
     var res = $B.obj_dict($B.last($B.frames_stack)[3])
     res.$jsobj.__BRYTHON__ = $B.JSObject.$factory($B) // issue 1181
+    res.$is_namespace = true
     return res
 }
 
@@ -1244,13 +1267,13 @@ help.__repr__ = help.__str__ = function(){
         "for help about object."
 }
 
-function hex(x) {
-    check_no_kw('hex', x)
+function hex(obj){
+    check_no_kw('hex', obj)
     check_nb_args('hex', 1, arguments)
-    return $builtin_base_convert_helper(x, 16)
+    return bin_hex_oct(16, obj)
 }
 
-function id(obj) {
+function id(obj){
    check_no_kw('id', obj)
    check_nb_args('id', 1, arguments)
    if(isinstance(obj, [_b_.str, _b_.int, _b_.float]) &&
@@ -1446,22 +1469,27 @@ $B.$iter = function(obj, sentinel){
         try{
             var _iter = $B.$call($B.$getattr(klass, '__iter__'))
         }catch(err){
-            try{
-                var gi_method = $B.$call($B.$getattr(klass, '__getitem__')),
-                    gi = function(i){return gi_method(obj, i)},
-                    ln = len(obj)
-                return iterator_class.$factory(gi, len)
-            }catch(err){
-                throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
-                    "' object is not iterable")
+            if(err.__class__ === _b_.AttributeError){
+                try{
+                    var gi_method = $B.$call($B.$getattr(klass, '__getitem__')),
+                        gi = function(i){return gi_method(obj, i)},
+                        ln = len(obj)
+                    return iterator_class.$factory(gi, len)
+                }catch(err){
+                    throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
+                        "' object is not iterable")
+                }
             }
+            throw err
         }
         var res = $B.$call(_iter)(obj)
         try{$B.$getattr(res, '__next__')}
         catch(err){
-            if(isinstance(err, _b_.AttributeError)){throw _b_.TypeError.$factory(
-                "iter() returned non-iterator of type '" +
-                 $B.class_name(res) + "'")}
+            if(isinstance(err, _b_.AttributeError)){
+                throw _b_.TypeError.$factory(
+                    "iter() returned non-iterator of type '" +
+                     $B.class_name(res) + "'")
+            }
         }
         return res
     }else{
@@ -1486,11 +1514,12 @@ function len(obj){
 
     var klass = obj.__class__ || $B.get_class(obj)
     try{
-        return $B.$call($B.$getattr(klass, '__len__'))(obj)
+        var method = $B.$getattr(klass, '__len__')
     }catch(err){
         throw _b_.TypeError.$factory("object of type '" +
             $B.class_name(obj) + "' has no len()")
     }
+    return $B.$call(method)(obj)
 }
 
 function locals(){
@@ -1498,6 +1527,7 @@ function locals(){
     // [locals_name, locals_obj, globals_name, globals_obj]
     check_nb_args('locals', 0, arguments)
     var res = $B.obj_dict($B.last($B.frames_stack)[1])
+    res.$is_namespace = true
     delete res.$jsobj.__annotations__
     return res
 }
@@ -1756,7 +1786,11 @@ var NotImplemented = {
 
 function $not(obj){return !$B.$bool(obj)}
 
-function oct(x) {return $builtin_base_convert_helper(x, 8)}
+function oct(obj){
+    check_no_kw('oct', obj)
+    check_nb_args('oct', 1, arguments)
+    return bin_hex_oct(8, obj)
+}
 
 function ord(c) {
     check_no_kw('ord', c)
@@ -1886,19 +1920,15 @@ function repr(obj){
     check_nb_args('repr', 1, arguments)
 
     var klass = obj.__class__ || $B.get_class(obj)
-    try{
-        return $B.$call($B.$getattr(klass, "__repr__"))(obj)
-    }catch(err){
-        throw _b_.AttributeError.$factory("object has no attribute __repr__")
-    }
+    return $B.$call($B.$getattr(klass, "__repr__"))(obj)
 }
 
 var reversed = $B.make_class("reversed",
     function(seq){
         // Return a reverse iterator. seq must be an object which has a
-        // __reversed__() method or supports the sequence protocol (the __len__()
-        // method and the __getitem__() method with integer arguments starting at
-        // 0).
+        // __reversed__() method or supports the sequence protocol (the
+        // __len__() method and the __getitem__() method with integer
+        // arguments starting at 0).
 
         check_no_kw('reversed', seq)
         check_nb_args('reversed', 1, arguments)
@@ -1906,26 +1936,22 @@ var reversed = $B.make_class("reversed",
         var klass = seq.__class__ || $B.get_class(seq),
             rev_method = $B.$getattr(klass, '__reversed__', null)
         if(rev_method !== null){
-            try{
-                return $B.$call(rev_method)(seq)
-            }catch(err){
-                throw _b_.TypeError.$factory("'" + $B.class_name(seq) +
-                    "' object is not reversible")
-            }
+            return $B.$call(rev_method)(seq)
         }
         try{
-            var res = {
-                __class__: reversed,
-                $counter : _b_.len(seq),
-                getter: function(i){
-                    return $B.$call($B.$getattr(klass, '__getitem__'))(seq, i)
-                }
-            }
-            return res
+            var method = $B.$getattr(klass, '__getitem__')
         }catch(err){
-        console.log(err.__class__, err.args)
             throw _b_.TypeError.$factory("argument to reversed() must be a sequence")
         }
+
+        var res = {
+            __class__: reversed,
+            $counter : _b_.len(seq),
+            getter: function(i){
+                return $B.$call(method)(seq, i)
+            }
+        }
+        return res
     }
 )
 
@@ -1949,8 +1975,12 @@ function round(){
         try{
             return $B.$call($B.$getattr(klass, "__round__")).apply(null, arguments)
         }catch(err){
-            throw _b_.TypeError.$factory("type " + $B.class_name(arg) +
-                " doesn't define __round__ method")
+            if(err.__class__ === _b_.AttributeError){
+                throw _b_.TypeError.$factory("type " + $B.class_name(arg) +
+                    " doesn't define __round__ method")
+            }else{
+                throw err
+            }
         }
     }
 
@@ -2379,18 +2409,17 @@ $Reader.read = function(){
     if(self.closed === true){
         throw _b_.ValueError.$factory('I/O operation on closed file')
     }
-    self.$counter = self.$counter || 0
+    var binary = self.$content.__class__ === _b_.bytes,
+        len = binary ? self.$content.source.length : self.$content.length
     if(size < 0){
-        var res = self.$content.substr(self.$counter)
-        self.$counter = self.$content.length - 1
-        return res
+        size = len
     }
 
     if(self.$content.__class__ === _b_.bytes){
         res = _b_.bytes.$factory(self.$content.source.slice(self.$counter,
             self.$counter + size))
     }else{
-        res = self.$content.substr(self.$counter - size, size)
+        res = self.$content.substr(self.$counter, size)
     }
     self.$counter += size
     return res
@@ -2488,29 +2517,47 @@ function $url_open(){
     if(isinstance(file, $B.JSObject)){
         return $B.OpenFile.$factory(file.js, mode, encoding) // defined in py_dom.js
     }
+    if(mode.search('w') > -1){
+        throw _b_.IOError.$factory("Browsers cannot write on disk")
+    }else if(['r', 'rb'].indexOf(mode) == -1){
+        throw _b_.ValueError.$factory("Invalid mode '" + mode + "'")
+    }
     if(isinstance(file, _b_.str)){
         // read the file content and return an object with file object methods
         var is_binary = mode.search('b') > -1
-        if($ns.file == "<string>"){console.log($ns.file, $B.file_cache[$ns.file])}
         if($B.file_cache.hasOwnProperty($ns.file)){
             var str_content = $B.file_cache[$ns.file]
             if(is_binary){
-                $res =  _b_.str.encode(str_content, "utf-8")
+                $res = _b_.str.encode(str_content, "utf-8")
             }else{
                 $res = str_content
             }
-        }else{
+        }else if($B.files && $B.files.hasOwnProperty($ns.file)){
+            // Virtual file system created by
+            // python -m brython --make_file_system
+            $res = atob($B.files[$ns.file].content)
+            var source = []
+            for(const char of $res){
+                source.push(char.charCodeAt(0))
+            }
+            $res = _b_.bytes.$factory()
+            $res.source = source
+            if(! is_binary){
+                // Decode bytes with specified encoding
+                $res = _b_.bytes.decode($res, $ns.encoding)
+            }
+        }else if($B.protocol != "file"){
+            // Try to load file by synchronous Ajax call
             if(is_binary){
                 throw _b_.IOError.$factory(
                     "open() in binary mode is not supported")
             }
-
             var req = new XMLHttpRequest();
             req.onreadystatechange = function(){
                 try{
                     var status = this.status
                     if(status == 404){
-                        $res = _b_.IOError.$factory('File ' + file + ' not found')
+                        $res = _b_.FileNotFoundError(file)
                     }else if(status != 200){
                         $res = _b_.IOError.$factory('Could not open file ' +
                             file + ' : status ' + status)
@@ -2518,8 +2565,8 @@ function $url_open(){
                         $res = this.responseText
                     }
                 }catch (err){
-                    $res = _b_.IOError.$factory('Could not open file ' + file +
-                        ' : error ' + err)
+                    $res = _b_.IOError.$factory('Could not open file ' +
+                        file + ' : error ' + err)
                 }
             }
             // add fake query string to avoid caching
@@ -2529,6 +2576,10 @@ function $url_open(){
             req.send()
 
             if($res.constructor === Error){throw $res}
+        }
+
+        if($res === undefined){
+            throw _b_.FileNotFoundError.$factory($ns.file)
         }
 
         if(typeof $res == "string"){

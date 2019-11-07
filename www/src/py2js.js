@@ -3384,6 +3384,7 @@ var $ForExpr = $B.parser.$ForExpr = function(context){
 
             // Line to test if the callable "range" is the built-in "range"
             var test_range_node = new $Node()
+            test_range_node.module = node.parent.module
             if(range_is_builtin){
                 new $NodeJSCtx(test_range_node, 'if(1)')
             }else{
@@ -9894,7 +9895,7 @@ var brython = $B.parser.brython = function(options){
         path_hooks.push($B.$path_hooks[0])
     }
 
-    if(options.static_stdlib_import !== false){
+    if(options.static_stdlib_import !== false && $B.protocol != "file"){
         // Add finder using static paths
         meta_path.push($B.$meta_path[1])
         // Remove /Lib and /libs in sys.path :
@@ -9907,9 +9908,11 @@ var brython = $B.parser.brython = function(options){
     }
 
     // Always use the defaut finder using sys.path
-    meta_path.push($B.$meta_path[2])
+    if($B.protocol !== "file"){
+        meta_path.push($B.$meta_path[2])
+        path_hooks.push($B.$path_hooks[1])
+    }
     $B.meta_path = meta_path
-    path_hooks.push($B.$path_hooks[1])
     $B.path_hooks = path_hooks
 
     // URL of the script where function brython() is called
@@ -10074,22 +10077,6 @@ var _run_scripts = $B.parser._run_scripts = function(options){
         var scripts = document.getElementsByTagName('script'),
             $elts = [],
             webworkers = []
-        for(var script_id in $B.scripts){
-            // Javascript scripts included in the page with
-            // <script type="text/javascript" src="source.js"></script>
-            // with content like
-            // __BRYTHON__.scripts["myscript"] = String.raw
-            // `
-            // <Python code here>
-            // `
-            // The backtick (`) is like the triple quote in Python
-            // This technique avoids Ajax calls to load an external Python
-            // script, and works without a web server.
-            console.log("ext script", script_id)
-            $elts.push({id: script_id,
-                        type: "text/python",
-                        textContent: $B.scripts[script_id]})
-        }
         // Freeze the list of scripts here ; other scripts can be inserted on
         // the fly by viruses
         for(var i = 0; i < scripts.length; i++){
@@ -10207,8 +10194,9 @@ var _run_scripts = $B.parser._run_scripts = function(options){
                 // __name__.
                 // If the <script> tag has an attribute "id", it is taken as
                 // the module name.
-                if(elt.id){module_name = elt.id}
-                else{
+                if(elt.id){
+                    module_name = elt.id
+                }else{
                     // If no explicit name is given, the module name is
                     // "__main__" for the first script, and "__main__" + a
                     // random value for the next ones.
