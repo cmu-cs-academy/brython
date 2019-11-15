@@ -362,16 +362,14 @@ user_modules = {}
 print('searching brython_stdlib.js...')
 stdlib = {}
 stdlib_dir = None
-for dirname, dirnames, filenames in os.walk(os.getcwd()):
-    for filename in filenames:
-        if filename == "brython_stdlib.js":
-            stdlib_dir = dirname
-            path = os.path.join(dirname, filename)
-            with open(path, encoding="utf-8") as fobj:
-                modules = fobj.read()
-                modules = modules[modules.find('{'):
-                        modules.find('__BRYTHON__.update_VFS(')]
-                stdlib = json.loads(modules)
+filename = 'brython_stdlib.js'
+stdlib_dir = dirname = '../../brython'
+path = os.path.join(dirname, filename)
+with open(path, encoding="utf-8") as fobj:
+    modules = fobj.read()
+    modules = modules[modules.find('{'):
+            modules.find('__BRYTHON__.update_VFS(')]
+    stdlib = json.loads(modules)
 
 if stdlib_dir is None:
     raise FileNotFoundError("Could not find brython_stdlib.js in this"
@@ -423,12 +421,14 @@ def is_package(folder):
             return True
 
 print('finding packages...')
-for dirname, dirnames, filenames in os.walk(os.getcwd()):
+base_dir = os.path.join(stdlib_dir, '..')
+for dirname, dirnames, filenames in os.walk(base_dir):
     for filename in filenames:
         name, ext = os.path.splitext(filename)
         if not ext == ".py" or filename == "list_modules.py":
             continue
-        if dirname == os.getcwd():
+        print('found', filename)
+        if dirname == base_dir:
             # modules in the same directory
             path = os.path.join(dirname, filename)
             with open(path, encoding="utf-8") as fobj:
