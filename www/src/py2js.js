@@ -369,6 +369,20 @@ as a child of the block where it stands : the root for instructions at
 module level, or a function definition, a loop, a condition, etc.
 */
 
+/*
+Function that checks that a context is not inside another incompatible
+context. Used for (augmented) assignements */
+function check_assignment(context){
+    var ctx = context,
+        forbidden = ['assert', 'del', 'import', 'raise', 'return']
+    while(ctx){
+        if(forbidden.indexOf(ctx.type) > -1){
+            $_SyntaxError(context, 'invalid syntax - assign')
+        }
+        ctx = ctx.parent
+    }
+}
+
 var $Node = $B.parser.$Node = function(type){
     this.type = type
     this.children = []
@@ -762,12 +776,9 @@ var $AssignCtx = $B.parser.$AssignCtx = function(context, expression){
     disabled if a new AssignCtx object is created afterwards by method
     transform()
     */
-    var ctx = context
-    while(ctx){
-        if(ctx.type == 'assert'){
-            $_SyntaxError(context, 'invalid syntax - assign')
-        }
-        ctx = ctx.parent
+    check_assignment(context)
+    if(context.type == "expr" && context.tree[0].type == "lambda"){
+        $_SyntaxError(context, ["cannot assign to lambda"])
     }
 
     this.type = 'assign'
@@ -854,6 +865,7 @@ var $AssignCtx = $B.parser.$AssignCtx = function(context, expression){
             assigned.push(left.tree[1])
             left = left.tree[0]
         }
+
         if(assigned.length > 0){
             assigned.push(left)
 
@@ -877,7 +889,8 @@ var $AssignCtx = $B.parser.$AssignCtx = function(context, expression){
                 new $RawJSCtx(assign, '$temp' + $loop_num)
             })
             $loop_num++
-            return assigned.length - 1
+            this.tree[0] = left
+            return
         }
 
         var left_items = null
@@ -919,6 +932,7 @@ var $AssignCtx = $B.parser.$AssignCtx = function(context, expression){
                 (right.type == 'expr' && right.tree.length > 1)){
             right_items = right.tree
         }
+
         if(right_items !== null){ // form x, y = a, b
             if(right_items.length > left_items.length){
                 throw Error('ValueError : too many values to unpack (expected ' +
@@ -1210,6 +1224,9 @@ var $AttrCtx = $B.parser.$AttrCtx = function(context){
 
 var $AugmentedAssignCtx = $B.parser.$AugmentedAssignCtx = function(context, op){
     // Class for augmented assignments such as "+="
+
+    check_assignment(context)
+
     this.type = 'augm_assign'
     this.parent = context.parent
     context.parent.tree.pop()
@@ -1362,8 +1379,10 @@ var $AugmentedAssignCtx = $B.parser.$AugmentedAssignCtx = function(context, op){
         var left = context.tree[0].to_js()
         if(context.tree[0].type == "id"){
             var binding_scope = context.tree[0].firstBindingScopeId()
-            left = "$locals_" + binding_scope.replace(/\./g, '_') +
+            if(binding_scope){
+                left = "$locals_" + binding_scope.replace(/\./g, '_') +
                     '["' + context.tree[0].value + '"]'
+            }
         }
 
         if(left_bound_to_int && right_is_int){
@@ -8312,12 +8331,11 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 context.tree = []
                 context.body_start = $pos
                 return new $AbstractExprCtx(context, false)
-            }
-            if(context.args !== undefined){ // returning from expression
+            }if(context.args !== undefined){ // returning from expression
                 context.body_end = $pos
                 return $transition(context.parent, token)
             }
-            if(context.args === undefined){
+            if(context.args === undefined && token != "("){
                 return $transition(new $CallCtx(context), token, value)
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
@@ -8991,7 +9009,7 @@ var $tokenize = $B.parser.$tokenize = function(root, src) {
     ]
     // from https://developer.mozilla.org/en-US/docs/JavaScript/Reference/Reserved_Words
 
-    var int_pattern = /^\d[0-9_]*(j|J)?/,
+    var int_pattern = /^(\d[0-9_]*)(j|J)?/,
         float_pattern1 = /^(\d[\d_]*)\.(\d*)([eE][+-]?\d+(_\d+)*)?(j|J)?/,
         float_pattern2 = /^(\d[\d_]*)([eE][+-]?\d+(_\d+)*)(j|J)?/,
         hex_pattern = /^0[xX]([\da-fA-F_]+)/,
@@ -9376,7 +9394,7 @@ var $tokenize = $B.parser.$tokenize = function(root, src) {
             // starting with 0
             rmuf(numeric_literal)
             if(numeric_literal.startsWith("0")){
-                if(numeric_literal.search(/[^0_]/) > -1){
+                if(numeric_literal.substr(1).search(/[^0_]/) > -1){
                     // 007 or 0_7 is invalid, only 0_0 is ok
                     $_SyntaxError(context, "invalid literal")
                 }else{
@@ -9482,11 +9500,11 @@ var $tokenize = $B.parser.$tokenize = function(root, src) {
                         }else{context = $transition(context, 'float', rmuf(res[0]))}
                     }else{
                         res = int_pattern.exec(src.substr(pos))
-                        check_int(res[0])
+                        check_int(res[1])
                         $pos = pos
-                        if(res[1] !== undefined){
+                        if(res[2] !== undefined){
                             context = $transition(context, 'imaginary',
-                                rmu(res[0].substr(0, res[0].length - 1)))
+                                rmu(res[1]))
                         }else{
                             context = $transition(context, 'int',
                                 [10, rmu(res[0])])
@@ -9892,7 +9910,7 @@ var brython = $B.parser.brython = function(options){
     // Virtual File System (VFS)
     if($B.use_VFS){
         meta_path.push($B.$meta_path[0])
-        path_hooks.push($B.$path_hooks[0])
+        //path_hooks.push($B.$path_hooks[0])
     }
 
     if(options.static_stdlib_import !== false && $B.protocol != "file"){
@@ -9907,10 +9925,10 @@ var brython = $B.parser.brython = function(options){
         }
     }
 
-    // Always use the defaut finder using sys.path
+    // Use the defaut finder using sys.path if protocol is not file://
     if($B.protocol !== "file"){
         meta_path.push($B.$meta_path[2])
-        path_hooks.push($B.$path_hooks[1])
+        path_hooks.push($B.$path_hooks[0])
     }
     $B.meta_path = meta_path
     $B.path_hooks = path_hooks
