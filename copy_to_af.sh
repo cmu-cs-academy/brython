@@ -13,4 +13,5 @@ git log -n 1 --pretty=format:"%H" > $DEST/git-sha.txt
 
 # Remove files that we don't need
 rm -rf "$DEST/setup/data" "$DEST/Lib/test" "$DEST/setup/changelog.txt" \
-  "$DEST/Lib/.bundle-ignore" "$DEST/Lib/email/architecture.rst"
+  "$DEST/Lib/.bundle-ignore" "$DEST/Lib/email/architecture.rst" \
+  "$DEST/Lib/importlib"
