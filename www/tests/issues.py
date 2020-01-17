@@ -2397,6 +2397,50 @@ assertRaises(SyntaxError, exec,
 def f():
     x += 1
 
+# issue 1251
+assertRaises(SyntaxError, eval, '\\\n')
+
+# issue 1253
+assertRaises(UnboundLocalError, exec,
+"""x = 1
+def f():
+    (((((x))))) += 1
+f()
+""")
+
+# issue 1254
+assertRaises(SyntaxError, exec,
+"""def f():
+    print('hi')
+f(*)""")
+
+assertRaises(SyntaxError, exec,
+"""def f():
+    print('hi')
+f(*, 1)""")
+
+assertRaises(SyntaxError, exec,
+"""def f(x, **):
+    print('hi')
+f(7)""")
+
+assertRaises(SyntaxError, exec,
+"""def f(x, *):
+    print('hi')
+f(7)""")
+
+# issue 1264
+class TestDescriptor:
+    counter = 0
+    def __set_name__(self, owner, name):
+        TestDescriptor.counter += 1
+
+class TestObject:
+    my_descriptor = TestDescriptor()
+
+assert TestDescriptor.counter == 1
+
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================

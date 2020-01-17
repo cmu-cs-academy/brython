@@ -260,10 +260,10 @@ $B.ajax_load_script = function(script){
     if($B.files && $B.files.hasOwnProperty(name)){
         $B.tasks.splice(0, 0, [$B.run_script, $B.files[name],
             name, true])
-        loop()
     }else if($B.protocol != "file"){
-        var req = new XMLHttpRequest()
-        req.open("GET", url + "?" + Date.now(), true)
+        var req = new XMLHttpRequest(),
+            qs = $B.$options.cache ? '' : '?' + Date.now()
+        req.open("GET", url + qs, true)
         req.onreadystatechange = function(){
             if(this.readyState == 4){
                 if(this.status == 200){
@@ -280,7 +280,11 @@ $B.ajax_load_script = function(script){
             }
         }
         req.send()
+    }else{
+        throw _b_.IOError.$factory("can't load external script at " +
+            script.url + " (Ajax calls not supported with protocol file:///)")
     }
+    loop()
 }
 
 function add_jsmodule(module, source){
@@ -340,7 +344,7 @@ var loop = $B.loop = function(){
         }catch(err){
             // If the error was not caught by the Python runtime, build an
             // instance of a Python exception
-            if(err.$py_error === undefined){
+            if(err.__class__ === undefined){
                 console.log('Javascript error', err)
                 if($B.is_recursion_error(err)){
                     err = _b_.RecursionError.$factory("too much recursion")
@@ -350,14 +354,19 @@ var loop = $B.loop = function(){
                 }
             }
             if($B.debug > 1){
-                console.log("handle error", err.__class__, err.args)
+                console.log("handle error", err.__class__, err.args, err.$stack)
+                console.log($B.frames_stack.slice())
             }
             $B.handle_error(err)
         }
         loop()
     }else{
         // Run function with arguments
-        func.apply(null, args)
+        try{
+            func.apply(null, args)
+        }catch(err){
+            $B.handle_error(err)
+        }
     }
 }
 
@@ -381,7 +390,12 @@ $B.handle_error = function(err){
         trace = err + ""
     }
     try{
-        _b_.getattr($B.stderr, 'write')(trace)
+        $B.$getattr($B.stderr, 'write')(trace)
+        try{
+            $B.$getattr($B.stderr, 'flush')()
+        }catch(err){
+            console.log(err)
+        }
     }catch(print_exc_err){
         console.log(trace)
     }

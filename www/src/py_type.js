@@ -153,7 +153,7 @@ $B.$class_constructor = function(class_name, class_obj, bases,
         mro = [class_dict].concat(class_dict.__mro__)
 
     for(var i = 0; i < mro.length; i++){
-        var kdict = i == 0 ? mro0 : mro[i]  // DRo mr0 set above to choose rightly
+        var kdict = i == 0 ? mro0 : mro[i]
         for(var attr in kdict){
             if(non_abstract_methods[attr]){continue}
             var v = kdict[attr]
@@ -397,9 +397,8 @@ type.__getattribute__ = function(klass, attr){
                     return res.fget(klass)
                 }
                 if(typeof res == "function"){
-                    var meta_method = function(){
-                        return res(klass, ...arguments)
-                    }
+                    // insert klass as first argument
+                    var meta_method = res.bind(null, klass)
                     meta_method.__class__ = $B.method
                     meta_method.$infos = {
                         __self__: klass,
@@ -453,7 +452,8 @@ type.__getattribute__ = function(klass, attr){
         if(typeof res == "function"){
             // method
             if(res.$infos === undefined && $B.debug > 1){
-                console.log("warning: no attribute $infos for", res, "attr", attr)
+                console.log("warning: no attribute $infos for", res, 
+                    "klass", klass, "attr", attr)
             }
             if($test){console.log("res is function", res)}
 
@@ -540,7 +540,8 @@ type.__new__ = function(meta, name, bases, cl_dict){
         __bases__ : bases,
         __dict__ : cl_dict,
         $infos:{
-            __name__: name.replace("$$", "")
+            __name__: name.replace("$$", ""),
+            __module__: cl_dict.$string_dict.__module__
         },
         $is_class: true,
         $has_setattr: cl_dict.$has_setattr
@@ -551,18 +552,14 @@ type.__new__ = function(meta, name, bases, cl_dict){
     for(var i = 0; i < items.length; i++){
         var key = $B.to_alias(items[i][0]),
             v = items[i][1]
+        if(key === "__module__"){continue} // already set
         if(v === undefined){continue}
         class_dict[key] = v
         if(v.__class__){
             // cf PEP 487 and issue #1178
-            var is_descriptor =
-                $B.$getattr(v.__class__, "__set__", _b_.None) !== _b_.None
-
-            if(is_descriptor){
-                var set_name = $B.$getattr(v.__class__, "__set_name__", _b_.None)
-                if(set_name !== _b_.None){
-                    set_name(v, v.__class__, key)
-                }
+            var set_name = $B.$getattr(v.__class__, "__set_name__", _b_.None)
+            if(set_name !== _b_.None){
+                set_name(v, class_dict, key)
             }
         }
         if(typeof v == "function"){
@@ -769,19 +766,16 @@ var $instance_creator = $B.$instance_creator = function(klass){
         if(klass.hasOwnProperty("__new__")){
             if(klass.hasOwnProperty("__init__")){
                 factory = function(){
-                    var args = []
-                    for(var i = 0; i < arguments.length; i++){
-                        args.push(arguments[i])
-                    }
-                    var obj = klass.__new__.apply(null, [klass].concat(args))
-                    klass.__init__.apply(null, [obj].concat(args))
+                    // Call __new__ with klass as first argument
+                    var obj = klass.__new__.bind(null, klass).
+                                            apply(null, arguments)
+                    klass.__init__.bind(null, obj).apply(null, arguments)
                     return obj
                 }
             }else{
                 factory = function(){
-                    var args = [klass]
-                    for(var i = 0; i < arguments.length; i++){args.push(arguments[i])}
-                    return klass.__new__.apply(null, args)
+                    return klass.__new__.bind(null, klass).
+                                         apply(null, arguments)
                 }
             }
         }else if(klass.hasOwnProperty("__init__")){
@@ -790,9 +784,7 @@ var $instance_creator = $B.$instance_creator = function(klass){
                     __class__: klass,
                     __dict__: _b_.dict.$factory()
                 }
-                var args = [obj]
-                for(var i = 0; i < arguments.length; i++){args.push(arguments[i])}
-                klass.__init__.apply(null, args)
+                klass.__init__.bind(null, obj).apply(null, arguments)
                 return obj
             }
         }else{
@@ -810,9 +802,7 @@ var $instance_creator = $B.$instance_creator = function(klass){
     }else{
         call_func = _b_.type.__getattribute__(metaclass, "__call__")
         var factory = function(){
-            var args = [klass]
-            for(var i = 0; i < arguments.length; i++){args.push(arguments[i])}
-            return call_func.apply(null, args)
+            return call_func.bind(null, klass).apply(null, arguments)
         }
     }
     factory.__class__ = $B.Function
@@ -862,7 +852,7 @@ $B.set_func_names(member_descriptor, "builtins")
 var method = $B.method = $B.make_class("method",
     function(func, cls){
         var f = function(){
-            return $B.$call(func)(cls, ...arguments)
+            return $B.$call(func).bind(null, cls).apply(null, arguments)
         }
         f.__class__ = method
         f.$infos = func.$infos

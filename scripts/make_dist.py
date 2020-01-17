@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 
-
 """Script to compact all Brython scripts in a single one."""
 
 import time
@@ -21,7 +20,7 @@ if sys.version_info[0] != 3:
 pdir = os.path.dirname(os.getcwd())
 # version info
 version = [3, 8, 0, "final", 0]
-implementation = [3, 8, 1, "dev", 0]
+implementation = [3, 8, 6, "final", 0]
 
 # version name
 vname = '.'.join(str(x) for x in implementation[:3])
@@ -193,7 +192,7 @@ def run():
         first = 'Changes in Brython version {}'.format(vname)
         with open(os.path.join(pdir, 'setup', 'changelog.txt')) as f:
             input_changelog_data_string = f.read()
-        with open(os.path.join(pdir, 'setup', 'data',
+        with open(os.path.join(release_dir, 
                 'changelog_{}.txt'.format(vname)), 'w') as out:
             out.write('%s\n' % first)
             out.write('%s\n\n' % ('=' * len(first)))

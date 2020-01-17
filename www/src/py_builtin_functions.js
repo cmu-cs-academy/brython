@@ -13,7 +13,7 @@ var object = _b_.object,
 $B.$comps = {'>':'gt','>=':'ge','<':'lt','<=':'le'}
 $B.$inv_comps = {'>': 'lt', '>=': 'le', '<': 'gt', '<=': 'ge'}
 
-function check_nb_args(name, expected, args){
+var check_nb_args = $B.check_nb_args = function(name, expected, args){
     // Check the number of arguments
     var len = args.length,
         last = args[len - 1]
@@ -37,12 +37,13 @@ function check_nb_args(name, expected, args){
     }
 }
 
-function check_no_kw(name, x, y){
+var check_no_kw = $B.check_no_kw = function(name, x, y){
     // Throw error if one of x, y is a keyword argument
     if(x === undefined){
         console.log("x undef", name, x, y)
     }
-    if(x.$nat || (y !== undefined && y.$nat)){
+    if((x.$nat && x.kw && x.kw[0] && x.kw[0].length > 0) || 
+            (y !== undefined && y.$nat)){
         throw _b_.TypeError.$factory(name + "() takes no keyword arguments")}
 }
 
@@ -294,6 +295,8 @@ code.__getattr__ = function(self, attr){
     return self[attr]
 }
 
+$B.set_func_names(code, "builtins")
+
 function compile() {
     var $ = $B.args('compile', 6,
         {source:null, filename:null, mode:null, flags:null, dont_inherit:null,
@@ -305,6 +308,19 @@ function compile() {
     $B.clear_ns(module_name)
     $.__class__ = code
     $.co_flags = $.flags
+    $.name = "<module>"
+    var interactive = $.mode == "single" && ($.flags & 0x200)
+
+    if(interactive && ! $.source.endsWith("\n")){
+        // This is used in codeop.py to raise SyntaxError until a block in the
+        // interactive interpreter ends with "\n"
+        // Cf. issue #853
+        var lines = $.source.split("\n")
+        if($B.last(lines).startsWith(" ")){
+            throw _b_.SyntaxError.$factory("unexpected EOF while parsing")
+        }
+    }
+
     // Run py2js to detect potential syntax errors
     $B.py2js($.source, module_name, module_name)
     return $
@@ -392,9 +408,7 @@ function dir(obj){
     }
     try{
         var res = $B.$call($B.$getattr(obj, '__dir__'))()
-
         res = _b_.list.$factory(res)
-        res.sort()
         return res
     }catch (err){
         // ignore, default
@@ -465,14 +479,13 @@ $B.to_alias = function(attr){
 function $$eval(src, _globals, _locals){
 
     var $ = $B.args("eval", 4,
-            {src: null, globals: null, locals: null, is_exec: null},
-            ["src", "globals", "locals", "is_exec"], arguments,
-            {globals: _b_.None, locals: _b_.None, is_exec: false}, null, null),
+            {src: null, globals: null, locals: null, mode: null},
+            ["src", "globals", "locals", "mode"], arguments,
+            {globals: _b_.None, locals: _b_.None, mode: "eval"}, null, null),
             src = $.src,
             _globals = $.globals,
             _locals = $.locals,
-            is_exec = $.is_exec
-
+            mode = $.mode
     var current_frame = $B.frames_stack[$B.frames_stack.length - 1]
     if(current_frame !== undefined){
         var current_locals_id = current_frame[0].replace(/\./, '_'),
@@ -482,7 +495,7 @@ function $$eval(src, _globals, _locals){
     var stack_len = $B.frames_stack.length
 
     if(src.__class__ === code){
-        is_exec = src.mode == "exec"
+        mode = src.mode
         src = src.source
     }else if(typeof src !== 'string'){
         throw _b_.TypeError.$factory("eval() arg 1 must be a string, bytes "+
@@ -682,22 +695,34 @@ function $$eval(src, _globals, _locals){
                 }
                 break
             default:
-                if(!is_exec){
+                if(mode == "eval"){
                     throw _b_.SyntaxError.$factory(
                         "eval() argument must be an expression",
                         '<string>', 1, 1, src)
                 }
         }
 
-        js = root.to_js()
 
-        if(is_exec){
+        if(mode != "eval"){
+            // The last instruction is transformed to return its result
+            var last = $B.last(root.children),
+                js = last.to_js()
+            if(["node_js"].indexOf(last.context.type) == -1){
+                last.to_js = function(){
+                    while(js.endsWith("\n")){js = js.substr(0, js.length - 1)}
+                    while(js.endsWith(";")){js = js.substr(0, js.length - 1)}
+                    return "return (" + js + ")"
+                }
+            }
+            js = root.to_js()
+
             var locals_obj = eval("$locals_" + locals_id),
                 globals_obj = eval("$locals_" + globals_id)
 
             if(_globals === _b_.None){
                 var res = new Function("$locals_" + globals_id,
-                    "$locals_" + locals_id, js)(globals_obj, locals_obj)
+                    "$locals_" + locals_id, js)(
+                        globals_obj, locals_obj)
 
             }else{
                 current_globals_obj = current_frame[3]
@@ -711,7 +736,13 @@ function $$eval(src, _globals, _locals){
                         current_globals_obj, current_locals_obj)
             }
         }else{
+            js = root.to_js()
             var res = eval(js)
+        }
+
+        if($.src.filename == "<console>" && $.src.mode == "single" &&
+                res !== undefined && res !== _b_.None){
+            _b_.print(res)
         }
 
         gns = eval("$locals_" + globals_id)
@@ -767,7 +798,17 @@ function $$eval(src, _globals, _locals){
     }catch(err){
         err.src = src
         err.module = globals_id
-        if(err.$py_error === undefined){throw $B.exception(err)}
+        if(err.$py_error === undefined){
+            throw $B.exception(err)
+        }else{
+            // Exception trace of exec starts at current frame
+            for(var i = 0, len = err.$stack.length; i < len; i++){
+                if(err.$stack[i][0] == current_frame[0]){
+                    err.$stack = err.$stack.slice(i)
+                    break
+                }
+            }
+        }
         throw err
     }finally{
         // "leave_frame" was removed so we must execute it here
@@ -782,6 +823,7 @@ function $$eval(src, _globals, _locals){
 
         $B.clear_ns(globals_id)
         $B.clear_ns(locals_id)
+
     }
 }
 $$eval.$is_func = true
@@ -794,7 +836,7 @@ function exec(src, globals, locals){
         src = $.src,
         globals = $.globals,
         locals = $.locals
-    return $$eval(src, globals, locals, true) || _b_.None
+    return $$eval(src, globals, locals, "exec") || _b_.None
 }
 
 exec.$is_func = true
@@ -1064,14 +1106,8 @@ $B.$getattr = function(obj, attr, _default){
 
             if(func.$type == "staticmethod"){return func}
 
-            var self = klass[attr].__class__ == $B.method ? klass : obj
-            function method(){
-                var args = [self]
-                for(var i = 0, len = arguments.length; i < len; i++){
-                    args.push(arguments[i])
-                }
-                return klass[attr].apply(null, args)
-            }
+            var self = klass[attr].__class__ == $B.method ? klass : obj,
+                method = klass[attr].bind(null, self)
             method.__class__ = $B.method
             method.$infos = {
                 __func__: func,
@@ -2563,7 +2599,7 @@ function $url_open(){
                 try{
                     var status = this.status
                     if(status == 404){
-                        $res = _b_.FileNotFoundError(file)
+                        $res = _b_.FileNotFoundError.$factory(file)
                     }else if(status != 200){
                         $res = _b_.IOError.$factory('Could not open file ' +
                             file + ' : status ' + status)

@@ -269,3 +269,4 @@ __stdout__ = __BRYTHON__.stdout
 __stderr__ = __BRYTHON__.stderr
 __stdin__ = __BRYTHON__.stdin
 
+__excepthook__ = excepthook # from _sys

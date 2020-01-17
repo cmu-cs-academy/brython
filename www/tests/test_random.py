@@ -1,5 +1,7 @@
 import random
 
+from tester import assertRaises
+
 random.seed(b'azerty')
 x1 = random.random()
 assert 0 <= x1 <=1
@@ -65,11 +67,11 @@ random.shuffle(second)
 assert first == second, "Same seed does not produce same random results"
 
 # issue 728
-try:
-    random.randint(2, 0)
-    raise Exception("should have raised ValueError")
-except ValueError:
-    pass
+assertRaises(ValueError, random.randint, 1, 0)
+assertRaises(ValueError, random.randint, 2, 0)
+assertRaises(ValueError, random.randrange, 1, 1)
+
+assert random.randint(1, 1) == 1
 
 # issue 731
 from random import randrange
@@ -112,9 +114,17 @@ test(random.randrange, 2.5)
 for (a, b) in [(0, 2.5), (0.5, 2)]:
     test(random.randrange, a, b)
 
+random.randint(0, 1.0)
+random.randrange(1.0, 3.0, 1.0)
+
 # issue 1121
 random.seed(31416)
 ch1 = random.choices([0, 1, 2], [2, 1, 1], k = 50)
 random.seed(31416)
 ch2 = random.choices([0, 1, 2], [2, 1, 1], k = 50)
 assert ch1 == ch2
+
+# issue 1268
+random.choices('abc', k=2)
+
+print("passed all tests...")

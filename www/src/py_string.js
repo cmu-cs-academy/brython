@@ -518,12 +518,46 @@ var octal_format = function(val, flags) {
     return format_padding(ret, flags)
 }
 
+function series_of_bytes(val, flags){
+    if(val.__class__ && val.__class__.$buffer_protocol){
+        var it = _b_.iter(val),
+            ints = []
+        while(true){
+            try{
+                ints.push(_b_.next(it))
+            }catch(err){
+                if(err.__class__ === _b_.StopIteration){
+                    var b = _b_.bytes.$factory(ints)
+                    return format_padding(_b_.bytes.decode(b, "ascii"), flags)
+                }
+                throw err
+            }
+        }
+    }else{
+        try{
+            bytes_obj = $B.$getattr(val, "__bytes__")
+            return format_padding(_b_.bytes.decode(bytes_obj), flags)
+        }catch(err){
+            if(err.__class__ === _b_.AttributeError){
+                throw _b_.TypeError.$factory("%b does not accept '" +
+                    $B.class_name(val) + "'")
+            }
+            throw err
+        }
+    }
+}
+
 var single_char_format = function(val, flags){
-    if(isinstance(val, str) && val.length == 1) return val
-    try{
-        val = _b_.int.$factory(val)  // yes, floats are valid (they are cast to int)
-    }catch (err){
-        throw _b_.TypeError.$factory("%c requires int or char")
+    if(isinstance(val, str) && val.length == 1){
+        return val
+    }else if(isinstance(val, bytes) && val.source.length == 1){
+        val = val.source[0]
+    }else{
+        try{
+            val = _b_.int.$factory(val)  // yes, floats are valid (they are cast to int)
+        }catch (err){
+            throw _b_.TypeError.$factory("%c requires int or char")
+        }
     }
     return format_padding(chr(val), flags)
 }
@@ -566,6 +600,7 @@ var alternate_flag = function(val, flags){
 }
 
 var char_mapping = {
+    "b": series_of_bytes,
     "s": str_format,
     "d": num_format,
     "i": num_format,
@@ -1966,6 +2001,14 @@ str.$factory = function(arg, encoding, errors){
     if(arg === undefined){
         throw _b_.TypeError.$factory("str() argument is undefined")
     }
+    if(encoding !== undefined){
+        // Arguments may be passed as keywords (cf. issue #1060)
+        var $ = $B.args("str", 3, {arg: null, encoding: null, errors: null},
+                ["arg", "encoding", "errors"], arguments,
+                {encoding: "utf-8", errors: "strict"}, null, null),
+            encoding = $.encoding,
+            errors = $.errors
+    }
     switch(typeof arg) {
         case "string":
             return str.__str__(arg)
@@ -1983,14 +2026,11 @@ str.$factory = function(arg, encoding, errors){
             var func = $B.$getattr(arg.__class__, "__str__")
             return func(arg)
         }
+
         if(arg.__class__ && arg.__class__ === _b_.bytes &&
                 encoding !== undefined){
             // str(bytes, encoding, errors) is equal to
             // bytes.decode(encoding, errors)
-            // Arguments may be passed as keywords (cf. issue #1060)
-            var $ = $B.args("str", 3, {arg: null, encoding: null, errors: null},
-                    ["arg", "encoding", "errors"], arguments,
-                    {encoding: "utf-8", errors: "strict"}, null, null)
             return _b_.bytes.decode(arg, $.encoding, $.errors)
         }
         // Implicit invocation of __str__ uses method __str__ on the class,
@@ -2346,9 +2386,10 @@ $B.parse_fstring = function(string){
                     // might be a "debug expression", eg f"{x=}"
                     var ce = current.expression
                     if(ce.length == 0 ||
+                            string.charAt(i + 1) == "=" ||
                             "=!<>:".search(ce.charAt(ce.length - 1)) > -1){
-                        current.expression += car
-                        i++
+                        current.expression += car + string.charAt(i + 1)
+                        i += 2
                     }else{
                         // add debug string
                         tail = car

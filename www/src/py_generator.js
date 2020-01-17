@@ -141,6 +141,9 @@ function make_node(top_node, node){
             top_node.yields.push(new_node)
 
         }else if(node.is_set_yield_value){
+            if(node.module == "__main__"){
+                console.log("node is set yield", node.line_num, node.module)
+            }
 
             // After each yield, py2js inserts a no-op line as a placeholder
             // for values or exceptions sent to the iterator.
@@ -155,6 +158,9 @@ function make_node(top_node, node){
             if(node.after_yield){
                 ctx_manager = in_ctx_manager(node)
             }
+            if(node.line_num === undefined){
+                console.log("bizarre", node)
+            }
             var js = "var sent_value = this.sent_value === undefined ? " +
                 "None : this.sent_value;",
                 h = "\n" + ' '.repeat(node.indent)
@@ -164,7 +170,8 @@ function make_node(top_node, node){
 
             // If method throw was called, raise the exception
             js += h + "if(sent_value.__class__ === $B.$GeneratorSendError)"+
-                  "{throw sent_value.err};"
+                  "{sent_value.err.$stack.splice(0, 0, $B.freeze([$top_frame])[0]);" +
+                  " throw sent_value.err};"
 
             // Else set the yielded value to sent_value
             if(typeof ctx_js == "number"){
@@ -490,7 +497,7 @@ $B.$BRgenerator = function(func_name, blocks, def_id, def_node){
 function make_next(self, yield_node_id){
     // Get node where yield was thrown
     var exit_node = self.func_root.yields[yield_node_id]
-    
+
     // Attribute "replaced" is used to replace a node only once if it was
     // inside a loop
     exit_node.replaced = false
@@ -752,9 +759,23 @@ generator.send = function(self, value){
 
 generator.$$throw = function(self, type, value, traceback){
     var exc = type
-    if(value !== undefined){exc = $B.$call(exc)(value)}
+
+    if(exc.$is_class){
+        if(! _b_.issubclass(type, _b_.BaseException)){
+            throw _b_.TypeError.$factory("exception value must be an " +
+                "instance of BaseException")
+        }else if(value === undefined){
+            value = $B.$call(exc)()
+        }
+    }else{
+        if(value === undefined){
+            value = exc
+        }else{
+            exc = $B.$call(exc)(value)
+        }
+    }
     if(traceback !== undefined){exc.$traceback = traceback}
-    self.sent_value = {__class__: $B.$GeneratorSendError, err: exc}
+    self.sent_value = {__class__: $B.$GeneratorSendError, err: value}
     return generator.__next__(self)
 }
 

@@ -20,7 +20,6 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
     //     extra_pos_args = 'args'
     //     extra_kw_args = 'kw'
     //     kwonlyargcount = 2
-
     var $args = []
     if(Array.isArray(args)){$args = args}
     else{
@@ -555,7 +554,9 @@ $B.$getitem = function(obj, item){
     }
 
     var gi = $B.$getattr(obj, "__getitem__", _b_.None)
-    if(gi !== _b_.None){return gi(item)}
+    if(gi !== _b_.None){
+        return gi(item)
+    }
 
     throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
         "' object is not subscriptable")

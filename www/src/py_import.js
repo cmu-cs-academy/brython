@@ -73,8 +73,11 @@ function $download_module(mod, url, $package){
     var timer = _window.setTimeout(function(){
             xhr.abort()
         }, 5000)
-
-    xhr.open("GET", url + fake_qs, false)
+    if($B.$options.cache){
+        xhr.open("GET", url, false)
+    }else{
+        xhr.open("GET", url + fake_qs, false)
+    }
     xhr.send()
 
     if($B.$CORS){
@@ -991,7 +994,6 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
                         __import__ :
                         $B.$getattr(__import__, "__call__"),
         modobj = importer(mod_name, globals, undefined, fromlist, 0)
-
     // Apply bindings upon local namespace
     if(! fromlist || fromlist.length == 0){
         // import mod_name [as alias]
@@ -1070,6 +1072,7 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
                 }
             }
         }
+        return locals
     }
 }
 

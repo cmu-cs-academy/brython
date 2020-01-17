@@ -180,11 +180,7 @@ HTTPRequest.response_headers = _b_.property.$factory(function(self){
 })
 
 function get(){
-    var args = ["GET"]
-    for(var i = 0, len = arguments.length; i < len; i++){
-        args.push(arguments[i])
-    }
-    return ajax.apply(null, args)
+    return ajax.bind(null, "GET").apply(null, arguments)
 }
 
 function iscoroutine(f){
@@ -196,11 +192,7 @@ function iscoroutinefunction(f){
 }
 
 function post(){
-    var args = ["POST"]
-    for(var i = 0, len = arguments.length; i < len; i++){
-        args.push(arguments[i])
-    }
-    return ajax.apply(null, args)
+    return ajax.bind(null, "POST").apply(null, arguments)
 }
 
 function run(coro){
@@ -211,8 +203,10 @@ function run(coro){
             console.log("handle error, ev", ev)
             var err_msg = "Traceback (most recent call last):\n"
             err_msg += $B.print_stack(ev.$stack)
-            err_msg += "\n" + ev.__class__.$infos.__name__ +
-                ': ' + ev.args[0]
+            if(ev.__class){
+                err_msg += "\n" + ev.__class__.$infos.__name__ +
+                    ': ' + ev.args[0]
+            }
             $B.builtins.print(err_msg)
             throw ev
         }
