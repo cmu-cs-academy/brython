@@ -7,47 +7,77 @@
 <meta http-equiv="content-type" content="text/html;charset=utf-8">
 
 <link rel="icon" type="image/png" href="favicon.png" />
-<link rel="stylesheet" type="text/css"
-      href="https://fonts.googleapis.com/css?family=Montserrat">
 
 <noscript>Please enable Javascript to view this page correctly.</noscript>
 
 <script type="text/javascript" src="/src/brython.js"></script>
+<script type="text/javascript" src="/src/brython_dist.js"></script>
 
-<script type="text/python3">
-"""Code for the header menu"""
+<script src="/assets/header.brython.js"></script>
+
+<script type="text/python">
+"""On page load, Brython inspects all the scripts in the page and, if
+brython_stdlib.js is loaded, finds all the modules it has to import. If the
+Brython version has not changed, it loads the Javascript translation of these
+modules from the indexedDB cache.
+
+If it has changed, the outdated modules in the cache are removed and a new
+version of the translation to Javascript is stored in the cache. These actions
+(storing in or removing from the cache) trigger a custom event called
+'precompile'. This script captures this event and displays a message at the
+top of the page to explain why the loading takes some time."""
+
+from browser import document, bind, html
+
+report = document["report"]
+
+@bind(document, 'precompile')
+def precompile(ev):
+  if not list(report.select("div")):
+      report <= html.DIV("New Brython version detected, please wait")
+      zone = html.DIV("&nbsp;", id="report_message", style=dict(width="0px"))
+      report <= zone
+  if ev.detail == "close":
+      report.style.display = "none"
+  else:
+      document["report_message"].width += 5
+
+</script>
+
+<script type="text/python">
+"""Load header and text according to the language."""
 from browser import document, html
 import header
 
+# Get the language specified in the query string (lang=...) and in the browser
+# settings.
 qs_lang, language = header.show()
 
+# Adapt content to selected language
 document["content"].html = document[f"content_{language}"].html
 
 if qs_lang:
     document[f"c_{qs_lang}"].href += f"?lang={qs_lang}"
 
-def ch_lang(ev):
+# If user changes the language in the select box, reload the page.
+def change_language(ev):
     sel = ev.target
     new_lang = sel.options[sel.selectedIndex].value
     document.location.href = f"index.html?lang={new_lang}"
 
 for elt in document.select("select.language"):
-    elt.bind('change', ch_lang)
+    elt.bind('change', change_language)
 
-# underline links in page text, but not in the upper banner
-for elt in document.select("a"):
-    if not elt.classList.contains("banner"):
-        elt.style.textDecoration = "underline"
 </script>
 
-<script type="text/python3">
+<script type="text/python">
 """Code for the clock"""
 
 import time
 import math
 import datetime
 
-from browser import document as doc
+from browser import document
 import browser.timer
 
 sin, cos = math.sin, math.cos
@@ -88,7 +118,7 @@ def set_clock():
     ctx.font = "bold 14px Arial"
     ctx.textAlign = "center"
     ctx.textBaseline = "middle"
-    ctx.fillStyle="#000"
+    ctx.fillStyle = "#000"
     ctx.fillText(day, width * 0.7, height * 0.5)
 
     # draw needles for hour, minute, seconds
@@ -100,7 +130,7 @@ def set_clock():
     angle = minute * 2 *math.pi / 60 - math.pi / 2
     needle(angle, 0.05, 0.85)
     ctx.lineWidth = 1
-    second = now.second + now.microsecond / 1000000
+    second = now.second + now.microsecond / 1_000_000
     angle = second * 2 * math.pi / 60 - math.pi / 2
     needle(angle, 0.05, 0.85, "#FF0000") # in red
 
@@ -121,7 +151,7 @@ def show_hours():
     ctx.fillStyle = "#fff"
     ctx.fillRect(width * 0.65, height * 0.47, width * 0.1, height * 0.06)
 
-canvas = doc["clock"]
+canvas = document["clock"]
 # draw clock border
 if hasattr(canvas, 'getContext'):
     ctx = canvas.getContext("2d")
@@ -139,7 +169,7 @@ if hasattr(canvas, 'getContext'):
 
     for i in range(60):
         ctx.lineWidth = 1
-        if i%5 == 0:
+        if i % 5 == 0:
             ctx.lineWidth = 3
         angle = i * 2 * math.pi / 60 - math.pi / 3
         x1 = width / 2 + ray * cos(angle)
@@ -154,30 +184,30 @@ if hasattr(canvas, 'getContext'):
     browser.timer.set_interval(set_clock, 100)
     show_hours()
 else:
-    doc['navig_zone'].html = "On Internet Explorer 9 or more, use a Standard rendering engine"
+    document['navig_zone'].html = "On Internet Explorer 9 or more, " \
+        "use a Standard rendering engine"
 
 </script>
 
-
 <title>Brython</title>
-<link rel="stylesheet" href="doc/doc_brython.css">
+
+<link rel="stylesheet" href="/brython.css">
+<style>
+#report_message {
+    background-color: var(--dark-2);
+}
+</style>
 </head>
-<!--
-options:
-  debug: can equal 0,1,2.  more verbose as number increases
-  cache: 'none', 'version', 'browser'.
-         'none' - no caching allowed. a new random number is appended to end of each request
-         'version' - caching allowed for each new brython version
-         'browser' - nothing is appended to request.  A clients browser is responsible for caching actions.
-  pythonpath: a list of additional urls/paths to search for modules
--->
+
 <body onload="brython(1)">
 
 <table id="banner" cellpadding=0 cellspacing=0>
 <tr id="banner_row">
-<td class="logo"><a href="../index.html"><img src="brython_tp.png" class="logo"></a></td>
+<td class="logo"><a href="../index.html" class="logo">Brython</a></td>
 </tr>
 </table>
+
+<div id="report"></div>
 
 <div id="content"></div>
 
@@ -186,7 +216,7 @@ options:
 <table style="width:85%;margin-left:10%">
 <tr>
 <td>
-<H1 style="font-size:300%;">Brython</H1>
+
 <H2>A Python 3 implementation for client-side web programming</H2>
 </td>
 <td valign="top">
@@ -229,7 +259,7 @@ However, right click and view the source of this page...
 <table style="width:80%;margin-left:10%">
 <tr>
 <td>
-<H1 class="brython">Brython</H1>
+
 <H2>Une implémentation de Python 3 pour la programmation web côté client</H2>
 </td>
 <td valign="top">
@@ -271,7 +301,7 @@ Maintenant, regardez le code source de cette page...
 <table style="width:80%;margin-left:10%;">
 <tr>
 <td>
-<H1 style="font-size:300%;">Brython</H1>
+
 <H2>Una implementación de Python para la programación web del lado del cliente</H2>
 </td>
 <td valign="top">

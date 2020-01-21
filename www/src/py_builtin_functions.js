@@ -13,7 +13,7 @@ var object = _b_.object,
 $B.$comps = {'>':'gt','>=':'ge','<':'lt','<=':'le'}
 $B.$inv_comps = {'>': 'lt', '>=': 'le', '<': 'gt', '<=': 'ge'}
 
-function check_nb_args(name, expected, args){
+var check_nb_args = $B.check_nb_args = function(name, expected, args){
     // Check the number of arguments
     var len = args.length,
         last = args[len - 1]
@@ -37,12 +37,13 @@ function check_nb_args(name, expected, args){
     }
 }
 
-function check_no_kw(name, x, y){
+var check_no_kw = $B.check_no_kw = function(name, x, y){
     // Throw error if one of x, y is a keyword argument
     if(x === undefined){
         console.log("x undef", name, x, y)
     }
-    if(x.$nat || (y !== undefined && y.$nat)){
+    if((x.$nat && x.kw && x.kw[0] && x.kw[0].length > 0) ||
+            (y !== undefined && y.$nat)){
         throw _b_.TypeError.$factory(name + "() takes no keyword arguments")}
 }
 
@@ -294,6 +295,8 @@ code.__getattr__ = function(self, attr){
     return self[attr]
 }
 
+$B.set_func_names(code, "builtins")
+
 function compile() {
     var $ = $B.args('compile', 6,
         {source:null, filename:null, mode:null, flags:null, dont_inherit:null,
@@ -305,6 +308,19 @@ function compile() {
     $B.clear_ns(module_name)
     $.__class__ = code
     $.co_flags = $.flags
+    $.name = "<module>"
+    var interactive = $.mode == "single" && ($.flags & 0x200)
+
+    if(interactive && ! $.source.endsWith("\n")){
+        // This is used in codeop.py to raise SyntaxError until a block in the
+        // interactive interpreter ends with "\n"
+        // Cf. issue #853
+        var lines = $.source.split("\n")
+        if($B.last(lines).startsWith(" ")){
+            throw _b_.SyntaxError.$factory("unexpected EOF while parsing")
+        }
+    }
+
     // Run py2js to detect potential syntax errors
     $B.py2js($.source, module_name, module_name)
     return $
@@ -392,9 +408,7 @@ function dir(obj){
     }
     try{
         var res = $B.$call($B.$getattr(obj, '__dir__'))()
-
         res = _b_.list.$factory(res)
-        res.sort()
         return res
     }catch (err){
         // ignore, default
@@ -465,14 +479,13 @@ $B.to_alias = function(attr){
 function $$eval(src, _globals, _locals){
 
     var $ = $B.args("eval", 4,
-            {src: null, globals: null, locals: null, is_exec: null},
-            ["src", "globals", "locals", "is_exec"], arguments,
-            {globals: _b_.None, locals: _b_.None, is_exec: false}, null, null),
+            {src: null, globals: null, locals: null, mode: null},
+            ["src", "globals", "locals", "mode"], arguments,
+            {globals: _b_.None, locals: _b_.None, mode: "eval"}, null, null),
             src = $.src,
             _globals = $.globals,
             _locals = $.locals,
-            is_exec = $.is_exec
-
+            mode = $.mode
     var current_frame = $B.frames_stack[$B.frames_stack.length - 1]
     if(current_frame !== undefined){
         var current_locals_id = current_frame[0].replace(/\./, '_'),
@@ -482,7 +495,7 @@ function $$eval(src, _globals, _locals){
     var stack_len = $B.frames_stack.length
 
     if(src.__class__ === code){
-        is_exec = src.mode == "exec"
+        mode = src.mode
         src = src.source
     }else if(typeof src !== 'string'){
         throw _b_.TypeError.$factory("eval() arg 1 must be a string, bytes "+
@@ -682,22 +695,34 @@ function $$eval(src, _globals, _locals){
                 }
                 break
             default:
-                if(!is_exec){
+                if(mode == "eval"){
                     throw _b_.SyntaxError.$factory(
                         "eval() argument must be an expression",
                         '<string>', 1, 1, src)
                 }
         }
 
-        js = root.to_js()
 
-        if(is_exec){
+        if(mode != "eval"){
+            // The last instruction is transformed to return its result
+            var last = $B.last(root.children),
+                js = last.to_js()
+            if(["node_js"].indexOf(last.context.type) == -1){
+                last.to_js = function(){
+                    while(js.endsWith("\n")){js = js.substr(0, js.length - 1)}
+                    while(js.endsWith(";")){js = js.substr(0, js.length - 1)}
+                    return "return (" + js + ")"
+                }
+            }
+            js = root.to_js()
+
             var locals_obj = eval("$locals_" + locals_id),
                 globals_obj = eval("$locals_" + globals_id)
 
             if(_globals === _b_.None){
                 var res = new Function("$locals_" + globals_id,
-                    "$locals_" + locals_id, js)(globals_obj, locals_obj)
+                    "$locals_" + locals_id, js)(
+                        globals_obj, locals_obj)
 
             }else{
                 current_globals_obj = current_frame[3]
@@ -711,7 +736,13 @@ function $$eval(src, _globals, _locals){
                         current_globals_obj, current_locals_obj)
             }
         }else{
+            js = root.to_js()
             var res = eval(js)
+        }
+
+        if($.src.filename == "<console>" && $.src.mode == "single" &&
+                res !== undefined && res !== _b_.None){
+            _b_.print(res)
         }
 
         gns = eval("$locals_" + globals_id)
@@ -767,7 +798,17 @@ function $$eval(src, _globals, _locals){
     }catch(err){
         err.src = src
         err.module = globals_id
-        if(err.$py_error === undefined){throw $B.exception(err)}
+        if(err.$py_error === undefined){
+            throw $B.exception(err)
+        }else{
+            // Exception trace of exec starts at current frame
+            for(var i = 0, len = err.$stack.length; i < len; i++){
+                if(err.$stack[i][0] == current_frame[0]){
+                    err.$stack = err.$stack.slice(i)
+                    break
+                }
+            }
+        }
         throw err
     }finally{
         // "leave_frame" was removed so we must execute it here
@@ -782,6 +823,7 @@ function $$eval(src, _globals, _locals){
 
         $B.clear_ns(globals_id)
         $B.clear_ns(locals_id)
+
     }
 }
 $$eval.$is_func = true
@@ -794,7 +836,7 @@ function exec(src, globals, locals){
         src = $.src,
         globals = $.globals,
         locals = $.locals
-    return $$eval(src, globals, locals, true) || _b_.None
+    return $$eval(src, globals, locals, "exec") || _b_.None
 }
 
 exec.$is_func = true
@@ -1064,14 +1106,8 @@ $B.$getattr = function(obj, attr, _default){
 
             if(func.$type == "staticmethod"){return func}
 
-            var self = klass[attr].__class__ == $B.method ? klass : obj
-            function method(){
-                var args = [self]
-                for(var i = 0, len = arguments.length; i < len; i++){
-                    args.push(arguments[i])
-                }
-                return klass[attr].apply(null, args)
-            }
+            var self = klass[attr].__class__ == $B.method ? klass : obj,
+                method = klass[attr].bind(null, self)
             method.__class__ = $B.method
             method.$infos = {
                 __func__: func,
@@ -2415,23 +2451,67 @@ $Reader.read = function(){
     if(self.closed === true){
         throw _b_.ValueError.$factory('I/O operation on closed file')
     }
-    var binary = self.$content.__class__ === _b_.bytes,
-        len = binary ? self.$content.source.length : self.$content.length
+    make_content(self)
+    
+    var len = self.$binary ? self.$bytes.source.length : self.$string.length
     if(size < 0){
-        size = len
+        size = len - self.$counter
     }
 
-    if(self.$content.__class__ === _b_.bytes){
-        res = _b_.bytes.$factory(self.$content.source.slice(self.$counter,
+    if(self.$binary){
+        res = _b_.bytes.$factory(self.$bytes.source.slice(self.$counter,
             self.$counter + size))
     }else{
-        res = self.$content.substr(self.$counter, size)
+        res = self.$string.substr(self.$counter, size)
     }
     self.$counter += size
     return res
 }
 
 $Reader.readable = function(self){return true}
+
+function make_content(self){
+    // If the stream "self" is opened on text mode and does not have an
+    // attribute $string, create it from the attributes $bytes and
+    // encoding.
+    // If it is opened on binary mode and does not have an attribute $bytes,
+    // create it from attributes $string and encoding
+    if(self.$binary && self.$bytes === undefined){
+        self.$bytes = _b_.str.encode(self.$string, self.encoding)
+    }else if((! self.$binary) && self.$string === undefined){
+        self.$string = _b_.bytes.decode(self.$bytes, self.encoding)
+    }
+}
+
+function make_lines(self){
+    // If the stream "self" has no attribute $lines, build it as a list of
+    // strings if the stream is opened on text mode, of bytes otherwise
+    if(self.$lines === undefined){
+        make_content(self)
+        if(! self.$binary){
+            self.$lines = self.$string.split("\n")
+        }else{
+            console.log("make lines, binary")
+            var lines = [],
+                pos = 0,
+                source = self.$bytes.source
+            while(true){
+                var ix = source.indexOf(10)
+                if(ix == -1){
+                    lines.push({__class__: _b_.bytes, source: source})
+                    break
+                }else{
+                    lines.push({
+                        __class__: _b_.bytes,
+                        source: source.slice(0, ix + 1)
+                    })
+                    source = source.slice(ix + 1)
+                }
+            }
+            self.$lines = lines
+        }
+    }
+}
 
 $Reader.readline = function(self, size){
     var $ = $B.args("readline", 2, {self: null, size: null},
@@ -2445,16 +2525,30 @@ $Reader.readline = function(self, size){
         throw _b_.ValueError.$factory('I/O operation on closed file')
     }
 
-    if(self.$lc == self.$lines.length - 1){
-        return ''
+    make_content(self)
+    if(self.$binary){
+        var ix = self.$bytes.source.indexOf(10, self.$counter)
+        if(ix == -1){
+            return _b_.bytes.$factory()
+        }else{
+            var res = {
+                __class__: _b_.bytes,
+                source : self.$bytes.source.slice(self.$counter,
+                    ix + 1)
+            }
+            self.$counter = ix + 1
+            return res
+        }
+    }else{
+        var ix = self.$string.indexOf("\n", self.$counter)
+        if(ix == -1){
+            return ''
+        }else{
+            var res = self.$string.substring(self.$counter, ix + 1)
+            self.$counter = ix + 1
+            return res
+        }
     }
-    self.$lc++
-    var line = self.$lines[self.$lc]
-    if(size > 0){
-        line = line.substr(0, size)
-    }
-    self.$counter += line.length
-    return line
 }
 
 $Reader.readlines = function(){
@@ -2467,6 +2561,8 @@ $Reader.readlines = function(){
         throw _b_.ValueError.$factory('I/O operation on closed file')
     }
     self.$lc = self.$lc === undefined ? -1 : self.$lc
+    make_lines(self)
+
     if(hint < 0){
         var lines = self.$lines.slice(self.$lc + 1)
     }else{
@@ -2493,7 +2589,9 @@ $Reader.seek = function(self, offset, whence){
 
 $Reader.seekable = function(self){return true}
 
-$Reader.tell = function(self){return self.$counter}
+$Reader.tell = function(self){
+    return self.$counter
+}
 
 $Reader.writable = function(self){return false}
 
@@ -2503,19 +2601,42 @@ var $BufferedReader = $B.make_class('_io.BufferedReader')
 
 $BufferedReader.__mro__ = [$Reader, object]
 
-var $TextIOWrapper = $B.make_class('_io.TextIOWrapper')
+var $TextIOWrapper = $B.make_class('_io.TextIOWrapper',
+    function(){
+        var $ = $B.args("TextIOWrapper", 6,
+            {buffer: null, encoding: null, errors: null,
+             newline: null, line_buffering: null, write_through:null},
+            ["buffer", "encoding", "errors", "newline",
+             "line_buffering", "write_through"],
+             arguments,
+             {encoding: "utf-8", errors: _b_.None, newline: _b_.None,
+              line_buffering: _b_.False, write_through: _b_.False},
+              null, null)
+        return {
+            __class__: $TextIOWrapper,
+            $bytes: $.buffer.$bytes,
+            encoding: $.encoding,
+            errors: $.errors,
+            newline: $.newline
+        }
+    }
+)
 
 $TextIOWrapper.__mro__ = [$Reader, object]
 
 $B.set_func_names($TextIOWrapper, "builtins")
 
+$B.Reader = $Reader
 $B.TextIOWrapper = $TextIOWrapper
+$B.BufferedReader = $BufferedReader
 
 function $url_open(){
     // first argument is file : can be a string, or an instance of a DOM File object
     var $ns = $B.args('open', 3, {file: null, mode: null, encoding: null},
         ['file', 'mode', 'encoding'], arguments,
         {mode: 'r', encoding: 'utf-8'}, 'args', 'kw'),
+        $bytes,
+        $string,
         $res
     for(var attr in $ns){eval('var ' + attr + '=$ns["' + attr + '"]')}
     if(args.length > 0){var mode = args[0]}
@@ -2532,12 +2653,7 @@ function $url_open(){
         // read the file content and return an object with file object methods
         var is_binary = mode.search('b') > -1
         if($B.file_cache.hasOwnProperty($ns.file)){
-            var str_content = $B.file_cache[$ns.file]
-            if(is_binary){
-                $res = _b_.str.encode(str_content, "utf-8")
-            }else{
-                $res = str_content
-            }
+            $string = $B.file_cache[$ns.file]
         }else if($B.files && $B.files.hasOwnProperty($ns.file)){
             // Virtual file system created by
             // python -m brython --make_file_system
@@ -2546,12 +2662,8 @@ function $url_open(){
             for(const char of $res){
                 source.push(char.charCodeAt(0))
             }
-            $res = _b_.bytes.$factory()
-            $res.source = source
-            if(! is_binary){
-                // Decode bytes with specified encoding
-                $res = _b_.bytes.decode($res, $ns.encoding)
-            }
+            $bytes = _b_.bytes.$factory()
+            $bytes.source = source
         }else if($B.protocol != "file"){
             // Try to load file by synchronous Ajax call
             if(is_binary){
@@ -2563,7 +2675,7 @@ function $url_open(){
                 try{
                     var status = this.status
                     if(status == 404){
-                        $res = _b_.FileNotFoundError(file)
+                        $res = _b_.FileNotFoundError.$factory(file)
                     }else if(status != 200){
                         $res = _b_.IOError.$factory('Could not open file ' +
                             file + ' : status ' + status)
@@ -2581,24 +2693,22 @@ function $url_open(){
             req.overrideMimeType('text/plain; charset=utf-8')
             req.send()
 
-            if($res.constructor === Error){throw $res}
+            if($res.constructor === Error){
+                throw $res
+            }
+            $string = $res
         }
 
-        if($res === undefined){
+        if($string === undefined && $bytes === undefined){
             throw _b_.FileNotFoundError.$factory($ns.file)
         }
 
-        if(typeof $res == "string"){
-            var lines = $res.split('\n')
-            for(var i = 0; i < lines.length - 1; i++){lines[i] += '\n'}
-        }else{
-            var lines = _b_.bytes.split($res, _b_.bytes.$factory([10]))
-        }
         // return the file-like object
         var res = {
-            $content: $res,
+            $binary: is_binary,
+            $string: $string,
+            $bytes: $bytes,
             $counter: 0,
-            $lines: lines,
             closed: False,
             encoding: encoding,
             mode: mode,

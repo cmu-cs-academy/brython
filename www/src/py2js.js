@@ -342,10 +342,10 @@ var $_SyntaxError = $B.parser.$_SyntaxError = function (context, msg, indent){
     if(root.line_info){
         line_num = root.line_info
     }
-    if(indent !== undefined){line_num++}
-    if(indent === undefined){
+    console.log("syntax error", msg, indent)
+    if(indent === undefined || typeof indent != "number"){
         if(Array.isArray(msg)){
-            $B.$SyntaxError(module, msg[0], src, $pos, line_num)
+            $B.$SyntaxError(module, msg[0], src, $pos, line_num, root)
         }
         if(msg === "Triple string end not found"){
             // add an extra argument : used in interactive mode to
@@ -354,7 +354,11 @@ var $_SyntaxError = $B.parser.$_SyntaxError = function (context, msg, indent){
                 'invalid syntax : triple string end not found',
                 src, $pos, line_num, root)
         }
-        $B.$SyntaxError(module, 'invalid syntax', src, $pos, line_num, root)
+        var message = 'invalid syntax'
+        if(! (msg.startsWith("token "))){
+            message += ' (' + msg + ')'
+        }
+        $B.$SyntaxError(module, message, src, $pos, line_num, root)
     }else{throw $B.$IndentationError(module, msg, src, $pos, line_num, root)}
 }
 
@@ -499,6 +503,7 @@ var $Node = $B.parser.$Node = function(type){
                 // create a node to set the yielded value to the last
                 // value sent to the generator, if any
                 var set_yield = new $Node()
+                set_yield.line_num = this.line_num
                 set_yield.is_set_yield_value = true
                 set_yield.after_yield = true
 
@@ -1517,8 +1522,16 @@ var $AwaitCtx = $B.parser.$AwaitCtx = function(context){
     this.tree = []
     context.tree.push(this)
 
+    var p = context
+    while(p){
+        if(p.type == "list_or_tuple"){
+            p.is_await = true
+        }
+        p = p.parent
+    }
+
     this.to_js = function(){
-        return 'await $B.promise(' + $to_js(this.tree) + ')'
+        return 'await ($B.promise(' + $to_js(this.tree) + '))'
     }
 }
 
@@ -2722,7 +2735,9 @@ var $DefCtx = $B.parser.$DefCtx = function(context){
         if(this.type == "generator"){
             var suspension_node = $NodeJS("// suspension")
             suspension_node.is_set_yield_value = true
+            suspension_node.parent = node
             suspension_node.num = node.num
+            suspension_node.line_num = node.line_num
             nodes.push(suspension_node)
         }
 
@@ -2831,7 +2846,9 @@ var $DefCtx = $B.parser.$DefCtx = function(context){
 
         for(var attr in this.binding){this.varnames[attr] = true}
         var co_varnames = []
-        for(var attr in this.varnames){co_varnames.push('"' + attr + '"')}
+        for(var attr in this.varnames){
+            co_varnames.push('"' + $B.from_alias(attr) + '"')
+        }
 
         // Get "free variables" (referenced in function but not bound inside
         // it)
@@ -2860,8 +2877,8 @@ var $DefCtx = $B.parser.$DefCtx = function(context){
             h1 + 'co_name: "' + this.name + '"' +
             h1 + 'co_nlocals: ' + co_varnames.length +
             h1 + 'co_posonlyargcount: ' + (this.pos_only || 0) +
-            h1 + 'co_varnames: [' + co_varnames.join(', ') + ']' +
-            h + '}\n' + ' '.repeat(indent + 4) +'};'
+            h1 + 'co_varnames: $B.fast_tuple([' + co_varnames.join(', ') + ']' +
+            h + ')}\n' + ' '.repeat(indent + 4) +'};'
 
         // End with None for interactive interpreter
         js += 'None;'
@@ -3265,7 +3282,7 @@ var $ExprCtx = $B.parser.$ExprCtx = function(context, name, with_commas){
         else if(this.tree.length == 1){res = this.tree[0].to_js(arg)}
         else{res = '_b_.tuple.$factory([' + $to_js(this.tree) + '])'}
         if(this.is_await){
-            res = "await $B.promise(" + res + ")"
+            res = "await ($B.promise(" + res + "))"
         }
         if(this.assign){
             // Assignement expression (PEP 572)
@@ -3686,8 +3703,8 @@ var $ForExpr = $B.parser.$ForExpr = function(context){
 
         // TARGET = await type(iter).__anext__(iter)
         if(target.tree.length == 1){
-            var js = target.to_js() + ' = await $B.promise(' +
-                anext_name + '(' + iterable_name + '))'
+            var js = target.to_js() + ' = await ($B.promise(' +
+                anext_name + '(' + iterable_name + ')))'
             try_node.add($NodeJS(js))
         }else{
             var new_node = new $Node(),
@@ -3697,8 +3714,8 @@ var $ForExpr = $B.parser.$ForExpr = function(context){
             target.parent = expr
             var assign = new $AssignCtx(expr)
 
-            new $RawJSCtx(assign, 'await $B.promise(' +
-                anext_name + '(' + iterable_name + '))')
+            new $RawJSCtx(assign, 'await ($B.promise(' +
+                anext_name + '(' + iterable_name + ')))')
 
             try_node.add(new_node)
         }
@@ -3813,7 +3830,7 @@ var $FromCtx = $B.parser.$FromCtx = function(context){
 
         // FIXME : Replacement still needed ?
         var mod_name = this.module.replace(/\$/g, '')
-        res[pos++] = '$B.$import("'
+        res[pos++] = 'var module = $B.$import("'
         res[pos++] = mod_name + '",["'
         res[pos++] = this.names.join('","') + '"], {'
         var sep = ''
@@ -3828,9 +3845,9 @@ var $FromCtx = $B.parser.$FromCtx = function(context){
             // Set attribute to indicate that the scope has a
             // 'from X import *' : this will make name resolution harder :-(
             scope.blurred = true
-            res[pos++] = '\n' + head + 'for(var $attr in $B.imported["' +
-                mod_name + '"]){if($attr.charAt(0) !== "_" && $attr.charAt(0) !== "$")' +
-                '{$locals[$attr] = $B.imported["' + mod_name + '"][$attr]}};'
+            res[pos++] = '\n' + head + 'for(var attr in module' +
+                '){if(attr.charAt(0) !== "_" && attr.charAt(0) !== "$")' +
+                '{$locals[attr] = module[attr]}};'
         }else{
             this.names.forEach(function(name){
                 module.imports[this.module + '.' + name] = true
@@ -4706,6 +4723,17 @@ var $LambdaCtx = $B.parser.$LambdaCtx = function(context){
     this.vars = []
     this.locals = []
 
+    // initialize object for names bound in the function
+    this.node = $get_node(this)
+    this.node.binding = {}
+
+    // Arrays for arguments
+    this.positional_list = []
+    this.default_list = []
+    this.other_args = null
+    this.other_kw = null
+    this.after_star = []
+
     this.toString = function(){
         return '(lambda) ' + this.args_start + ' ' + this.body_start
     }
@@ -4714,7 +4742,7 @@ var $LambdaCtx = $B.parser.$LambdaCtx = function(context){
 
         this.js_processed = true
 
-        var node = $get_node(this),
+        var node = this.node,
             module = $get_module(this),
             src = $get_src(context),
             args = src.substring(this.args_start, this.body_start),
@@ -4928,9 +4956,12 @@ var $ListOrTupleCtx = $B.parser.$ListOrTupleCtx = function(context,real){
                         delete $B.$py_src[listcomp_name]
 
                         js += 'return $locals_lc' + ix + '["x' + ix + '"]'
-                        js = '(function($locals_' + listcomp_name + '){' +
+                        js = 'function($locals_' + listcomp_name + '){' +
                             js + '})({})'
-                        return js
+                        if(this.is_await){
+                            js = 'async ' + js
+                        }
+                        return '(' + js
 
                     case 'dict_or_set_comp':
                         if(this.expression.length == 1){
@@ -5847,6 +5878,15 @@ var $StringCtx = $B.parser.$StringCtx = function(context,value){
             return elts.join(' + ')
         }
 
+        function prepare(value){
+            value = value.replace(/\n/g,'\\n\\\n')
+            value = value.replace(/\\U([A-Fa-f0-9]{8})/gm,
+                        function(mo){
+                            return String.fromCharCode("0x"+mo.slice(2))
+                        })
+            return value
+        }
+
         for(var i = 0; i < this.tree.length; i++){
             if(this.tree[i].type == "call"){
                 // syntax like "hello"(*args, **kw) raises TypeError
@@ -5873,10 +5913,10 @@ var $StringCtx = $B.parser.$StringCtx = function(context,value){
                     if(is_fstring){
                         res += fstring(value)
                     }else{
-                        res += value.replace(/\n/g,'\\n\\\n')
+                        res += prepare(value)
                     }
                 }else{
-                    res += value.substr(1).replace(/\n/g,'\\n\\\n')
+                    res += prepare(value.substr(1))
                 }
                 if(i < this.tree.length - 1){res += '+'}
             }
@@ -6004,7 +6044,7 @@ var $TryCtx = $B.parser.$TryCtx = function(context){
 
     this.transform = function(node, rank){
         if(node.parent.children.length == rank + 1){
-            $_SyntaxError(context, "missing clause after 'try'")
+            $_SyntaxError(context, ["unexpected EOF while parsing"])
         }else{
             var next_ctx = node.parent.children[rank + 1].context.tree[0]
             switch(next_ctx.type) {
@@ -6013,7 +6053,7 @@ var $TryCtx = $B.parser.$TryCtx = function(context){
                 case 'single_kw':
                     break
                 default:
-                    $_SyntaxError(context, "missing clause after 'try'")
+                    $_SyntaxError(context, "no clause after try")
             }
         }
         var scope = $get_scope(this)
@@ -6354,7 +6394,7 @@ var $WithCtx = $B.parser.$WithCtx = function(context){
         new $NodeJSCtx(catch_node, 'catch(' + this.err_name + ')')
 
         var js = this.exc_name + ' = false;' + this.err_name +
-                ' = $B.exception(' + this.err_name + ')\n' +
+                ' = $B.exception(' + this.err_name + ', true)\n' +
                 ' '.repeat(node.indent + 4) +
                 'var $b = ' + this.cmexit_name + '(' +
                 this.err_name + '.__class__,' +
@@ -6453,7 +6493,7 @@ var $WithCtx = $B.parser.$WithCtx = function(context){
         if(alias){
             if(alias.tree[0].tree[0].type != "list_or_tuple"){
                 var js = alias.tree[0].to_js() + ' = ' +
-                    'await $B.promise(' + cmenter_name + ')'
+                    'await ($B.promise(' + cmenter_name + '))'
                 new_nodes.push($NodeJS(js))
             }else{
                 // Form "with manager as(x, y)"
@@ -6464,13 +6504,13 @@ var $WithCtx = $B.parser.$WithCtx = function(context){
                 alias.tree[0].tree[0].parent = expr
                 var assign = new $AssignCtx(expr)
 
-                new $RawJSCtx(assign, 'await $B.promise(' +
-                    cmenter_name + ')')
+                new $RawJSCtx(assign, 'await ($B.promise(' +
+                    cmenter_name + '))')
 
                 new_nodes.push(new_node)
             }
         }else{
-            new_nodes.push($NodeJS('await $B.promise(' + cmenter_name + ')'))
+            new_nodes.push($NodeJS('await ($B.promise(' + cmenter_name + '))'))
         }
 
         // try:
@@ -6489,9 +6529,9 @@ var $WithCtx = $B.parser.$WithCtx = function(context){
         catch_node.add($NodeJS(this.exc_name + ' = true'))
         catch_node.add($NodeJS('var ' + err_name +
             ' = $B.imported["_sys"].exc_info()'))
-        var if_node = $NodeJS('if(! await $B.promise(' +
+        var if_node = $NodeJS('if(! await ($B.promise(' +
             this.cmexit_name + '(' + this.cm_name + ', ' + err_name + '[0], ' +
-            err_name + '[1], ' + err_name + '[2])))')
+            err_name + '[1], ' + err_name + '[2]))))')
         catch_node.add(if_node)
         //         raise
         if_node.add($NodeJS('$B.$raise()'))
@@ -6500,8 +6540,8 @@ var $WithCtx = $B.parser.$WithCtx = function(context){
         var else_node = $NodeJS('if(! ' + this.exc_name +')')
         new_nodes.push(else_node)
         //     await aexit(mgr, None, None, None)
-        else_node.add($NodeJS('await $B.promise(' + this.cmexit_name + '(' +
-            this.cm_name +', _b_.None, _b_.None, _b_.None))'))
+        else_node.add($NodeJS('await ($B.promise(' + this.cmexit_name + '(' +
+            this.cm_name +', _b_.None, _b_.None, _b_.None)))'))
 
         // Remove original node
         node.parent.children.splice(rank, 1)
@@ -6608,6 +6648,7 @@ var $YieldCtx = $B.parser.$YieldCtx = function(context, is_await){
         // send() or throw().
         var new_node = $NodeJS('// placeholder for generator sent value')
         new_node.is_set_yield_value = true
+        new_node.line_num = node.line_num
         new_node.after_yield = true
         new_node.indent = node.indent
         node.parent.insert(rank + 1, new_node)
@@ -7037,6 +7078,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                       case 'op':
                       case 'yield':
                           break
+                      case 'annotation':
+                          $_SyntaxError(context, "empty annotation")
                       default:
                           $_SyntaxError(context, token)
                   }
@@ -7223,7 +7266,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
                             ['kwarg', 'star_arg', 'double_star_arg'].
                                 indexOf($B.last(context.parent.tree).tree[0].type) == -1){
                         $_SyntaxError(context,
-                            ['non-keyword arg after keyword arg'])
+                            ['non-keyword argument after keyword argument'])
                     }
                     if(context.tree.length > 0){
                         var son = context.tree[context.tree.length - 1]
@@ -7245,7 +7288,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
                                 ['kwarg','star_arg', 'double_star_arg'].
                                     indexOf($B.last(context.parent.tree).tree[0].type) == -1){
                             $_SyntaxError(context,
-                                ['non-keyword arg after keyword arg'])
+                                ['non-keyword argument after keyword argument'])
                         }
                         return $transition(context.parent, token, value)
                     }
@@ -7312,10 +7355,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
             switch(token){
                 case ',':
                 case ':':
-                    //if(context.tree[0].type == "expr" &&
-                    //        context.tree[0].tree[0].type == "id"){
-                        context.parent.set_alias(context.tree[0].tree[0])
-                    //}
+                    context.parent.set_alias(context.tree[0].tree[0])
                     return $transition(context.parent, token, value)
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
@@ -7367,8 +7407,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     return context
                 case '(':
                     if(context.name == null){
-                        $_SyntaxError(context, 'token ' + token +
-                            ' after ' + context)
+                        $_SyntaxError(context,
+                            "missing name in function definition")
                     }
                     context.has_args = true;
                     return new $FuncArgs(context)
@@ -7377,6 +7417,12 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 case ':':
                     if(context.has_args){
                         return $BodyCtx(context)
+                    }else{
+                        $_SyntaxError(context, "missing function parameters")
+                    }
+                case 'eol':
+                    if(context.has_args){
+                        $_SyntaxError(context, "missing colon")
                     }
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
@@ -7420,7 +7466,9 @@ var $transition = $B.parser.$transition = function(context, token, value){
                               $_SyntaxError(context, 'token ' + token +
                                   ' after ' + context)
                         case ',':
-                            if(context.real == 'dict_or_set'){context.real = 'set'}
+                            if(context.real == 'dict_or_set'){
+                                context.real = 'set'
+                            }
                             if(context.real == 'dict' &&
                                     context.nb_dict_items() % 2){
                                 $_SyntaxError(context, 'token ' + token +
@@ -7429,7 +7477,9 @@ var $transition = $B.parser.$transition = function(context, token, value){
                             context.expect = 'id'
                             return context
                         case ':':
-                          if(context.real == 'dict_or_set'){context.real = 'dict'}
+                          if(context.real == 'dict_or_set'){
+                              context.real = 'dict'
+                          }
                           if(context.real == 'dict'){
                               context.expect = ','
                               return new $AbstractExprCtx(context,false)
@@ -7438,8 +7488,11 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         case 'for':
 
                             // comprehension
-                            if(context.real == 'dict_or_set'){context.real = 'set_comp'}
-                            else{context.real = 'dict_comp'}
+                            if(context.real == 'dict_or_set'){
+                                context.real = 'set_comp'
+                            }else{
+                                context.real = 'dict_comp'
+                            }
                             var lst = new $ListOrTupleCtx(context, 'dict_or_set_comp')
                             lst.intervals = [context.start + 1]
                             lst.vars = context.vars
@@ -7640,10 +7693,18 @@ var $transition = $B.parser.$transition = function(context, token, value){
               case 'lambda':
               case 'pass':
               case 'str':
-              case '{':
                   $_SyntaxError(context, 'token ' + token + ' after ' +
                       context)
                   break
+              case '{':
+                  // Special case : "print {...}" must raise a SyntaxError
+                  // with "Missing parenthesis"...
+                  if(context.tree[0].type != "id" ||
+                          ["print", "exec"].indexOf(context.tree[0].value) == -1){
+                      $_SyntaxError(context, 'token ' + token + ' after ' +
+                          context)
+                  }
+                  return new $DictOrSetCtx(context)
               case '[':
               case '(':
               case '.':
@@ -7825,7 +7886,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 var parent = context.parent
                 while(parent){
                     if(parent.type == "assign" || parent.type == "augm_assign"){
-                        $_SyntaxError(context, "augmented assign inside assign")
+                        $_SyntaxError(context,
+                            "augmented assignment inside assignment")
                     }else if(parent.type == "op"){
                         $_SyntaxError(context, ["can't assign to operator"])
                     }
@@ -7897,7 +7959,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                            $_SyntaxError(context, 'token ' + token + ' after '
                                + context)
                        }else if(context.type == "augm_assign"){
-                           $_SyntaxError(context, "assign inside augmented assign")
+                           $_SyntaxError(context,
+                               "assignment inside augmented assignment")
                        }
                    }
                    context = context.tree[0]
@@ -7918,7 +7981,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         context.parent.parent.type == "call" &&
                         context.parent.parent.parent.type == "lambda"){
                     // lambda x := 1
-                    $_SyntaxError(context, ':= invalid, parent ' + ptype)
+                    $_SyntaxError(context,
+                        ':= invalid inside function arguments' )
                 }
                 if(context.tree.length == 1 &&
                         context.tree[0].type == "id"){
@@ -7965,6 +8029,13 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 }
                 return new $AbstractExprCtx(new $TernaryCtx(ctx), false)
             case 'eol':
+                // Special case for print and exec
+                if(context.tree.length == 2 &&
+                        context.tree[0].type == "id" &&
+                        ["print", "exec"].indexOf(context.tree[0].value) > -1){
+                    $_SyntaxError(context, ["Missing parentheses in call " +
+                        "to '" + context.tree[0].value + "'."])
+                }
                 if(["dict_or_set", "list_or_tuple"].indexOf(context.parent.type) == -1){
                     var t = context.tree[0]
                     if(t.type == "packed" ||
@@ -8096,6 +8167,10 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         return $transition(context.parent, token)
                     }
                 case ':':
+                    if(context.parent.parent.type == "lambda"){
+                        // end of parameters
+                        return $transition(context.parent.parent, ":")
+                    }
                     // annotation associated with a function parameter
                     if(context.has_default){ // issue 610
                         $_SyntaxError(context, 'token ' + token + ' after ' +
@@ -8110,7 +8185,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
             switch (token) {
                 case 'id':
                     if(context.has_kw_arg){
-                        $_SyntaxError(context,'duplicate kw arg')
+                        $_SyntaxError(context, 'duplicate keyword argument')
                     }
                     if(context.expect == 'id'){
                         context.expect = ','
@@ -8129,16 +8204,28 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     $_SyntaxError(context, 'token ' + token + ' after ' +
                         context)
                 case ')':
+                    var last = $B.last(context.tree)
+                    if(last && last.type == "func_star_arg"){
+                        if(last.name == "*"){
+                            if(context.op == '*'){
+                                // Form "def f(x, *)" is invalid
+                                $_SyntaxError(context,
+                                    ['named arguments must follow bare *'])
+                            }else{
+                                $_SyntaxError(context, 'invalid syntax')
+                            }
+                        }
+                    }
                     return context.parent
                 case 'op':
                     if(context.has_kw_arg){
-                        $_SyntaxError(context, 'duplicate kw arg')
+                        $_SyntaxError(context, 'duplicate keyword argument')
                     }
                     var op = value
                     context.expect = ','
                     if(op == '*'){
                         if(context.has_star_arg){
-                            $_SyntaxError(context,'duplicate star arg')
+                            $_SyntaxError(context,'duplicate star argument')
                         }
                         return new $FuncStarArgCtx(context, '*')
                     }else if(op == '**'){
@@ -8154,6 +8241,10 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         return new $EndOfPositionalCtx(context)
                     }
                     $_SyntaxError(context, 'token ' + op + ' after ' + context)
+                case ':':
+                    if(context.parent.type == "lambda"){
+                        return $transition(context.parent, token)
+                    }
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
 
@@ -8179,6 +8270,10 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     }
                     return $transition(context.parent, token)
                 case ':':
+                    if(context.parent.parent.type == "lambda"){
+                        // end of parameters
+                        return $transition(context.parent.parent, ":")
+                    }
                     // annotation associated with a function parameter
                     if(context.name === undefined){
                         $_SyntaxError(context,
@@ -8231,9 +8326,10 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 case 'int':
                 case 'float':
                 case 'imaginary':
-                    if(context.value == "print"){
+                    if(["print", "exec"].indexOf(context.value) > -1 ){
                         $_SyntaxError(context,
-                            ["missing parenthesis in call to 'print'"])
+                            ["missing parenthesis in call to '" +
+                            context.value + "'"])
                     }
                     $_SyntaxError(context, 'token ' + token + ' after ' +
                         context)
@@ -8336,7 +8432,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 return $transition(context.parent, token)
             }
             if(context.args === undefined && token != "("){
-                return $transition(new $CallCtx(context), token, value)
+                return $transition(new $FuncArgs(context), token, value)
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
 
@@ -8354,7 +8450,9 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         case 'tuple':
                         case 'gen_expr':
                             if(token == ')'){
-                                if(context.parent.type == "expr" &&
+                                while(context.type == "list_or_tuple" &&
+                                        context.real == "tuple" &&
+                                        context.parent.type == "expr" &&
                                         context.parent.parent.type == "node" &&
                                         context.tree.length == 1){
                                     // Not a tuple, just an expression inside
@@ -8362,12 +8460,19 @@ var $transition = $B.parser.$transition = function(context, token, value){
                                     // the expression.
                                     // Required for code like
                                     //     (pars): bool = True
+                                    //
+                                    // See also issue #1253 with code like
+                                    //
+                                    // def f():
+                                    //     ((((x)))) = 1
+                                    //
                                     var node = context.parent.parent,
                                         ix = node.tree.indexOf(context.parent),
                                         expr = context.tree[0]
                                     expr.parent = node
                                     expr.$in_parens = true // keep information
                                     node.tree.splice(ix, 1, expr)
+                                    context = expr.tree[0]
                                 }
                                 context.closed = true
                                 if(context.real == 'gen_expr'){
@@ -8531,11 +8636,6 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     return new $AsyncCtx(context)
                 case 'await':
                     return new $AbstractExprCtx(new $AwaitCtx(context), true)
-                    /*
-                    var yexpr = new $AbstractExprCtx(
-                        new $YieldCtx(context, true), true)
-                    return $transition(yexpr, "from")
-                    */
                 case 'class':
                     return new $ClassCtx(context)
                 case 'continue':
@@ -8617,7 +8717,6 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     }
                     return context
             }
-            console.log('syntax error', 'token', token, 'after', context)
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
         case 'not':
             switch(token) {
@@ -8697,7 +8796,6 @@ var $transition = $B.parser.$transition = function(context, token, value){
         case 'packed':
             if(context.tree.length > 0 && token == "["){
                 // Apply subscription to packed element (issue #1139)
-                console.log("apply to packed element", context.tree[0])
                 return $transition(context.tree[0], token, value)
             }
             if(token == 'id'){
@@ -8768,8 +8866,10 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     return $transition(new $AbstractExprCtx(context, false),
                         token, value)
                 case ',':
-                    return $transition(context.parent, token)
                 case ')':
+                    if(context.tree.length == 0){
+                        $_SyntaxError(context, "unnamed star argument")
+                    }
                     return $transition(context.parent, token)
                 case ':':
                     if(context.parent.parent.type == 'lambda'){
@@ -8783,8 +8883,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     return new $AbstractExprCtx(new $SubCtx(context.parent),
                         false)
                 case '(':
-                    // Strings are not callable. We replace the string by a call
-                    // to an object that will raise the correct exception
+                    // Strings are not callable. We replace the string by a
+                    // call to an object that will raise the correct exception
                     context.parent.tree[0] = context
                     return new $CallCtx(context.parent)
                 case 'str':
@@ -9044,7 +9144,10 @@ var $tokenize = $B.parser.$tokenize = function(root, src) {
             }
             // ignore empty lines
             var _s = src.charAt(pos)
-            if(_s == '\n'){pos++; lnum++; indent = null; continue}
+            if(_s == '\n'){
+                pos++; lnum++; indent = null;
+                continue
+            }
             else if(_s == '#'){ // comment
                 var offset = src.substr(pos).search(/\n/)
                 if(offset == -1){break}
@@ -9515,7 +9618,7 @@ var $tokenize = $B.parser.$tokenize = function(root, src) {
                 break
             case '\n':
                 // line end
-                lnum++
+               lnum++
                 if(br_stack.length > 0){
                     // implicit line joining inside brackets
                     pos++
@@ -9665,6 +9768,12 @@ var $tokenize = $B.parser.$tokenize = function(root, src) {
                 if(src.charAt(pos + 1) == '\n'){
                   lnum++
                   pos += 2
+                  if(pos == src.length){
+                      $_SyntaxError(context,
+                          ["unexpected EOF while parsing"])
+                  }else if(context.type == "node"){
+                      $_SyntaxError(context, 'nothing before \\')
+                  }
                   break
                 }else{
                     $pos = pos
@@ -9690,18 +9799,26 @@ var $tokenize = $B.parser.$tokenize = function(root, src) {
             ["unexpected EOF while parsing (" + fname + ", line " +
                 (lines.length - 1) + ")"])
     }
-    if(context !== null && context.type == "async"){
-        // issue 941
-        console.log("error with async", pos, src, src.substr(pos))
-        $pos = pos - 7
-        throw $_SyntaxError(context, "car " + car + "after async", pos)
+    if(context !== null){
+        if(context.type == "async"){
+            // issue 941
+            console.log("error with async", pos, src, src.substr(pos))
+            $pos = pos - 7
+            throw $_SyntaxError(context, "car " + car + "after async", pos)
+        }else if(context.tree[0] &&
+                $indented.indexOf(context.tree[0].type) > -1){
+            $pos = pos - 1
+            $_SyntaxError(context, 'expected an indented block', pos)
+        }else{
+            var parent = current.parent
+            if(parent.context && parent.context.tree &&
+                    parent.context.tree[0] &&
+                    parent.context.tree[0].type == "try"){
+                $pos = pos - 1
+                $_SyntaxError(context, ["unexpected EOF while parsing"])
+            }
+        }
     }
-    if(context !== null && context.tree[0] &&
-            $indented.indexOf(context.tree[0].type) > -1){
-        $pos = pos - 1
-        $_SyntaxError(context, 'expected an indented block', pos)
-    }
-
 }
 
 var $create_root_node = $B.parser.$create_root_node = function(src, module,
@@ -9842,10 +9959,8 @@ $B.py2js = function(src, module, locals_id, parent_scope, line_num){
 
     root.add(catch_node)
 
-    if($B.profile > 0){$add_profile(root, null, module)}
-    if($B.debug > 0){
-        $add_line_num(root, null, module)
-    }
+    // Add line numbers for debugging
+    $add_line_num(root, null, module)
 
     var t1 = new Date().getTime()
     if($B.debug > 2){
@@ -9860,14 +9975,57 @@ $B.py2js = function(src, module, locals_id, parent_scope, line_num){
     return root
 }
 
+$B.set_import_paths = function(){
+    // Set $B.meta_path, the list of finders to use for imports
+    //
+    // The original list in $B.meta_path is made of 3 finders defined in
+    // py_import.js :
+    // - finder_VFS : in the Virtual File System : a Javascript object with
+    //   source of the standard distribution
+    // - finder_static_stlib : use the script stdlib_path.js to identify the
+    //   packages and modules in the standard distribution
+    // - finder_path : search module at different urls
+
+    var meta_path = [],
+        path_hooks = []
+
+    // $B.use_VFS is set to true if the script brython_stdlib.js or
+    // brython_modules.js has been loaded in the page. In this case we use the
+    // Virtual File System (VFS)
+    if($B.use_VFS){
+        meta_path.push($B.$meta_path[0])
+        //path_hooks.push($B.$path_hooks[0])
+    }
+
+    if($B.$options.static_stdlib_import !== false && $B.protocol != "file"){
+        // Add finder using static paths
+        meta_path.push($B.$meta_path[1])
+        // Remove /Lib and /libs in sys.path :
+        // if we use the static list and the module
+        // was not find in it, it's no use searching twice in the same place
+        if($B.path.length > 3) {
+            $B.path.shift()
+            $B.path.shift()
+        }
+    }
+
+    // Use the defaut finder using sys.path if protocol is not file://
+    if($B.protocol !== "file"){
+        meta_path.push($B.$meta_path[2])
+        path_hooks.push($B.$path_hooks[0])
+    }
+    $B.meta_path = meta_path
+    $B.path_hooks = path_hooks
+}
+
 var brython = $B.parser.brython = function(options){
     // By default, only set debug level
-    if(options === undefined){options = {'debug': 0}}
+    if(options === undefined){options = {'debug': 1}}
 
     // If the argument provided to brython() is a number, it is the debug
     // level
     if(typeof options == 'number'){options = {'debug': options}}
-    if(options.debug === undefined){options.debug = 0}
+    if(options.debug === undefined){options.debug = 1}
     $B.debug = options.debug
     // set built-in variable __debug__
     _b_.__debug__ = $B.debug > 0
@@ -9892,46 +10050,7 @@ var brython = $B.parser.brython = function(options){
 
     $B.$options = options
 
-    // Set $B.meta_path, the list of finders to use for imports
-    //
-    // The original list in $B.meta_path is made of 3 finders defined in
-    // py_import.js :
-    // - finder_VFS : in the Virtual File System : a Javascript object with
-    //   source of the standard distribution
-    // - finder_static_stlib : use the script stdlib_path.js to identify the
-    //   packages and modules in the standard distribution
-    // - finder_path : search module at different urls
-
-    var meta_path = [],
-        path_hooks = []
-
-    // $B.use_VFS is set to true if the script brython_stdlib.js or
-    // brython_modules.js has been loaded in the page. In this case we use the
-    // Virtual File System (VFS)
-    if($B.use_VFS){
-        meta_path.push($B.$meta_path[0])
-        //path_hooks.push($B.$path_hooks[0])
-    }
-
-    if(options.static_stdlib_import !== false && $B.protocol != "file"){
-        // Add finder using static paths
-        meta_path.push($B.$meta_path[1])
-        // Remove /Lib and /libs in sys.path :
-        // if we use the static list and the module
-        // was not find in it, it's no use searching twice in the same place
-        if($B.path.length > 3) {
-            $B.path.shift()
-            $B.path.shift()
-        }
-    }
-
-    // Use the defaut finder using sys.path if protocol is not file://
-    if($B.protocol !== "file"){
-        meta_path.push($B.$meta_path[2])
-        path_hooks.push($B.$path_hooks[0])
-    }
-    $B.meta_path = meta_path
-    $B.path_hooks = path_hooks
+    $B.set_import_paths()
 
     // URL of the script where function brython() is called
     var $href = $B.script_path = _window.location.href,
@@ -10249,7 +10368,7 @@ var _run_scripts = $B.parser._run_scripts = function(options){
             }
         }
     }
-
+    
     if(options.ipy_id === undefined){$B.loop()}
 
     /* Uncomment to check the names added in global Javascript namespace

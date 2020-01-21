@@ -77,8 +77,6 @@ $B.$syntax_err_line = function(exc, module, src, pos, line_num){
 }
 
 $B.$SyntaxError = function(module, msg, src, pos, line_num, root) {
-    //$B.frames_stack.push([module, {$line_info: line_num + "," + module},
-    //    module, {$src: src}])
     if(root !== undefined && root.line_info !== undefined){
         // this may happen for syntax errors inside a lambda
         line_num = root.line_info
@@ -126,8 +124,10 @@ $B.print_stack = function(stack){
 // class of traceback objects
 var traceback = $B.traceback = $B.make_class("traceback",
     function(exc, stack){
-        if(stack === undefined)
+        var frame = $B.last($B.frames_stack)
+        if(stack === undefined){
             stack = exc.$stack
+        }
         return {
             __class__ : traceback,
             $stack: stack,
@@ -150,21 +150,28 @@ traceback.__getattribute__ = function(self, attr){
             console.log("last frame undef", self.$stack, Object.keys(self.$stack))
         }
         var line_info = first_frame[1].$line_info
+        if(first_frame[1].$frozen_line_info != undefined){
+            line_info = first_frame[1].$frozen_line_info
+        }
     }
 
     switch(attr){
         case "tb_frame":
             return frame.$factory(self.$stack)
         case "tb_lineno":
+            var lineno
             if(line_info === undefined ||
                     first_frame[0].search($B.lambda_magic) > -1){
                 if(first_frame[4] && first_frame[4].$infos &&
                         first_frame[4].$infos.__code__){
-                    return first_frame[4].$infos.__code__.co_firstlineno
+                    lineno = first_frame[4].$infos.__code__.co_firstlineno
+                }else{
+                    lineno = -1
                 }
-                return -1
+            }else{
+                lineno = parseInt(line_info.split(",")[0])
             }
-            else{return parseInt(line_info.split(",")[0])}
+            return lineno
         case "tb_lasti":
             if(line_info === undefined){
                 return "<unknown>"
@@ -180,10 +187,13 @@ traceback.__getattribute__ = function(self, attr){
                 }
                 if(src === undefined && $B.file_cache.hasOwnProperty(info[1])){
                     src = $B.file_cache[info[1]]
+                }else if($B.imported[info[1]] && $B.imported[info[1]].__file__ ){
+                    src = $B.file_cache[$B.imported[info[1]].__file__]
                 }
                 if(src !== undefined){
                     return src.split("\n")[parseInt(info[0] - 1)].trim()
                 }else{
+                    console.log("no src for", info)
                     return "<unknown>"
                 }
             }
@@ -209,8 +219,10 @@ var frame = $B.make_class("frame",
             f_builtins : {}, // XXX fix me
             $stack: deep_copy(stack)
         }
-        if(pos === undefined){pos = 0}
-        //pos = fs.length - pos - 1
+        if(pos === undefined){
+            pos = 0
+            // pos = fs.length - 1
+        }
         res.$pos = pos
         if(fs.length){
             var _frame = fs[pos],
@@ -313,7 +325,14 @@ BaseException.__init__ = function(self){
 }
 
 BaseException.__repr__ = function(self){
-    return self.__class__.$infos.__name__ + repr(self.args)
+    var res =  self.__class__.$infos.__name__
+    if(self.args[0]){
+        res += '(' + repr(self.args[0])
+    }
+    if(self.args.length > 1){
+        res += ', ' + repr($B.fast_tuple(self.args.slice(1)))
+    }
+    return res + ')'
 }
 
 BaseException.__str__ = function(self){
@@ -411,30 +430,50 @@ BaseException.with_traceback = function(self, tb){
     return self
 }
 
-function deep_copy(stack) {
-    var result = stack.slice();
-    for (var i = 0; i < result.length; i++) {
-        // Then copy each frame
-        result[i] = result[i].slice()
-        // Then create a new object that retains only
-        // the $line_info from the frame's locals
-        result[i][1] = {$line_info: result[i][1].$line_info}
+function deep_copy(stack){
+    var current_frame = $B.last($B.frames_stack),
+        is_local = current_frame[0] != current_frame[2]
+    if(is_local){
+        for(var i = 0, len = $B.frames_stack.length; i < len; i++){
+            if($B.frames_stack[0] == current_frame[0]){
+                return stack.slice(i)
+            }
+        }
     }
-    return result;
+    return stack.slice()
+}
+
+$B.freeze = function(stack){
+    // Set attribute $frozen_line_info to each frame in exception stack. If we
+    // only use $line_info, it might have been updated when exception handling
+    // starts.
+    for(var i = 0, len = stack.length; i < len; i++){
+        stack[i][1].$frozen_line_info = stack[i][1].$line_info
+        stack[i][3].$frozen_line_info = stack[i][3].$line_info
+    }
+    return stack
+}
+
+var show_stack = $B.show_stack = function(stack){
+    stack = stack || $B.frames_stack
+    for(const frame of stack){
+        console.log(frame[0], frame[1].$line_info)
+    }
 }
 
 BaseException.$factory = function (){
     var err = Error()
-    err.args = _b_.tuple.$factory(Array.prototype.slice.call(arguments))
+    err.args = $B.fast_tuple(Array.prototype.slice.call(arguments))
     err.__class__ = _b_.BaseException
     err.$py_error = true
     // Make a copy of the current frame stack array
     if(err.$stack === undefined){
-        err.$stack = deep_copy($B.frames_stack);
+        err.$stack = $B.freeze($B.frames_stack.slice())
     }
     if($B.frames_stack.length){
         err.$line_info = $B.last($B.frames_stack)[1].$line_info
     }
+    //err.$traceback = traceback.$factory(err)
     eval("//placeholder//")
     err.__cause__ = _b_.None // XXX fix me
     err.__context__ = _b_.None // XXX fix me
@@ -451,12 +490,12 @@ $B.set_func_names(BaseException)
 
 _b_.BaseException = BaseException
 
-$B.exception = function(js_exc){
+$B.exception = function(js_exc, in_ctx_manager){
     // thrown by eval(), exec() or by a function
     // js_exc is the Javascript exception, which can be raised by the
     // code generated by Python - in this case it has attribute $py_error set -
     // or by the Javascript interpreter (ReferenceError for instance)
-    if(! js_exc.$py_error){
+    if(! js_exc.__class__){
         console.log("Javascript exception:", js_exc)
         console.log($B.last($B.frames_stack))
         console.log("recursion error ?", $B.is_recursion_error(js_exc))
@@ -482,9 +521,22 @@ $B.exception = function(js_exc){
             (js_exc.message || "<" + js_exc + ">")
         exc.args = _b_.tuple.$factory([$message])
         exc.$py_error = true
-        exc.$stack = deep_copy($B.frames_stack);
+        exc.$stack = $B.freeze($B.frames_stack.slice());
     }else{
         var exc = js_exc
+        if(in_ctx_manager){
+            // Is this documented anywhere ? For exceptions raised inside a
+            // context manager, the frames stack starts at the current
+            // local level.
+            var current_locals = $B.last($B.frames_stack)[0]
+            for(var i = 0, len = exc.$stack.length; i < len; i++){
+                if(exc.$stack[i][0] == current_locals){
+                    exc.$stack = exc.$stack.slice(i)
+                    exc.$traceback = traceback.$factory(exc)
+                    break
+                }
+            }
+        }
     }
     return exc
 }
@@ -507,6 +559,7 @@ $B.is_exc = function(exc, exc_list){
 
 $B.is_recursion_error = function(js_exc){
     // Test if the JS exception matches Python RecursionError
+    console.log("test is js exc is recursion error", js_exc, js_exc + "")
     var msg = js_exc + "",
         parts = msg.split(":"),
         err_type = parts[0].trim(),
@@ -558,7 +611,8 @@ $make_exc([["StopIteration","err.value = arguments[0]"],
     ["StopAsyncIteration","err.value = arguments[0]"],
     "ArithmeticError", "AssertionError", "AttributeError",
     "BufferError", "EOFError", "ImportError", "LookupError", "MemoryError",
-    "NameError", "OSError", "ReferenceError", "RuntimeError", "SyntaxError",
+    "NameError", "OSError", "ReferenceError", "RuntimeError",
+    ["SyntaxError", "err.msg = arguments[0]"],
     "SystemError", "TypeError", "ValueError", "Warning"],_b_.Exception)
 $make_exc(["FloatingPointError", "OverflowError", "ZeroDivisionError"],
     _b_.ArithmeticError)

@@ -250,4 +250,8 @@ assert str() == ""
 # issue 1231
 assertRaises(TypeError, sum, ['a', 'b'], '')
 
+# issue 1256
+assert "\U00000065" == "e"
+
+
 print("passed all tests...")

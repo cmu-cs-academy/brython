@@ -95,6 +95,7 @@ www/src/brython.js
 www/src/brython_no_static.js
 www/src/brython_stdlib.js
 www/src/brython_dist.js
+www/src/stdlib_paths.js
 www/src/version_info.js
 
 # Jetbrains IDEs

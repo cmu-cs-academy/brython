@@ -6,6 +6,10 @@ _getframe = Getframe
 
 abiflags = 0 # required in sysconfig
 
+def audit(event, *args):
+    """For the moment, only here for compliance with Python."""
+    pass
+
 brython_debug_mode = __BRYTHON__.debug
 
 base_exec_prefix = __BRYTHON__.brython_path
@@ -269,3 +273,4 @@ __stdout__ = __BRYTHON__.stdout
 __stderr__ = __BRYTHON__.stderr
 __stdin__ = __BRYTHON__.stdin
 
+__excepthook__ = excepthook # from _sys

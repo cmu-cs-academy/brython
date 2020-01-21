@@ -145,7 +145,7 @@ class _TestResult(TestResult):
             html.TD(cell2),
             html.TD(test.lineno, Class="number"),
             html.TD(round(1000*(time.time() - test.startTime)),
-                Class="number")])
+                Class="number")], Class="method")
 
         row <= html.TD('ok', colspan=2, Class="report_cell")
         # reset startTime
@@ -198,7 +198,8 @@ class _TestResult(TestResult):
 class HTMLTestRunner:
     """
     """
-    def __init__(self, stream=sys.stdout, verbosity=1, title=None, description=None):
+    def __init__(self, stream=sys.stdout, verbosity=1, title=None,
+            description=None):
         self.verbosity = 1
         self.startTime = datetime.datetime.now()
 

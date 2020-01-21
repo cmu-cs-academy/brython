@@ -1,3 +1,4 @@
+<!doctype html>
 <html>
 
 <head>
@@ -5,11 +6,7 @@
 
 <title>Brython demo</title>
 
-<link rel="stylesheet" href="doc/doc_brython.css">
-
-<link rel="stylesheet" type="text/css"
-      href="https://fonts.googleapis.com/css?family=Montserrat">
-
+<link rel="stylesheet" href="/brython.css">
 
 <style>
 body{
@@ -17,19 +14,21 @@ body{
     font-family: Montserrat, Helvetica;
 }
 
-a{
-    color: #333;
+a, a:visited{
+    color: var(--dark-1);
 }
 
 a.menu:hover{
-    background-color: #ccc;
+    background-color: var(--dark-1);
+    color: var(--clear-2);
 }
-a:visited{
-    color: #333;
+a.selected{
+    font-weight: bold;
+    color: var(--dark-2);
 }
-
 a.external{
     text-decoration: underline gray;
+    color: #789;
 }
 
 li{
@@ -64,7 +63,7 @@ div.example{
 pre{
     display: inline-block;
     font-family: Consolas, Courier New;
-    color: #113;
+    color: var(--dark-1);
     background: linear-gradient(to right, #ccc, #ddd);
     border-width: 0 0 0 2;
     border-color: #aac;
@@ -80,22 +79,16 @@ pre.html{
     margin-left: 5em;
     padding: 1em;
     border-width: 1px;
-    border-color: #333;
+    border-color: var(--dark-2);
     border-style: solid;
     width: 20em;
 }
 
 code{
     font-family: Consolas, Courier New;
-    color: #113;
+    color:var(--dark-2);
     padding-left: 0.2em;
     padding-right: 0.2em;
-}
-
-code.file{
-    background-color: #fff;
-    font-weigth: bold;
-    font-style: italic;
 }
 
 .up{
@@ -104,19 +97,29 @@ code.file{
 .down{
     font-size:0.8em;
 }
+#moving{
+    position: relative;
+    left:140px;
+    top:10px;
+    font-size:16px;
+    padding: 3px;
+    background-color: var(--clear-2);
+    border-radius: 4px;
+}
 </style>
 
 <script type="text/python">
 import header
 header.show()
 </script>
+
 </head>
 
 <body onload="brython({debug:1, indexedDB: false})">
 
 <table id="banner" cellpadding=0 cellspacing=0>
 <tr id="banner_row">
-<td class="logo"><a href="../index.html"><img src="brython_tp.png" class="logo"></a></td>
+<td class="logo"><a href="../index.html" class="logo">Brython</a></td>
 </tr>
 </table>
 
@@ -687,7 +690,7 @@ the end.
 <div class="example" id="ex14">
     <button id="button14">rotate an element</button>
     <span id="zone14" class="zone">
-        <button style="background-color: red; width: 2em;" id="rot14">&nbsp;</button>
+        <button style="background-color: red; width: 1.5em;" id="rot14">&nbsp;</button>
     </span>
 
     <script type="text/python" id="script14">
@@ -773,8 +776,7 @@ the end.
     <button id="button_mousemove" style="border-width:0;background-color:inherit;">
         move an element with the mouse
     </button>
-    <b style="position: relative;left:140;top:10;font-size:16px; padding: 3px; background-color: #ddd; border-radius: 4px;"
-        id="moving">drag me
+    <b id="moving" style="top:10px; left: 140px;">drag me
     </b>
 
     <script type="text/python"  id="script_mousemove">
@@ -787,7 +789,6 @@ the end.
             self.moving = moving
             self.is_moving = False
             self.moving.bind("mousedown", self.start)
-            self.moving.bind("mousemove", self.move)
             self.moving.bind("mouseup", self.stop)
             moving.style.cursor = "move"
 
@@ -797,6 +798,7 @@ the end.
             self.is_moving = True
             self.mouse_pos = [event.x, event.y]
             self.elt_pos = [self.moving.left, self.moving.top]
+            document.bind("mousemove", self.move)
             # prevent default behaviour to avoid selecting the moving element
             event.preventDefault()
 
@@ -812,6 +814,7 @@ the end.
         def stop(self, event):
             """When user releases the mouse button, stop moving the element"""
             self.is_moving = False
+            document.unbind("mousemove")
 
     ElementMove(document["moving"])
     </script>
@@ -948,6 +951,45 @@ the end.
 
 </div>
 
+<div class="example" id="ex50">
+    <button id="button50">select and read a local file</button>
+
+    <script type="text/python" id="script50">
+    from browser import window, document as doc
+
+    def file_read(ev):
+
+        def onload(event):
+            """Triggered when file is read. The FileReader instance is
+            event.target.
+            The file content, as text, is the FileReader instance's "result"
+            attribute."""
+            doc['rt1'].value = event.target.result
+
+        # Get the selected file as a DOM File object
+        file = doc['rtfile1'].files[0]
+        # Create a new DOM FileReader instance
+        reader = window.FileReader.new()
+        # Read the file content as text
+        reader.readAsText(file)
+        reader.bind("load", onload)
+
+    doc["rtfile1"].bind("input", file_read)
+  </script>
+
+    <input type="file" id="rtfile1">
+    <br><textarea id="rt1" rows=10 cols=60 autocomplete="off"></textarea>
+    <p>
+    <pre class="python"></pre>
+    <p>
+
+    <span class="comment">
+    This example shows how to select a local file in the user's machine and display its content in a TEXTAREA.
+    <p>It uses the interface
+    <a href="https://developer.mozilla.org/en-US/docs/Web/API/File" target="_blank" class="external">File</a> of the DOM API.
+    </span>
+</div>
+
 <div class="example" id="ex5">
     <button id="button5">write in the browser console</button>
 
@@ -962,7 +1004,7 @@ the end.
     <p>
 
     <span class="comment">
-    By default, <code>print()</code> writes message in the browser console window (to open it, right-click on the page, and click the "Inspect Element" button. 
+    By default, <code>print()</code> writes message in the browser console window (to open it, right-click on the page, and click the "Inspect Element" button.
     Safari users cannot see this option initially.).
     <p>Like in Python, the output can be reset by setting <code>sys.stdout</code> to an object with a method <code>write()</code>.
     </span>
@@ -1127,9 +1169,9 @@ def load_example(ev):
     if current is not None:
         document[current].style.display = "none"
         document <= document[current]
-        document["a"+current].style.fontWeight = "normal"
+        document["a"+current].classList.remove("selected")
     example_id = ev.target.num
-    ev.target.style.fontWeight = "bold"
+    ev.target.classList.add("selected")
     document["panel"].clear()
     document["panel"] <= document[example_id]
     document[example_id].style.display="block"
@@ -1167,10 +1209,39 @@ for example in document.get(selector=".example"):
 
 <!-- end copy -->
 
-<script type="text/javascript" src="/src/brython.js"></script>
+<script type="text/javascript" src="../src/brython_builtins.js"></script>
+<script type="text/javascript" src="../src/version_info.js"></script>
+<script type="text/javascript" src="../src/py2js.js"></script>
+<script type="text/javascript" src="../src/loaders.js"></script>
+<script type="text/javascript" src="../src/py_object.js"></script>
+<script type="text/javascript" src="../src/py_type.js"></script>
+<script type="text/javascript" src="../src/py_utils.js"></script>
+<script type="text/javascript" src="../src/py_sort.js"></script>
+<script type="text/javascript" src="../src/py_builtin_functions.js"></script>
+<script type="text/javascript" src="../src/py_exceptions.js"></script>
+<script type="text/javascript" src="../src/py_range_slice.js"></script>
+<script type="text/javascript" src="../src/py_bytes.js"></script>
+<script type="text/javascript" src="../src/py_set.js"></script>
+<script type="text/javascript" src="../src/js_objects.js"></script>
+<script type="text/javascript" src="../src/stdlib_paths.js"></script>
+<script type="text/javascript" src="../src/py_import.js"></script>
+<script type="text/javascript" src="../src/unicode_data.js"></script>
+<script type="text/javascript" src="../src/py_string.js"></script>
+<script type="text/javascript" src="../src/py_int.js"></script>
+<script type="text/javascript" src="../src/py_long_int.js"></script>
+<script type="text/javascript" src="../src/py_float.js"></script>
+<script type="text/javascript" src="../src/py_complex.js"></script>
+<script type="text/javascript" src="../src/py_dict.js"></script>
+<script type="text/javascript" src="../src/py_list.js"></script>
+<script type="text/javascript" src="../src/py_generator.js"></script>
+<script type="text/javascript" src="../src/py_dom.js"></script>
+
+<script type="text/javascript" src="../src/builtin_modules.js"></script>
+<script type="text/javascript" src="../src/py_import_hooks.js"></script>
+<script type="text/javascript" src="../src/async.js"></script>
 
 <script src="/src/brython_stdlib.js"></script>
-
+<script src="/assets/header.brython.js"></script>
 </body>
 
 </html>

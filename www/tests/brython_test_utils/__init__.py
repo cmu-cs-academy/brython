@@ -1,6 +1,8 @@
 import sys
 import time
-import traceback
+import tb as traceback
+
+from browser import console
 
 def discover_brython_test_modules():
     # TODO : Test discovery based on file system paths
@@ -40,6 +42,7 @@ def discover_brython_test_modules():
         ("Modules", [
           ("test_aio.py", "browser.aio"),
           ("test_bisect.py", "bisect"),
+          ("test_code.py", "code"),
           ("test_collections.py", "collections"),
           ("test_dataclasses.py", "dataclasses"),
           ("test_datetime.py", "datetime"),
@@ -49,6 +52,7 @@ def discover_brython_test_modules():
           ("test_itertools.py", "itertools"),
           ("test_json.py", "json"),
           ("test_math.py", "math"),
+          ("test_pickle.py", "pickle"),
           ("test_random.py", "random"),
           ("test_re.py", "re"),
           ("test_storage.py", "storage"),
