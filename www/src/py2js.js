@@ -342,7 +342,8 @@ var $_SyntaxError = $B.parser.$_SyntaxError = function (context, msg, indent){
     if(root.line_info){
         line_num = root.line_info
     }
-    if(indent === undefined){
+    console.log("syntax error", msg, indent)
+    if(indent === undefined || typeof indent != "number"){
         if(Array.isArray(msg)){
             $B.$SyntaxError(module, msg[0], src, $pos, line_num, root)
         }
@@ -353,7 +354,11 @@ var $_SyntaxError = $B.parser.$_SyntaxError = function (context, msg, indent){
                 'invalid syntax : triple string end not found',
                 src, $pos, line_num, root)
         }
-        $B.$SyntaxError(module, 'invalid syntax', src, $pos, line_num, root)
+        var message = 'invalid syntax'
+        if(! (msg.startsWith("token "))){
+            message += ' (' + msg + ')'
+        }
+        $B.$SyntaxError(module, message, src, $pos, line_num, root)
     }else{throw $B.$IndentationError(module, msg, src, $pos, line_num, root)}
 }
 
@@ -4718,6 +4723,17 @@ var $LambdaCtx = $B.parser.$LambdaCtx = function(context){
     this.vars = []
     this.locals = []
 
+    // initialize object for names bound in the function
+    this.node = $get_node(this)
+    this.node.binding = {}
+
+    // Arrays for arguments
+    this.positional_list = []
+    this.default_list = []
+    this.other_args = null
+    this.other_kw = null
+    this.after_star = []
+
     this.toString = function(){
         return '(lambda) ' + this.args_start + ' ' + this.body_start
     }
@@ -4726,7 +4742,7 @@ var $LambdaCtx = $B.parser.$LambdaCtx = function(context){
 
         this.js_processed = true
 
-        var node = $get_node(this),
+        var node = this.node,
             module = $get_module(this),
             src = $get_src(context),
             args = src.substring(this.args_start, this.body_start),
@@ -7062,6 +7078,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                       case 'op':
                       case 'yield':
                           break
+                      case 'annotation':
+                          $_SyntaxError(context, "empty annotation")
                       default:
                           $_SyntaxError(context, token)
                   }
@@ -7248,7 +7266,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
                             ['kwarg', 'star_arg', 'double_star_arg'].
                                 indexOf($B.last(context.parent.tree).tree[0].type) == -1){
                         $_SyntaxError(context,
-                            ['non-keyword arg after keyword arg'])
+                            ['non-keyword argument after keyword argument'])
                     }
                     if(context.tree.length > 0){
                         var son = context.tree[context.tree.length - 1]
@@ -7270,7 +7288,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
                                 ['kwarg','star_arg', 'double_star_arg'].
                                     indexOf($B.last(context.parent.tree).tree[0].type) == -1){
                             $_SyntaxError(context,
-                                ['non-keyword arg after keyword arg'])
+                                ['non-keyword argument after keyword argument'])
                         }
                         return $transition(context.parent, token, value)
                     }
@@ -7337,10 +7355,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
             switch(token){
                 case ',':
                 case ':':
-                    //if(context.tree[0].type == "expr" &&
-                    //        context.tree[0].tree[0].type == "id"){
-                        context.parent.set_alias(context.tree[0].tree[0])
-                    //}
+                    context.parent.set_alias(context.tree[0].tree[0])
                     return $transition(context.parent, token, value)
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
@@ -7392,8 +7407,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     return context
                 case '(':
                     if(context.name == null){
-                        $_SyntaxError(context, 'token ' + token +
-                            ' after ' + context)
+                        $_SyntaxError(context,
+                            "missing name in function definition")
                     }
                     context.has_args = true;
                     return new $FuncArgs(context)
@@ -7402,6 +7417,12 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 case ':':
                     if(context.has_args){
                         return $BodyCtx(context)
+                    }else{
+                        $_SyntaxError(context, "missing function parameters")
+                    }
+                case 'eol':
+                    if(context.has_args){
+                        $_SyntaxError(context, "missing colon")
                     }
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
@@ -7445,7 +7466,9 @@ var $transition = $B.parser.$transition = function(context, token, value){
                               $_SyntaxError(context, 'token ' + token +
                                   ' after ' + context)
                         case ',':
-                            if(context.real == 'dict_or_set'){context.real = 'set'}
+                            if(context.real == 'dict_or_set'){
+                                context.real = 'set'
+                            }
                             if(context.real == 'dict' &&
                                     context.nb_dict_items() % 2){
                                 $_SyntaxError(context, 'token ' + token +
@@ -7454,7 +7477,9 @@ var $transition = $B.parser.$transition = function(context, token, value){
                             context.expect = 'id'
                             return context
                         case ':':
-                          if(context.real == 'dict_or_set'){context.real = 'dict'}
+                          if(context.real == 'dict_or_set'){
+                              context.real = 'dict'
+                          }
                           if(context.real == 'dict'){
                               context.expect = ','
                               return new $AbstractExprCtx(context,false)
@@ -7463,8 +7488,11 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         case 'for':
 
                             // comprehension
-                            if(context.real == 'dict_or_set'){context.real = 'set_comp'}
-                            else{context.real = 'dict_comp'}
+                            if(context.real == 'dict_or_set'){
+                                context.real = 'set_comp'
+                            }else{
+                                context.real = 'dict_comp'
+                            }
                             var lst = new $ListOrTupleCtx(context, 'dict_or_set_comp')
                             lst.intervals = [context.start + 1]
                             lst.vars = context.vars
@@ -7858,7 +7886,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 var parent = context.parent
                 while(parent){
                     if(parent.type == "assign" || parent.type == "augm_assign"){
-                        $_SyntaxError(context, "augmented assign inside assign")
+                        $_SyntaxError(context,
+                            "augmented assignment inside assignment")
                     }else if(parent.type == "op"){
                         $_SyntaxError(context, ["can't assign to operator"])
                     }
@@ -7930,7 +7959,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                            $_SyntaxError(context, 'token ' + token + ' after '
                                + context)
                        }else if(context.type == "augm_assign"){
-                           $_SyntaxError(context, "assign inside augmented assign")
+                           $_SyntaxError(context,
+                               "assignment inside augmented assignment")
                        }
                    }
                    context = context.tree[0]
@@ -7951,7 +7981,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         context.parent.parent.type == "call" &&
                         context.parent.parent.parent.type == "lambda"){
                     // lambda x := 1
-                    $_SyntaxError(context, ':= invalid, parent ' + ptype)
+                    $_SyntaxError(context,
+                        ':= invalid inside function arguments' )
                 }
                 if(context.tree.length == 1 &&
                         context.tree[0].type == "id"){
@@ -8136,6 +8167,10 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         return $transition(context.parent, token)
                     }
                 case ':':
+                    if(context.parent.parent.type == "lambda"){
+                        // end of parameters
+                        return $transition(context.parent.parent, ":")
+                    }
                     // annotation associated with a function parameter
                     if(context.has_default){ // issue 610
                         $_SyntaxError(context, 'token ' + token + ' after ' +
@@ -8150,7 +8185,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
             switch (token) {
                 case 'id':
                     if(context.has_kw_arg){
-                        $_SyntaxError(context,'duplicate kw arg')
+                        $_SyntaxError(context, 'duplicate keyword argument')
                     }
                     if(context.expect == 'id'){
                         context.expect = ','
@@ -8184,13 +8219,13 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     return context.parent
                 case 'op':
                     if(context.has_kw_arg){
-                        $_SyntaxError(context, 'duplicate kw arg')
+                        $_SyntaxError(context, 'duplicate keyword argument')
                     }
                     var op = value
                     context.expect = ','
                     if(op == '*'){
                         if(context.has_star_arg){
-                            $_SyntaxError(context,'duplicate star arg')
+                            $_SyntaxError(context,'duplicate star argument')
                         }
                         return new $FuncStarArgCtx(context, '*')
                     }else if(op == '**'){
@@ -8206,6 +8241,10 @@ var $transition = $B.parser.$transition = function(context, token, value){
                         return new $EndOfPositionalCtx(context)
                     }
                     $_SyntaxError(context, 'token ' + op + ' after ' + context)
+                case ':':
+                    if(context.parent.type == "lambda"){
+                        return $transition(context.parent, token)
+                    }
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
 
@@ -8231,6 +8270,10 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     }
                     return $transition(context.parent, token)
                 case ':':
+                    if(context.parent.parent.type == "lambda"){
+                        // end of parameters
+                        return $transition(context.parent.parent, ":")
+                    }
                     // annotation associated with a function parameter
                     if(context.name === undefined){
                         $_SyntaxError(context,
@@ -8389,7 +8432,7 @@ var $transition = $B.parser.$transition = function(context, token, value){
                 return $transition(context.parent, token)
             }
             if(context.args === undefined && token != "("){
-                return $transition(new $CallCtx(context), token, value)
+                return $transition(new $FuncArgs(context), token, value)
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
 
@@ -8593,11 +8636,6 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     return new $AsyncCtx(context)
                 case 'await':
                     return new $AbstractExprCtx(new $AwaitCtx(context), true)
-                    /*
-                    var yexpr = new $AbstractExprCtx(
-                        new $YieldCtx(context, true), true)
-                    return $transition(yexpr, "from")
-                    */
                 case 'class':
                     return new $ClassCtx(context)
                 case 'continue':
@@ -8679,7 +8717,6 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     }
                     return context
             }
-            console.log('syntax error', 'token', token, 'after', context)
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
         case 'not':
             switch(token) {
@@ -8759,7 +8796,6 @@ var $transition = $B.parser.$transition = function(context, token, value){
         case 'packed':
             if(context.tree.length > 0 && token == "["){
                 // Apply subscription to packed element (issue #1139)
-                console.log("apply to packed element", context.tree[0])
                 return $transition(context.tree[0], token, value)
             }
             if(token == 'id'){
@@ -8847,8 +8883,8 @@ var $transition = $B.parser.$transition = function(context, token, value){
                     return new $AbstractExprCtx(new $SubCtx(context.parent),
                         false)
                 case '(':
-                    // Strings are not callable. We replace the string by a call
-                    // to an object that will raise the correct exception
+                    // Strings are not callable. We replace the string by a
+                    // call to an object that will raise the correct exception
                     context.parent.tree[0] = context
                     return new $CallCtx(context.parent)
                 case 'str':
@@ -10332,7 +10368,7 @@ var _run_scripts = $B.parser._run_scripts = function(options){
             }
         }
     }
-
+    
     if(options.ipy_id === undefined){$B.loop()}
 
     /* Uncomment to check the names added in global Javascript namespace
