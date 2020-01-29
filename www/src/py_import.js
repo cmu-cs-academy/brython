@@ -952,6 +952,12 @@ $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
  * @return None
  */
 $B.$import = function(mod_name, fromlist, aliases, locals){
+    if ($B.lockdown) {
+        if ((mod_name === 'cmu_graphics_bry' && (fromlist.length === 0 || fromlist.indexOf('$$window') !== -1))
+            || mod_name === 'browser') {
+            throw _b_.ModuleNotFoundError.$factory(mod_name)
+        }
+    }
     var parts = mod_name.split(".")
     // For . , .. and so on , remove one relative step
     if(mod_name[mod_name.length - 1] == "."){parts.pop()}
