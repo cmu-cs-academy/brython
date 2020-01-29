@@ -477,6 +477,9 @@ $B.to_alias = function(attr){
 
 //eval() (built in function)
 function $$eval(src, _globals, _locals){
+    if ($B.lockdown && src.indexOf('__import__') >= 0) {
+        throw _b_.Exception.$factory('CMUGraphicsInternalError: cannot use __import__')
+    }
 
     var $ = $B.args("eval", 4,
             {src: null, globals: null, locals: null, mode: null},
