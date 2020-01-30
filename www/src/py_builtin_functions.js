@@ -477,6 +477,9 @@ $B.to_alias = function(attr){
 
 //eval() (built in function)
 function $$eval(src, _globals, _locals){
+    if ($B.lockdown && src.indexOf('__import__') >= 0) {
+        throw _b_.Exception.$factory('CMUGraphicsInternalError: cannot use __import__')
+    }
 
     var $ = $B.args("eval", 4,
             {src: null, globals: null, locals: null, mode: null},
@@ -1327,9 +1330,6 @@ function id(obj){
 
 // The default __import__ function is a builtin
 function __import__(mod_name, globals, locals, fromlist, level) {
-    if (mod_name === 'cmu_graphics_bry') {
-        throw _b_.ImportError.$factory("Error importing module")
-    }
     // TODO : Install $B.$__import__ in builtins module to avoid nested call
     var $ = $B.args('__import__', 5,
         {name: null, globals: null, locals: null, fromlist: null, level: null},
@@ -2452,7 +2452,7 @@ $Reader.read = function(){
         throw _b_.ValueError.$factory('I/O operation on closed file')
     }
     make_content(self)
-    
+
     var len = self.$binary ? self.$bytes.source.length : self.$string.length
     if(size < 0){
         size = len - self.$counter

@@ -799,6 +799,12 @@ function import_error(mod_name){
 // Default __import__ function
 // TODO: Include at runtime in importlib.__import__
 $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
+    if ($B.lockdown) {
+        if ((mod_name === 'cmu_graphics_bry' && (fromlist.length === 0 || fromlist.indexOf('$$window') !== -1))
+            || mod_name === 'browser') {
+            throw _b_.ModuleNotFoundError.$factory(mod_name)
+        }
+    }
     // Main entry point for __import__
     //
     // If the module name mod_name is already in $B.imported, return it.
