@@ -18,12 +18,17 @@ coroutine.__repr__ = coroutine.__str__ = function(self){
 $B.set_func_names(coroutine, "builtins")
 
 $B.make_async = func => {
+    if(func.$is_genfunc){
+        return func
+    }
     var f = function(){
-        var args = arguments
+        var args = arguments,
+            stack = $B.deep_copy($B.frames_stack)
         return {
             __class__: coroutine,
             $args: args,
-            $func: func
+            $func: func,
+            $stack: stack
         }
     }
     f.$infos = func.$infos

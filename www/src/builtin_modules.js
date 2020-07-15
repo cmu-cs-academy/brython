@@ -28,17 +28,16 @@
                 options == false
             }
             return function(callback){
-                if($.elt.__class__ &&
-                        _b_.issubclass($.elt.__class__, $B.JSObject)){
+                if($B.get_class($.elt) === $B.JSObj){
                     // eg window, Web Worker
                     function f(ev){
                         try{
-                            return callback($B.JSObject.$factory(ev))
+                            return callback($B.JSObj.$factory(ev))
                         }catch(err){
                             $B.handle_error(err)
                         }
                     }
-                    $.elt.js.addEventListener($.evt, f, options)
+                    $.elt.addEventListener($.evt, f, options)
                     return callback
                 }else if(_b_.isinstance($.elt, $B.DOMNode)){
                     // DOM element
@@ -92,12 +91,12 @@
         delete browser.$$window
         delete browser.win
         // browser.send is an alias for postMessage
-        browser.self.js.send = self.postMessage
+        browser.self.send = self.postMessage
     } else {
         browser.is_webworker = false
         update(browser, {
             $$alert:function(message){
-                window.alert($B.builtins.str.$factory(message))
+                window.alert($B.builtins.str.$factory(message || ""))
             },
             confirm: $B.JSObject.$factory(window.confirm),
             $$document:$B.DOMNode.$factory(document),
@@ -107,7 +106,7 @@
             load:function(script_url){
                 // Load and eval() the Javascript file at script_url
                 var file_obj = $B.builtins.open(script_url)
-                var content = $B.builtins.getattr(file_obj, 'read')()
+                var content = $B.$getattr(file_obj, 'read')()
                 eval(content)
             },
             mouseCoords: function(ev){return $B.JSObject.$factory($mouseCoords(ev))},
@@ -179,14 +178,14 @@
                         var first = args[0]
                         if(_b_.isinstance(first,[_b_.str, _b_.int, _b_.float])){
                             // set "first" as HTML content (not text)
-                            self.elt.innerHTML = _b_.str.$factory(first)
+                            self.innerHTML = _b_.str.$factory(first)
                         }else if(first.__class__ === TagSum){
                             for(var i = 0, len = first.children.length; i < len; i++){
-                                self.elt.appendChild(first.children[i].elt)
+                                self.appendChild(first.children[i])
                             }
                         }else{
                             if(_b_.isinstance(first, $B.DOMNode)){
-                                self.elt.appendChild(first.elt)
+                                self.appendChild(first)
                             }else{
                                 try{
                                     // If the argument is an iterable other than
@@ -220,7 +219,7 @@
                                 arg.toLowerCase().substr(2)
                             eval(js + '",function(){' + value + '})')
                         }else if(arg.toLowerCase() == "style"){
-                            $B.DOMNode.set_style(self,value)
+                            $B.DOMNode.set_style(self, value)
                         }else{
                             if(value !== false){
                                 // option.selected = false sets it to true :-)
@@ -228,7 +227,7 @@
                                     // Call attribute mapper (cf. issue#1187)
                                     arg = $B.imported["browser.html"].
                                         attribute_mapper(arg)
-                                    self.elt.setAttribute(arg, value)
+                                    self.setAttribute(arg, value)
                                 }catch(err){
                                     throw _b_.ValueError.$factory(
                                         "can't set attribute " + arg)
@@ -254,7 +253,7 @@
                         res._wrapped = false  // not wrapped
                     }
                     res.__class__ = cls
-                    res.__dict__ = _b_.dict.$factory()
+                    res.__dict__ = $B.empty_dict()
                     return res
                 }
                 $B.set_func_names(dict, "browser.html")
@@ -311,7 +310,7 @@
 
             // Module has an attribute "tags" : a dictionary that maps all tag
             // names to the matching tag class factory function.
-            var obj = {tags:_b_.dict.$factory()},
+            var obj = {tags:$B.empty_dict()},
                 dicts = {}
 
             // register tags in DOMNode to autogenerate tags when DOMNode is invoked
@@ -323,7 +322,8 @@
                 }
                 var klass = dicts[tag] = makeTagDict(tag)
                 klass.$factory = makeFactory(klass)
-                obj.tags.$string_dict[tag] = klass
+                _b_.dict.$setitem(obj.tags, tag, klass)
+
                 return klass
             }
 
@@ -344,6 +344,22 @@
     }
 
     modules['browser'] = browser
+
+    // Class for Javascript "undefined"
+    $B.UndefinedClass = $B.make_class("Undefined",
+        function(){return $B.Undefined}
+    )
+    $B.UndefinedClass.__mro__ = [_b_.object]
+    $B.UndefinedClass.__bool__ = function(self){
+        return false
+    }
+    $B.UndefinedClass.__repr__ = $B.UndefinedClass.__str__ = function(self){
+        return "<Javascript undefined>"
+    }
+
+    $B.Undefined = {__class__: $B.UndefinedClass}
+
+    $B.set_func_names($B.UndefinedClass, "javascript")
 
     modules['javascript'] = {
         $$this: function(){
@@ -389,7 +405,7 @@
             // Load and eval() the Javascript file at script_url
             // Set the names in array "names" in the Javacript global namespace
             var file_obj = $B.builtins.open(script_url)
-            var content = $B.builtins.getattr(file_obj, 'read')()
+            var content = $B.$getattr(file_obj, 'read')()
             eval(content)
         },
         $$Math: self.Math && $B.JSObject.$factory(self.Math),
@@ -405,7 +421,8 @@
         pyobj2jsobj:function(obj){return $B.pyobj2jsobj(obj)},
         $$RegExp: self.RegExp && $B.JSObject.$factory(self.RegExp),
         $$String: self.String && $B.JSObject.$factory(self.String),
-        UNDEFINED: undefined
+        UNDEFINED: $B.Undefined,
+        UndefinedType: $B.UndefinedClass
     }
 
     var arraybuffers = ["Int8Array", "Uint8Array", "Uint8ClampedArray",
@@ -425,9 +442,34 @@
     modules['_sys'] = {
         // Called "Getframe" because "_getframe" wouldn't be imported in
         // sys.py with "from _sys import *"
-        Getframe : function(depth){
+        Getframe : function(){
+            var $ = $B.args("_getframe", 1, {depth: null}, ['depth'],
+                    arguments, {depth: 0}, null, null),
+                depth = $.depth
             return $B._frame.$factory($B.frames_stack,
                 $B.frames_stack.length - depth - 1)
+        },
+        breakpointhook: function(){
+            var hookname = $B.$options.breakpoint,
+                modname,
+                dot,
+                funcname,
+                hook
+            if(hookname === undefined){
+                hookname = "pdb.set_trace"
+            }
+            [modname, dot, funcname] = _b_.str.rpartition(hookname, '.')
+            if(dot == ""){
+                modname = "builtins"
+            }
+            try{
+                $B.$import(modname)
+                hook = $B.$getattr($B.imported[modname], funcname)
+            }catch(err){
+                console.warn("cannot import breakpoint", hookname)
+                return _b_.None
+            }
+            return $B.$call(hook).apply(null, arguments)
         },
         exc_info: function(){
             for(var i = $B.frames_stack.length - 1; i >=0; i--){
@@ -443,72 +485,89 @@
         excepthook: function(exc_class, exc_value, traceback){
             $B.handle_error(exc_value)
         },
-        modules: {
-            __get__: function(){
+        modules: _b_.property.$factory(
+            function(){
                 return $B.obj_dict($B.lockdown ? {} : $B.imported)
             },
-            __set__: function(self, obj, value){
+            function(self, obj, value){
                  throw _b_.TypeError.$factory("Read only property 'sys.modules'")
             }
-        },
-        path: {
-            __get__: function(){return $B.lockdown ? [] : $B.path},
-            __set__: function(self, obj, value){
+        ),
+        path: _b_.property.$factory(
+            function(){
+                return $B.lockdown ? [] : $B.path
+            },
+            function(self, obj, value){
                 if (!$B.lockdown) {
                   $B.path = value;
                 }
             }
-        },
-        meta_path: {
-            __get__: function(){return $B.lockdown ? [] : $B.meta_path},
-            __set__: function(self, obj, value){
-                if (!$B.lockdown) {
-                  $B.meta_path = value;
-                }
-            }
-        },
-        path_hooks: {
-            __get__: function(){return $B.lockdown ? [] : $B.path_hooks},
-            __set__: function(self, obj, value){
-                if (!$B.lockdown) {
-                  $B.path_hooks = value;
-                }
-            }
-        },
-        path_importer_cache: {
-            __get__: function(){
+        ),
+        meta_path: _b_.property.$factory(
+            function(){return $B.lockdown ? [] : $B.meta_path},
+            function(self, obj, value){ if (!$B.lockdown) { $B.meta_path = value } }
+        ),
+        path_hooks: _b_.property.$factory(
+            function(){return $B.lockdown ? [] : $B.path_hooks},
+            function(self, obj, value){ if (!$B.lockdown) { $B.path_hooks = value } }
+        ),
+        path_importer_cache: _b_.property.$factory(
+            function(){
                 return _b_.dict.$factory($B.JSObject.$factory($B.path_importer_cache))
             },
-            __set__: function(self, obj, value){
+            function(self, obj, value){
                 throw _b_.TypeError.$factory("Read only property" +
                     " 'sys.path_importer_cache'")
             }
+        ),
+        settrace: function(){
+            var $ = $B.args("settrace", 1, {tracefunc: null}, ['tracefunc'],
+                    arguments, {}, null, null)
+            $B.tracefunc = $.tracefunc
+            $B.last($B.frames_stack)[1].$f_trace = $B.tracefunc
+            // settrace() does not activite the trace function on the current
+            // frame (the one sys.settrace() was called in); we set an
+            // attribute to identify this frame. It is used in the functions
+            // in py_utils.js that manage tracing (enter_frame, trace_call,
+            // etc.)
+            $B.tracefunc.$current_frame_id = $B.last($B.frames_stack)[0]
+            return _b_.None
         },
-        stderr: {
-            __get__: function(){return $B.stderr},
-            __set__: function(self, obj, value){$B.stderr = value},
-            write: function(data){_b_.getattr($B.stderr,"write")(data)}
-        },
-        stdout: {
-            __get__: function(){return $B.stdout},
-            __set__: function(self, obj, value){$B.stdout = value},
-            write: function(data){_b_.getattr($B.stdout,"write")(data)}
-        },
-        stdin: {
-            __get__: function(){return $B.stdin},
-            __set__: function(){
-                throw _b_.TypeError.$factory("sys.stdin is read-only")
+        stderr: _b_.property.$factory(
+            function(){return $B.stderr},
+            function(self, value){$B.stderr = value}
+        ),
+        stdout: _b_.property.$factory(
+            function(){return $B.stdout},
+            function(self, value){
+                $B.stdout = value
             }
-        },
-        vfs: {
-            __get__: function(){
+        ),
+        stdin: _b_.property.$factory(
+            function(){return $B.stdin},
+            function(self, value){
+                $B.stdin = value
+            }
+        ),
+        vfs: _b_.property.$factory(
+            function(){
                 if($B.hasOwnProperty("VFS")){return $B.obj_dict($B.VFS)}
                 else{return _b_.None}
             },
-            __set__: function(){
+            function(){
                 throw _b_.TypeError.$factory("Read only property 'sys.vfs'")
             }
-        }
+        )
+    }
+
+    modules._sys.__breakpointhook__ = modules._sys.breakpointhook
+
+    modules._sys.stderr.write = function(data){
+        return $B.$getattr(_sys.stderr.__get__(), "write")(data)
+    }
+
+    modules._sys.stdout.write = function(data){
+        return $B.$getattr(_sys.stdout.__get__(), "write")(data)
     }
 
     function load(name, module_obj){
@@ -522,6 +581,7 @@
             if(typeof module_obj[attr] == 'function'){
                 var attr1 = $B.from_alias(attr)
                 module_obj[attr].$infos = {
+                    __module__: name,
                     __name__: attr1,
                     __qualname__: name + '.' + attr1
                 }

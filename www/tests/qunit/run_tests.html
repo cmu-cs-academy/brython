@@ -15,7 +15,7 @@
     <link id="link_none2" rel="pythonpath" href="/nowhere2" hreflang="x-none" />
     <link id="link_empty_vfs" rel="pythonpath prefetch" href="../test.empty.vfs.js" />
   </head>
-  <body onload="brython({debug:1, cache:'none', static_stdlib_import:true})">
+  <body onload="brython({debug:1, static_stdlib_import:true})">
     <!-- QUnit init -->
     <div id="qunit"></div>
     <div id="qunit-fixture"></div>
@@ -33,9 +33,11 @@
     <script type="text/javascript" src="../dom_js_tests.js"></script>
     <!-- HTML needed to run tests included in dom.py -->
     <div id="dom-test-element-id"></div>
+    <div id="banner_row"></div>
 
     <!-- Javascript code needed to run JSObject tests -->
     <script type="text/javascript" src="../jsobj_tests.js"></script>
+    <script type="text/javascript" src="/src/brython_stdlib.js"></script>
 <script>
 QUnit.test('web_worker', function(assert) {
     var w = new Worker('../../tests/web_worker_tests.js');
@@ -71,7 +73,6 @@ def testTraceback(qunit):
     #     f()
     # except Exception:
     #     exception_info = traceback.format_exc()
-    #     assert 'f()' in exception_info
     #     assert '1 / 0' in exception_info
     #     assert ', in f' in exception_info
 

@@ -2,6 +2,10 @@ import os
 import shutil
 import sys
 
+from version import implementation
+
+impl_name = '.'.join(str(x) for x in implementation[:3])
+
 # hack sys.path to be able to import markdown
 sys.path.insert(0, os.path.join(os.path.dirname(os.getcwd()),
     'www','src','Lib','browser'))
@@ -46,6 +50,7 @@ with open(os.path.join(md_tutorial_path, "index.html"),
         encoding="utf-8") as f:
     index_tutorial = f.read()
 
+# documentation
 for lang in ['fr', 'en', 'es']:
     dest_path = os.path.join(static_doc_path, lang)
     dest_paths = [dest_path, os.path.join(dest_path,'cookbook')]
@@ -63,20 +68,18 @@ for lang in ['fr', 'en', 'es']:
         os.path.join(md_doc_path,lang,'cookbook')], dest_paths)):
         for filename in os.listdir(src_path):
             ext = os.path.splitext(filename)[1]
-            if ext=='.md':
+            if ext == '.md':
                 src = open(os.path.join(src_path, filename), 'rb').read()
                 src = src.decode('utf-8')
                 html, scripts = markdown.mark(src)
                 out = open(os.path.join(dest_path,filename[:-3]+'.html'), 'wb')
                 html = index.replace('<content>',html)
                 html = html.replace('<prefix>','/'.join(['..']*(i+1)))
-                if i==1:
+                if i == 1:
                     html = html.replace('class="navig" href="',
                         'class="navig" href="../')
                 if scripts:
-                    script_content = "\n".join(
-                        f'<script type="text/python">{script}\n</script>' for
-                        script in scripts)
+                    script_content = "\n".join(scripts)
                     html = html.replace('<scripts>', script_content)
                 out.write(html.encode('utf-8'))
                 out.close()
@@ -90,6 +93,8 @@ for lang in ['fr', 'en', 'es']:
                     shutil.rmtree(dest_dir)
                 shutil.copytree(os.path.join(src_path, filename), dest_dir)
 
+# tutorial
+for lang in ['br', 'fr', 'en', 'es', 'it']:
     print(f"tutorial {lang}")
     md_path = os.path.join(md_tutorial_path, lang)
     static_path = os.path.join(static_tutorial_path, lang)
@@ -103,6 +108,7 @@ for lang in ['fr', 'en', 'es']:
                 src_path = os.path.join(md_path, filename)
                 with open(src_path, encoding="utf-8") as f:
                     src = f.read()
+                    src = src.replace('{implementation}', impl_name)
                     html, scripts = markdown.mark(src)
                     dest_path = os.path.join(static_path, basename + '.html')
                     print("save in", dest_path)

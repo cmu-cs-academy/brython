@@ -161,7 +161,7 @@ assert math.gcd(234, 78) == 78
 assert math.copysign(1.0, -0.0) == -1.0
 
 # issue 1109
-assert math.expm1(1e-5) == 0.000010000050000166668
+assert my_isclose(math.expm1(1e-5), 0.000010000050000166668), math.expm1(1e-5)
 
 # issue 1110
 assert math.log10(1000) == 3.0
@@ -179,5 +179,45 @@ assert math.lgamma(2) == 0.0
 
 # issue 1246
 assertRaises(TypeError, math.cos)
+
+# issue 1308
+assert math.factorial(69) == 171122452428141311372468338881272839092270544893520369393648040923257279754140647424000000000000000
+
+# issue 1312
+assert math.comb(5, 2) == 10
+assert math.comb(69, 12) == 8815083648488
+
+assert math.perm(69, 12) == 4222439171759589580800
+
+x = math.prod(range(1, 33))
+assert x == 263130836933693530167218012160000000
+
+assert math.isqrt(x) == 512962802680363491
+
+y = math.factorial(69)
+assert math.isqrt(y) == 13081378078327271990661335578798848847474255303826
+
+assert math.dist([1, 2, 3], [4, 5, 6]) == 5.196152422706632
+
+# issue 1314
+assert math.gcd(pow(2, 53) - 2, 2) == 2
+assert math.gcd(pow(2, 53) - 1, 2) == 1
+
+# issue 1397
+assert math.dist((1.0, 1.0), (1.5, 0.0))  == 1.118033988749895
+
+# issue 1401
+class Angle(float):
+    def __new__(cls, angle, point):
+        return super().__new__(cls, angle)
+    def __init__(self, angle, point):
+        self.points = point
+
+x = Angle(36.9, (1,2))
+y = Angle(53.1, (3,4))
+
+assert (x, x + y, x < y, x ** 0.5) == (36.9, 90.0, True, 6.074537019394976)
+assert (abs(x), int(x), math.sin(x), math.log(x)) == \
+       (36.9, 36, -0.7167370231606575, 3.6082115510464816)
 
 print("passed all tests..")

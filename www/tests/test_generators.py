@@ -82,7 +82,11 @@ def f():
     raise StopIteration
     yield 2 # never reached
 
-assert [x for x in f()] == [1]
+try:
+    [x for x in f()]
+    raise AssertionError("should have raised RuntimeError (PEP 479)")
+except RuntimeError:
+    pass
 
 def g1():
     try:
@@ -935,5 +939,239 @@ def _parsegen(self):
             break
         if line == '':
             break
+
+# issue 1302
+def gen1():
+    yield 10
+    x = 0
+    while x < 10:
+        if x > 2:
+            x += 1
+            continue
+        x += 1
+    yield 20
+
+assert list(gen1()) == [10, 20]
+
+def gen2():
+    yield 10
+    for x in range(10):
+        if x > 2:
+            break
+    yield 20
+
+assert list(gen2()) == [10, 20]
+
+trace = []
+def gg1():
+    while 1:
+        tt = 3
+        while tt > 0:
+            trace.append(tt)
+            val = yield
+            if val is not None:
+                trace.append('breaking early...')
+                break
+            tt -= 1
+        trace.append('try!')
+
+gg1 = gg1()
+for ii in range(10):
+    gg1.send(True if ii == 7 else None)
+
+assert trace == [3, 2, 1, 'try!', 3, 2, 1, 'try!', 3, 'breaking early...', 'try!', 3, 2, 1]
+
+trace = []
+def gg1():
+    while 1:
+        tt = 3
+        while tt > 0:
+            trace.append(tt)
+            val = yield
+            if val is not None:
+                tt = 10    # <= uncomment this line
+                trace.append('breaking early...')
+                break
+            tt -= 1
+        trace.append('try!')
+
+gg1 = gg1()
+for ii in range(10):
+    gg1.send(True if ii == 7 else None)
+
+assert trace == [3, 2, 1, 'try!', 3, 2, 1, 'try!', 3, 'breaking early...', 'try!', 3, 2, 1]
+
+# issue 1313
+class Ctx:
+    def __init__(self, name):
+        self.name = name
+    def __enter__(self):
+        trace.append('[' + self.name)
+        return self
+    def __exit__(self, type, value, traceback):
+        trace.append(self.name + ']')
+
+def G1(ret_in_with=False):
+    with Ctx('A') as ctx:
+        with Ctx('A.1') as ctx:      # no yield inside => ok
+            trace.append('inside A.1')
+        yield 1
+        with Ctx('A.2') as ctx:      # yield inside => not ok
+            trace.append('inside A.2')
+            yield 2
+        trace.append('inside A')
+    trace.append('ret')
+    return
+
+trace = []
+assert list(G1()) == [1, 2]
+assert trace == ['[A', '[A.1', 'inside A.1', 'A.1]', '[A.2', 'inside A.2', 'A.2]', 'inside A', 'A]', 'ret']
+
+def G2():
+    with Ctx('A') as ctx:
+        with Ctx('A.1') as ctx:      # no yield inside => ok
+            trace.append('inside A.1')
+        yield 1
+        if True:              # enable to cause different problem
+            trace.append('ret')
+            return
+        with Ctx('A.2') as ctx:      # yield inside => not ok
+            trace.append('inside A.2')
+            yield 2
+        trace.append('inside A')
+    trace.append('ret')
+    return
+
+
+trace = []
+assert list(G2()) == [1]
+assert trace == ['[A', '[A.1', 'inside A.1', 'A.1]', 'ret', 'A]']
+
+# issue 1317
+def f1317():
+    for jj in range(2):
+        ii = 0
+        done = False
+        while not done:
+            ii += 1
+            done = ii == 3
+            yield ii
+assert list(f1317()) == [1, 2, 3, 1, 2, 3]
+
+# issue 1319
+def f1319():
+    val = yield lambda: 10
+assert next(f1319())() == 10
+
+# issue 1325
+def g1_1325(ll):
+    try:
+        ll.append('(')
+        for ii in range(3):
+            yield ii
+    finally:
+        ll.append(')')
+
+ll = []
+assert list(g1_1325(ll)) == [0, 1, 2]
+assert ''.join(ll) == "()"
+
+def g2_1325(ll):
+    ii = 0
+    try:
+        ll.append('(')
+        while ii < 3:
+            yield ii
+            ii += 1
+    finally:
+        ll.append(')')
+
+ll = []
+assert list(g2_1325(ll)) == [0, 1, 2]
+assert ''.join(ll) == "()"
+
+# issue 1341
+results = []
+
+def main():
+  while (a:=(yield)): # something funny happens here and freezes the page.
+    results.append(a)
+next(test:=main())
+test.send('magic')
+assert results == ["magic"]
+
+# issue 1345
+close_result = []
+
+def gtest():
+  y = ''
+  try:
+    while True:
+      y = yield
+      close_result.append(str(y))
+      # do stuff
+  except GeneratorExit:
+    # cancel tasks
+    close_result.append('done')
+
+next(g:=gtest())
+g.send('magic')
+g.close()
+assert close_result == ["magic", "done"]
+
+# issue 1390
+def g1390():
+    try:
+        yield 1
+        yield 2
+        yield 3
+    finally:
+        yield 'done'
+
+assert list(g1390()) == [1, 2, 3, 'done']
+
+def g1390_2():
+    try:
+        yield 1
+        try:
+            yield 2
+        except:
+            pass
+        yield 3
+    finally:
+        yield 'done'
+
+assert list(g1390_2()) == [1, 2, 3, 'done']
+
+# issue 1398
+out = []
+prn = out.append
+def g():
+    while 1:
+        prn('start')
+        err = 0
+        try:
+            yield
+        except Exception as ee:
+            prn(str(ee))
+            err = 1
+            # work-around: shift left (out of `except`):
+            if err:
+                continue
+        prn('end')
+    prn("shouldn't be here")
+
+g = g()
+prn('1:'); next(g)
+prn('2:'); next(g)
+prn('3:'); g.throw(Exception('ERROR'))
+prn('4:'); next(g)
+prn('5:'); next(g)
+assert out == [
+    '1:', 'start',
+    '2:', 'end', 'start',
+    '3:', 'ERROR', 'start',
+    '4:', 'end', 'start',
+    '5:', 'end', 'start']
 
 print('passed all tests...')

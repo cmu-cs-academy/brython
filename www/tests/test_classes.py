@@ -270,11 +270,11 @@ class A:
 
 
 a = A()
-assert str(A.f) == "<function A.f>"
-assert str(type(A.f)) == "<class 'function'>"
-assert str(a.f) == "<bound method A.f of <__main__.A object>>"
+assert str(A.f).startswith("<function A.f")
+assert str(type(A.f)) == "<class 'function'>", str(type(A.f))
+assert str(a.f).startswith("<bound method A.f of"), str(a.f)
 assert str(type(a.f)) == "<class 'method'>"
-assert str(a.f.__func__) == "<function A.f>"
+assert str(a.f.__func__).startswith("<function A.f")
 
 assert a.f.__func__ == A.f
 assert A.f_cl == a.f_cl
@@ -452,5 +452,63 @@ assert p.introduce_self() == "Hello, my name is John"
 
 q = Person("Pete")
 assert q.introduce_self() == "Hello, my name is Pete"
+
+# a class inherits 2 classes with different metaclasses
+class BasicMeta(type):
+    pass
+
+class ManagedProperties(BasicMeta):
+    pass
+
+def with_metaclass(meta, *bases):
+    class metaclass(meta):
+        def __new__(cls, name, this_bases, d):
+            return meta(name, bases, d)
+    return type.__new__(metaclass, "NewBase", (), {})
+
+class EvalfMixin(object):
+  pass
+
+class Basic(with_metaclass(ManagedProperties)):
+  pass
+
+class Expr1(Basic, EvalfMixin):
+  pass
+
+class Expr2(EvalfMixin, Basic):
+  pass
+
+assert Expr1.__class__ is ManagedProperties
+assert Expr2.__class__ is ManagedProperties
+
+# issue 1390
+class desc(object):
+    def __get__(self, instance, owner):
+        return 5
+
+class A:
+    x = desc()
+
+assert A.x == 5
+
+# issue 1392
+class A():
+    b = "This is b"
+    message = "This is a"
+
+    def __init__(self):
+        self.x = 5
+
+assert "b" in A.__dict__
+assert "message" in A.__dict__
+assert "__init__" in A.__dict__
+
+d = A.__dict__["__dict__"]
+try:
+    d.b
+    raise Exception("should have raised AttributeError")
+except AttributeError:
+    pass
+
 
 print('passed all tests..')

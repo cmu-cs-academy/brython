@@ -19,8 +19,7 @@ module.__init__ = function(){}
 
 module.__new__ = function(cls, name, doc, $package){
     return {
-        //__class__: cls,
-        $class: cls,
+        __class__: cls,
         __name__: name,
         __doc__: doc || _b_.None,
         __package__: $package || _b_.None
@@ -45,8 +44,7 @@ module.__setattr__ = function(self, attr, value){
 
 module.$factory = function(name, doc, $package){
     return {
-        //__class__: module,
-        $class: module,
+        __class__: module,
         __name__: name,
         __doc__: doc || _b_.None,
         __package__: $package || _b_.None
@@ -84,7 +82,7 @@ function $download_module(mod, url, $package){
         if(xhr.status == 200 || xhr.status == 0){
            res = xhr.responseText
         }else{
-           res = _b_.FileNotFoundError.$factory("No module named '" +
+           res = _b_.ModuleNotFoundError.$factory("No module named '" +
                mod_name + "'")
         }
     }else{
@@ -104,7 +102,7 @@ function $download_module(mod, url, $package){
                 console.info("Error " + xhr.status +
                     " means that Python module " + mod_name +
                     " was not found at url " + url)
-                res = _b_.FileNotFoundError.$factory("No module named '" +
+                res = _b_.ModuleNotFoundError.$factory("No module named '" +
                     mod_name + "'")
             }
         }
@@ -114,7 +112,7 @@ function $download_module(mod, url, $package){
     // sometimes chrome doesn't set res correctly, so if res == null,
     // assume no module found
     if(res == null){
-        throw _b_.FileNotFoundError.$factory("No module named '" +
+        throw _b_.ModuleNotFoundError.$factory("No module named '" +
             mod_name + "' (res is null)")
     }
 
@@ -256,9 +254,9 @@ function run_py(module_contents, path, module, compiled) {
             module.__name__.replace(/\./g, "_") + "})(__BRYTHON__)\n" +
             "return $module"
         var module_id = "$locals_" + module.__name__.replace(/\./g, '_')
-        var $module = (new Function(module_id, js))(module) //eval(js)
+        var $module = (new Function(module_id, js))(module)
     }catch(err){
-        /*
+
         console.log(err + " for module " + module.__name__)
         console.log("module", module)
         console.log(root)
@@ -275,7 +273,7 @@ function run_py(module_contents, path, module, compiled) {
         console.log("filename: " + err.fileName)
         console.log("linenum: " + err.lineNumber)
         if($B.debug > 0){console.log("line info " + $B.line_info)}
-        */
+
         throw err
     }finally{
         $B.clear_ns(module.__name__)
@@ -338,63 +336,66 @@ var finder_VFS = {
             module_contents = stored[1],
             imports = stored[2]
         modobj.$is_package = stored[3] || false
-        var path = $B.brython_path + "Lib/" + modobj.__name__
-        if(modobj.$is_package){path += "/__init__.py"}
+        var path = "VFS." + modobj.__name__
+        path += modobj.$is_package ? "/__init__.py" : ext
         modobj.__file__ = path
+        $B.file_cache[modobj.__file__] = $B.VFS[modobj.__name__][1]
         if(ext == '.js'){
             run_js(module_contents, modobj.__path__, modobj)
         }else if($B.precompiled.hasOwnProperty(modobj.__name__)){
-           var parts = modobj.__name__.split(".")
-           for(var i = 0; i < parts.length; i++){
-               var parent = parts.slice(0, i + 1).join(".")
-               if($B.imported.hasOwnProperty(parent) &&
-                       $B.imported[parent].__initialized__){
-                   continue
-               }
-               // Initialise $B.imported[parent]
-               var mod_js = $B.precompiled[parent],
-                   is_package = modobj.$is_package
-               if(Array.isArray(mod_js)){mod_js = mod_js[0]}
-               var mod = $B.imported[parent] = module.$factory(parent,
-                   undefined, is_package)
-               mod.__initialized__ = true
-               mod.__file__ = mod.__cached__ = "VFS." + modobj.__name__ + ".py"
-               $B.file_cache[mod.__file__] = module_contents
-               if(is_package){
-                   mod.__path__ = "<stdlib>"
-                   mod.__package__ = parent
-               }else{
-                   var elts = parent.split(".")
-                   elts.pop()
-                   mod.__package__ = elts.join(".")
-               }
-               try{
-                   var parent_id = parent.replace(/\./g, "_")
-                   mod_js += "return $locals_" + parent_id
-                   var $module = new Function("$locals_" + parent_id, mod_js)(
-                       mod)
-               }catch(err){
-                   if($B.debug > 1){
-                       console.log(err)
-                       for(var k in err){console.log(k, err[k])}
-                       console.log(Object.keys($B.imported))
-                       if($B.debug > 2){console.log(mod_js)}
-                   }
-                   throw err
-               }
-               for(var attr in $module){
-                   mod[attr] = $module[attr]
-               }
-               if(i>0){
-                   // Set attribute of parent module
-                   $B.builtins.setattr(
-                       $B.imported[parts.slice(0, i).join(".")],
-                       parts[i], $module)
-               }
+            if($B.debug > 1){
+                console.info("load", modobj.__name__, "from precompiled")
+            }
+            var parts = modobj.__name__.split(".")
+            for(var i = 0; i < parts.length; i++){
+                var parent = parts.slice(0, i + 1).join(".")
+                if($B.imported.hasOwnProperty(parent) &&
+                        $B.imported[parent].__initialized__){
+                    continue
+                }
+                // Initialise $B.imported[parent]
+                var mod_js = $B.precompiled[parent],
+                    is_package = modobj.$is_package
+                if(Array.isArray(mod_js)){mod_js = mod_js[0]}
+                var mod = $B.imported[parent] = module.$factory(parent,
+                    undefined, is_package)
+                mod.__initialized__ = true
+                if(is_package){
+                    mod.__path__ = "<stdlib>"
+                    mod.__package__ = parent
+                }else{
+                    var elts = parent.split(".")
+                    elts.pop()
+                    mod.__package__ = elts.join(".")
+                }
+                mod.__file__ = path
+                try{
+                    var parent_id = parent.replace(/\./g, "_")
+                    mod_js += "return $locals_" + parent_id
+                    var $module = new Function("$locals_" + parent_id, mod_js)(
+                        mod)
+                }catch(err){
+                    if($B.debug > 1){
+                        console.log(err)
+                        for(var k in err){console.log(k, err[k])}
+                        console.log(Object.keys($B.imported))
+                        if($B.debug > 2){console.log(modobj, "mod_js", mod_js)}
+                    }
+                    throw err
+                }
+                for(var attr in $module){
+                    mod[attr] = $module[attr]
+                }
+                $module.__file__ = path
+                if(i > 0){
+                    // Set attribute of parent module
+                    $B.builtins.setattr(
+                        $B.imported[parts.slice(0, i).join(".")],
+                        parts[i], $module)
+                }
 
-           }
-           return $module
-
+            }
+            return $module
 
         }else{
             var mod_name = modobj.__name__
@@ -427,6 +428,9 @@ var finder_VFS = {
                         if($B.debug > 1){
                             console.info(modobj.__name__, "stored in db")
                         }
+                    }
+                    request.onerror = function(){
+                        console.info("could not store " + modobj.__name__)
                     }
                 }
             }
@@ -923,24 +927,24 @@ $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
        }
     }else{
         if($B.imported[parsed_name[0]] &&
-                parsed_name.length > 1){
+                parsed_name.length == 2){
             try{
-                $B.$setattr($B.imported[parsed_name[0]], parsed_name[1], modobj)
+                $B.$setattr($B.imported[parsed_name[0]], parsed_name[1],
+                    modobj)
             }catch(err){
                 console.log("error", parsed_name, modobj)
                 throw err
             }
         }
     }
-   // else { } // [Import spec] Module cache hit . Nothing to do.
 
-   if(fromlist.length > 0){
+    if(fromlist.length > 0){
         // Return module object matching requested module name
         return $B.imported[mod_name]
-   }else{
+    }else{
         // Return module object for top-level package
         return $B.imported[parsed_name[0]]
-   }
+    }
 }
 
 /**
@@ -958,6 +962,9 @@ $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
  * @return None
  */
 $B.$import = function(mod_name, fromlist, aliases, locals){
+    fromlist = fromlist === undefined ? [] : fromlist
+    aliases = aliases === undefined ? {} : aliases
+    locals = locals === undefined ? {} : locals
     var parts = mod_name.split(".")
     // For . , .. and so on , remove one relative step
     if(mod_name[mod_name.length - 1] == "."){parts.pop()}
@@ -1079,6 +1086,17 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
             }
         }
         return locals
+    }
+}
+
+$B.import_all = function(locals, module){
+    // Used for "from module import *"
+    for(var attr in module){
+        if(attr.startsWith("$$")){
+            locals[attr] = module[attr]
+        }else if('_$'.indexOf(attr.charAt(0)) == -1){
+            locals[attr] = module[attr]
+        }
     }
 }
 

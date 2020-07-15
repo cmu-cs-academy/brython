@@ -29,3 +29,40 @@ class JSWithEq {
 function initJSWithEq() {
   return new JSWithEq();
 }
+
+var root = {
+    x: 1,
+    children:[
+        {
+            x: 2,
+            y: 3
+        },
+        {
+            x: 5,
+            y: 8
+        }
+    ]
+}
+
+// Class: used to test how a Python class can inherit from a JS class
+class Rectangle {
+    constructor(height, width) {
+        this.height = height;
+        this.width = width;
+    }
+    surface(){
+        return this.height * this.width
+    }
+}
+window.Rectangle = Rectangle // required !
+
+// Constructor: used to test how a Python class can inherit from a
+// JS constructor
+
+function Square(x){
+    this.x = x
+    this.surface = function(){
+        return this.x * this.x
+    }
+}
+

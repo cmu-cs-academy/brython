@@ -26,12 +26,16 @@ data = [
 json.dump(data, open("speed_results.json", "w", encoding="utf-8"),
     indent=4)
 
+with open("speed_results.txt", "w", encoding="utf-8") as out:
+    for line in data:
+        out.write(f'{line["description"]};{line["ratio"]}\n')
+        
 html = """<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <title>Brython speed compared to CPython</title>
-<link rel="stylesheet" href="static_doc/doc_brython.css">
+<link rel="stylesheet" href="/brython.css">
 <style>
 body{
     padding-left: 2em;

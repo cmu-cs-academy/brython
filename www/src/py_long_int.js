@@ -6,6 +6,12 @@ Module to manipulate long integers
 var bltns = $B.InjectBuiltins()
 eval(bltns)
 
+try{
+    eval("window")
+}catch(err){
+    window = self
+}
+
 var long_int = {
     __class__: _b_.type,
     __mro__: [int, object],
@@ -27,6 +33,13 @@ function add_pos(v1, v2){
     // Add two positive numbers
     // v1, v2 : strings
     // Return an instance of long_int
+    if(window.BigInt){
+        return {
+            __class__: long_int,
+            value: (BigInt(v1) + BigInt(v2)).toString(),
+            pos: true
+        }
+    }
 
     var res = "",
         carry = 0,
@@ -164,10 +177,10 @@ function divmod_by_safe_int(t, n){
             chunks[i + 1] += carry * rest
         }
     })
-    if(chunks[0] == 0){
+    while(chunks[0] == 0){
         chunks.shift()
         if(chunks.length == 0){
-            return "0"
+            return [0, rest]
         }
     }
 
@@ -185,6 +198,20 @@ function divmod_pos(v1, v2){
     // v1, v2 : strings, represent 2 positive integers A and B
     // Return [a, b] where a and b are instances of long_int
     // a = A // B, b = A % B
+    if(window.BigInt){
+        var a = {
+            __class__: long_int,
+            value: (BigInt(v1) / BigInt(v2)).toString(),
+            pos: true
+        },
+        b = {
+            __class__: long_int,
+            value: (BigInt(v1) % BigInt(v2)).toString(),
+            pos: true
+        }
+        return [a, b]
+    }
+
     var iv1 = parseInt(v1),
         iv2 = parseInt(v2),
         res1
@@ -196,6 +223,9 @@ function divmod_pos(v1, v2){
             {__class__:long_int, value: rest.toString(), pos: true}
         ]
         return res1
+    }else if(iv2 < $B.max_int){
+        var res_safe = divmod_by_safe_int(v1, iv2)
+        return [long_int.$factory(res_safe[0]), long_int.$factory(res_safe[1])]
     }
     var quotient, mod
     if(comp_pos(v1, v2) == -1){ // a < b
@@ -257,18 +287,9 @@ function divmod_pos(v1, v2){
             left += right.charAt(0)
             right = right.substr(1)
         }
-        // Modulo is A - (A//B)*B
+        // Modulo is A - (A//B) * B
         mod = sub_pos(v1, mul_pos(quotient, v2).value)
     }
-    /*
-    if(res1 !== undefined){
-        if(quotient != res1[0].value){
-            console.log("quotient", quotient, res1[0].value)
-        }else if(parseInt(mod.value) !== res1[1]){
-            console.log("rest", mod, res1[1])
-        }
-    }
-    */
     return [long_int.$factory(quotient), mod]
 }
 
@@ -285,6 +306,12 @@ function split_chunks(s, size){
 }
 
 function mul_pos(x, y){
+    if(window.BigInt){
+        return {__class__: long_int,
+                value: (BigInt(x) * BigInt(y)).toString(),
+                pos: true
+        }
+    }
     var ix = parseInt(x),
         iy = parseInt(y),
         z = ix * iy
@@ -351,6 +378,13 @@ function mul_pos(x, y){
 
 function sub_pos(v1, v2){
     // Substraction of positive numbers with v1>=v2
+    if(window.BigInt){
+        return {
+            __class__: long_int,
+            value: (BigInt(v1) - BigInt(v2)).toString(),
+            pos: true
+        }
+    }
 
     var res = "",
         carry = 0,
@@ -431,6 +465,8 @@ long_int.__add__ = function(self, other){
         }else if(isinstance(other, int)){
             // int subclass
             other = long_int.$factory(_b_.str.$factory(_b_.int.__index__(other)))
+        }else{
+            return _b_.NotImplemented
         }
     }
 
@@ -466,7 +502,7 @@ long_int.__add__ = function(self, other){
                 res.pos = false
                 break
             case 0:
-                res = {__class__: ong_int, value: 0, pos: true}
+                res = {__class__: long_int, value: 0, pos: true}
                 break
             case -1:
                 res = sub_pos(other.value, self.value)
@@ -476,24 +512,32 @@ long_int.__add__ = function(self, other){
     }
 }
 
+
 long_int.__and__ = function(self, other){
     if(typeof other == "number"){
         other = long_int.$factory(_b_.str.$factory(other))
     }
-    // Bitwise "and" : build the binary representation of self and other
-    var v1 = long_int.__index__(self),
-        v2 = long_int.__index__(other)
-    // apply "and" on zeros and ones
-    if(v1.length < v2.length){var temp = v2; v2 = v1; v1 = temp}
-    if(v2.charAt(0) == "1"){v2 = "1".repeat(v1.length - v2.length) + v2}
-    var start = v1.length - v2.length,
+    var v1 = self.value,
+        v2 = other.value,
+        temp1,
+        temp2,
         res = ""
-    for(var i = 0; i < v2.length; i++){
-        if(v1.charAt(start + i) == "1" && v2.charAt(i) == "1"){res += "1"}
-        else{res += "0"}
+    while(true){
+        temp1 = divmod_by_safe_int(v1, 2)
+        temp2 = divmod_by_safe_int(v2, 2)
+        res = ((temp1[1] == "1" && temp2[1] == "1") ?
+            "1" : "0") + res
+        v1 = temp1[0]
+        v2 = temp2[0]
+        if(v1 == "0"){
+            var res0 = intOrLong(long_int.$factory(res, 2))
+            break
+        }else if(v2 == "0"){
+            var res0 = intOrLong(long_int.$factory(res, 2))
+            break
+        }
     }
-    // Return the long_int instance represented by res in base 2
-    return intOrLong(long_int.$factory(res, 2))
+    return res0
 }
 
 long_int.__divmod__ = function(self, other){
@@ -503,15 +547,19 @@ long_int.__divmod__ = function(self, other){
 
     var dm = divmod_pos(self.value, other.value)
     if(self.pos !== other.pos){
-        if(dm[0].value != "0"){dm[0].pos = false}
+        if(dm[0].value != "0"){
+            dm[0].pos = false
+        }
         if(dm[1].value != "0"){
-            // If self and other have different signs and self is not a multiple
-            // of other, round to the previous integer
+            // If self and other have different signs and self is not a
+            // multiple of other, round to the previous integer
             dm[0] = long_int.__sub__(dm[0], long_int.$factory("1"))
-            dm[1] = long_int.__add__(dm[1], long_int.$factory("1"))
+            // Modulo is A - (A//B) * B
+            dm[1] = long_int.__sub__(self,
+                long_int.__mul__(other, long_int.$factory(dm[0])))
         }
     }
-    return [intOrLong(dm[0]), intOrLong(dm[1])]
+    return $B.fast_tuple([intOrLong(dm[0]), intOrLong(dm[1])])
 }
 
 long_int.__eq__ = function(self, other){
@@ -609,6 +657,16 @@ long_int.__lt__ = function(self, other){
 }
 
 long_int.__lshift__ = function(self, shift){
+    if(window.BigInt){
+        if(shift.__class__ == long_int){
+            shift = shift.value
+        }
+        return intOrLong({
+            __class__: long_int,
+            value: (BigInt(self.value) << BigInt(shift)).toString(),
+            pos: self.pos
+        })
+    }
     var is_long = shift.__class__ === long_int,
         shift_safe
     if(is_long){
@@ -617,7 +675,9 @@ long_int.__lshift__ = function(self, shift){
             throw _b_.ValueError.$factory('negative shift count')
         }
         if(shift_value < $B.max_int){
-            shift_safe = true;shift = shift_value}
+            shift_safe = true
+            shift = shift_value
+        }
     }
     if(shift_safe){
         if(shift_value == 0){return self}
@@ -706,35 +766,128 @@ long_int.__pos__ = function(self){return self}
 
 long_int.__pow__ = function(self, power, z){
     if(typeof power == "number"){
-        power = long_int.$factory(_b_.str.$factory(power))
+        power = long_int.$from_int(power)
     }else if(isinstance(power, int)){
         // int subclass
         power = long_int.$factory(_b_.str.$factory(_b_.int.__index__(power)))
     }else if(! isinstance(power, long_int)){
-        var msg = "power must be a LongDict, not '"
+        var msg = "power must be an integer, not '"
         throw TypeError.$factory(msg + $B.class_name(power) + "'")
     }
     if(! power.pos){
         if(self.value == "1"){return self}
-        // For all other integers, x**-n is 0
+        // For all other integers, x ** -n is 0
         return long_int.$factory("0")
     }else if(power.value == "0"){
         return long_int.$factory("1")
     }
-    var res = {__class__: long_int, value: self.value, pos: self.pos},
-        pow = power.value
+    /*
+    Algorithm in https://www.hindawi.com/journals/jam/2014/107109/
+    def exp(a, x):
+          b = 1
+          s = a
+          while x:
+              if x % 2:
+                  b = b * s
+              x = x // 2
+              if x:
+                  s = s * s
+          return b
+    */
+    if(window.BigInt){
+        var s = BigInt(self.value),
+            b = BigInt(1),
+            x = BigInt(power.value),
+            z = z === undefined ? z : typeof z == "number" ? BigInt(z) :
+                BigInt(z.value)
+        if(z === undefined){
+            return {
+                __class__: long_int,
+                value: (s ** x).toString(),
+                pos: true
+            }
+        }
+        while(x > 0){
+            if(x % BigInt(2) == 1){
+                b = b * s
+            }
+            x = x / BigInt(2)
+            if(x > 0){
+                s = s * s
+            }
+            if(z !== undefined){
+                b = b % z
+            }
+        }
+        return {__class__: long_int, value: b.toString(), pos: true}
+    }
+
+    var b = {__class__: long_int, value: "1", pos: true},
+        s = self,
+        pow = power.value,
+        temp
     while(true){
-        pow = sub_pos(pow, "1").value
-        if(pow == "0"){break}
-        res = long_int.$factory(long_int.__mul__(res, self))
+        if(typeof pow == "string" && parseInt(pow) < $B.max_int){
+            pow = parseInt(pow)
+        }
+        if(pow == 0){
+            break
+        }else if(typeof pow == "string"){
+            if(parseInt(pow.charAt(pow.length - 1)) % 2 == 1){
+                b = long_int.__mul__(b, s)
+            }
+            pow = long_int.__floordiv__(pow, 2)
+        }else{
+            if(pow % 2 == 1){
+                if(typeof b == "number" && typeof s == "number" &&
+                        (temp = b * s) < $B.max_int){
+                    b = temp
+                }else{
+                    b = long_int.__mul__(long_int.$factory(b),
+                        long_int.$factory(s))
+                }
+            }
+            pow = Math.floor(pow / 2)
+        }
+        if(pow > 0){
+            if(typeof s == "number" && (temp = s * s) < $B.max_int){
+                s = temp
+            }else{
+                s = long_int.$factory(s)
+                s = long_int.__mul__(s, s)
+            }
+        }
         if(z !== undefined){
-            res = long_int.__mod__(res, z)
+            b = long_int.__mod__(b, z)
         }
     }
-    return intOrLong(res)
+    return intOrLong(b)
 }
 
 long_int.__rshift__ = function(self, shift){
+    if(window.BigInt){
+        if(shift.__class__ === long_int){
+            shift = shift.value
+        }
+        return intOrLong(
+            {
+                __class__: long_int,
+                value: (BigInt(self.value) >> BigInt(shift)).toString(),
+                pos: self.pos
+            }
+        )
+    }
+    if(typeof shift == "number"){
+        var pow2 = Math.pow(2, shift)
+        if(pow2 < $B.max_int){
+            var res = divmod_by_safe_int(self.value, pow2)
+            return intOrLong({
+                __class__: long_int,
+                value: res[0],
+                pos: self.pos
+            })
+        }
+    }
     shift = long_int.$factory(shift)
     if(shift.value == "0"){return self}
     var res = self.value
@@ -755,7 +908,8 @@ long_int.__str__ = long_int.__repr__ = function(self){
 
 long_int.__sub__ = function(self, other){
     if(isinstance(other, _b_.float)){
-        return _b_.float.$factory(parseInt(self.value) - other.value)
+        other = other instanceof Number ? other : other.$brython_value
+        return _b_.float.$factory(parseInt(self.value) - other)
     }
     if(typeof other == "number"){
         other = long_int.$factory(_b_.str.$factory(other))
@@ -886,6 +1040,10 @@ function intOrLong(long){
     return long
 }
 
+long_int.$from_int = function(value){
+    return {__class__: long_int, value: value.toString(), pos: value > 0}
+}
+
 long_int.$factory = function(value, base){
     // console.log("longint factory", value, base)
     if(arguments.length > 2){
@@ -903,7 +1061,14 @@ long_int.$factory = function(value, base){
         throw ValueError.$factory(
             "long_int.$factory() base must be >= 2 and <= 36")
     }
-    if(isinstance(value, _b_.float)){
+    if(typeof value == "number"){
+        if(isSafeInteger(value)){value = value.toString()}
+        else if(value.constructor == Number){value = value.toString()}
+        else{
+            throw ValueError.$factory(
+                "argument of long_int is not a safe integer")
+        }
+    }else if(isinstance(value, _b_.float)){
         if(value === Number.POSITIVE_INFINITY ||
                 value === Number.NEGATIVE_INFINITY){
             return value
@@ -913,19 +1078,11 @@ long_int.$factory = function(value, base){
     }else if(isinstance(value, _b_.bool)){
         if(value.valueOf()){return int.$factory(1)}
         return int.$factory(0)
-    }
-    if(typeof value == "number"){
-        if(isSafeInteger(value)){value = value.toString()}
-        else if(value.constructor == Number){value = value.toString()}
-        else{
-            throw ValueError.$factory(
-                "argument of long_int is not a safe integer")
-        }
     }else if(value.__class__ === long_int){
         return value
     }else if(isinstance(value, int)){
         // int subclass
-        value = value.$value + ""
+        value = value.$brython_value + ""
     }else if(isinstance(value, _b_.bool)){
         value = _b_.bool.__int__(value) + ""
     }else if(typeof value != "string"){
@@ -960,7 +1117,25 @@ long_int.$factory = function(value, base){
     var is_digits = digits(base),
         point = -1
     for(var i = 0; i < value.length; i++){
-        if(value.charAt(i) == "." && point == -1){point = i}
+        if(value.charAt(i) == "." && point == -1){
+            point = i
+        }else if(value.charAt(i) == "e"){
+            // Form 123e56 or 12.3e45
+            var mant = value.substr(0, i)
+            if(/^[+-]?\d+$/.exec(value.substr(i + 1))){
+                exp = parseInt(value.substr(i + 1))
+            }else{
+                throw Error("wrong exp " + value.substr(i + 1))
+            }
+            if(point != -1){
+                mant = mant.substr(0, point) + mant.substr(point + 1)
+                exp = exp + point - 1
+            }
+            point = -1
+            value = mant + "0".repeat(exp - mant.length)
+            break
+        }
+
         else if(! is_digits[value.charAt(i)]){
             throw ValueError.$factory(
                 'long_int argument is not a valid number: "' + value + '"')

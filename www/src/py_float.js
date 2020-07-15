@@ -13,8 +13,8 @@ function $err(op, other){
 
 function float_value(obj){
     // Instances of float subclasses that call float.__new__(cls, value)
-    // have an attribute $value set
-    return obj.$value !== undefined ? obj.$value : obj
+    // have an attribute $brython_value set
+    return obj.$brython_value !== undefined ? obj.$brython_value : obj
 }
 
 // dictionary for built-in class 'float'
@@ -179,7 +179,9 @@ float.__getformat__ = function(arg){
 }
 
 function preformat(self, fmt){
-    if(fmt.empty){return _b_.str.$factory(self)}
+    if(fmt.empty){
+        return _b_.str.$factory(self)
+    }
     if(fmt.type && 'eEfFgGn%'.indexOf(fmt.type) == -1){
         throw _b_.ValueError.$factory("Unknown format code '" + fmt.type +
             "' for object of type 'float'")
@@ -216,11 +218,50 @@ function preformat(self, fmt){
             pt_pos = res.indexOf(".")
         if(fmt.type !== undefined &&
                 (fmt.type == "%" || fmt.type.toLowerCase() == "f")){
-            if(pt_pos == -1){res += "." + "0".repeat(fmt.precision)}
-            else{
+            if(pt_pos == -1){
+                res += "." + "0".repeat(fmt.precision)
+            }else{
                 var missing = fmt.precision - res.length + pt_pos + 1
-                if(missing > 0){res += "0".repeat(missing)}
+                if(missing > 0){
+                    res += "0".repeat(missing)
+                }
             }
+        }else if(fmt.type && fmt.type.toLowerCase() == "g"){
+            var exp_fmt = preformat(self, {type: "e"}).split("e"),
+                exp = parseInt(exp_fmt[1])
+            if(-4 <= exp && exp < fmt.precision){
+                res = preformat(self,
+                        {type: "f", precision: fmt.precision - 1 - exp})
+            }else{
+                res = preformat(self,
+                    {type: "e", precision: fmt.precision - 1})
+            }
+            var parts = res.split("e")
+            if(fmt.alternate){
+                if(parts[0].search(/\./) == -1){
+                    parts[0] += '.'
+                }
+            }else{
+                if(parts[1]){
+                    var signif = parts[0]
+                    while(signif.endsWith("0")){
+                        signif = signif.substr(0, signif.length - 1)
+                    }
+                    if(signif.endsWith(".")){
+                        signif = signif.substr(0, signif.length - 1)
+                    }
+                    parts[0] = signif
+                }
+            }
+            res = parts.join("e")
+            if(fmt.type == "G"){
+                res = res.toUpperCase()
+            }
+            return res
+        }else if(fmt.type === undefined){
+            fmt.type = "g"
+            res = preformat(self, fmt)
+            fmt.type = undefined
         }else{
             var res1 = self.toExponential(fmt.precision - 1),
                 exp = parseInt(res1.substr(res1.search("e") + 1))
@@ -234,7 +275,7 @@ function preformat(self, fmt){
         }
     }else{var res = _b_.str.$factory(self)}
 
-    if(fmt.type === undefined|| "gGn".indexOf(fmt.type) != -1){
+    if(fmt.type === undefined || "gGn".indexOf(fmt.type) != -1){
         // remove trailing 0 for non-exponential formats
         if(res.search("e") == -1){
             while(res.charAt(res.length - 1) == "0"){
@@ -476,8 +517,8 @@ float.__new__ = function(cls, value){
     if(cls === float){return float.$factory(value)}
     return {
         __class__: cls,
-        __dict__: _b_.dict.$factory(),
-        $value: value || 0
+        __dict__: $B.empty_dict(),
+        $brython_value: value || 0
     }
 }
 
@@ -539,7 +580,45 @@ float.__repr__ = float.__str__ = function(self){
     if(isNaN(self.valueOf())){return 'nan'}
 
     var res = self.valueOf() + "" // coerce to string
-    if(res.indexOf(".") == -1){res += ".0"}
+    if(res.indexOf(".") == -1){
+        res += ".0"
+    }
+    var x, y
+    [x, y] = res.split('.')
+    if(x.length > 16){
+        var exp = x.length - 1,
+            int_part = x[0],
+            dec_part = x.substr(1) + y
+        while(dec_part.endsWith("0")){
+            dec_part = dec_part.substr(0, dec_part.length - 1)
+        }
+        var mant = int_part
+        if(dec_part.length > 0){
+            mant += '.' + dec_part
+        }
+        return mant + 'e+' + exp
+    }else if(x == "0"){
+        var exp = 0
+        while(exp < y.length && y.charAt(exp) == "0"){
+            exp++
+        }
+        if(exp > 3){
+            // form 0.0000xyz
+            var rest = y.substr(exp),
+                exp = (exp + 1).toString()
+            while(rest.endsWith("0")){
+                rest = rest.substr(0, res.length - 1)
+            }
+            var mant = rest[0]
+            if(rest.length > 1){
+                mant += '.' + rest.substr(1)
+            }
+            if(exp.length == 1){
+                exp = '0' + exp
+            }
+            return mant + 'e-' + exp
+        }
+    }
     return _b_.str.$factory(res)
 }
 
@@ -591,7 +670,9 @@ var $op_func = function(self, other){
             return float.$factory(self - parseInt(other.value))
         }else{return float.$factory(self - other)}
     }
-    if(isinstance(other, float)){return float.$factory(self - other)}
+    if(isinstance(other, float)){
+        return float.$factory(self - other)
+    }
     if(isinstance(other, _b_.bool)){
         var bool_value = 0
         if(other.valueOf()){bool_value = 1}
@@ -702,7 +783,7 @@ float.$factory = function (value){
     }
 
     if(typeof value == "number"){return new Number(value)}
-    if(isinstance(value, float)){return value}
+    if(isinstance(value, float)){return float_value(value)}
     if(isinstance(value, bytes)){
       var s = getattr(value, "decode")("latin-1")
       return float.$factory(getattr(value, "decode")("latin-1"))

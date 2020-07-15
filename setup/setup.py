@@ -111,7 +111,7 @@ if command == "sdist":
 setup(
     name='brython',
 
-    version='3.8.6',
+    version='3.8.9',
     description='Brython is an implementation of Python 3 running in the browser',
 
     long_description=LONG_DESCRIPTION,
@@ -150,6 +150,12 @@ setup(
 
     package_data={
         'brython': ['data/*.*']
+    },
+    entry_points={
+        'console_scripts': [
+            'brython-cli = brython.__main__:main'
+            ]
     }
+
 
 )

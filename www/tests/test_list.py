@@ -239,4 +239,79 @@ assert test2 == [1, 2, 3]
 # issue 1139
 assert [*[1, 2, 3][:]] == [1, 2, 3]
 
+# issue 1288
+a = list(range(10))
+a[::-4] = [10] * 3
+assert a == [0, 10, 2, 3, 4, 10, 6, 7, 8, 10]
+
+# issue 1289
+assert ([2, 3] < [2]) is False
+assert [2] < [2, 3]
+assert [2, 3] > [2]
+
+# issue 1292
+lst = [1, 2, 3]
+assert lst[-100:] == [1, 2, 3]
+assert lst[:100] == [1, 2, 3]
+assert lst[-100:100] == [1, 2, 3]
+
+# issue 1333
+a = ('x', 'y')
+
+assert ('1', (*a)) == ('1', 'x', 'y')
+assert ('1', (*a,)) == ('1', ('x', 'y'))
+assert ('a', (*range(4))) == ('a', 0, 1, 2, 3)
+assert ('a', (*range(4),)) == ('a', (0, 1, 2, 3))
+assert ('1', (((*a)))) == ('1', 'x', 'y')
+
+# issue 1337
+L = [[0], [1]]
+L[0].append(L[1])
+L[1].append(L[0])
+assert repr(L) == "[[0, [1, [...]]], [1, [0, [...]]]]"
+assert str(L) == "[[0, [1, [...]]], [1, [0, [...]]]]"
+assert repr(L[1]) == "[1, [0, [...]]]"
+
+# issue 1368
+class Test:
+  def __init__(self):
+    self.count = [1, 2, 3]
+  def test_unpack(self):
+    return [*self.count]
+
+t = Test()
+assert t.test_unpack() == [1, 2, 3]
+
+s = [4, 5, 6]
+assert [*s] == [4, 5, 6]
+
+class A:
+  x = [7, 8, 9]
+
+assert [*A.x] == [7, 8, 9]
+
+# issue 1389
+class P(object):
+    def __init__(self, x):
+        self.value = x
+
+    def __eq__(self, other):
+        return self.value == other.value
+
+    def __lt__(self, other):
+        return self.value < other.value
+
+    def __repr__(self):
+        return f"P({self.value})"
+
+a = P(5)
+b = P(6)
+assert not a == b
+assert a != b
+assert a < b
+
+L = [P(7), P(3), P(5), P(1), P(3)]
+L.sort()
+assert L == [P(1), P(3), P(3), P(5), P(7)]
+
 print("passed all tests..")

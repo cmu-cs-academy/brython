@@ -1,5 +1,12 @@
 var __BRYTHON__ = __BRYTHON__ || {}  // global object with brython built-ins
 
+try{
+    // "async function*" is not supported in old versions of Microsoft Edge
+    eval("async function* f(){}")
+}catch(err){
+    console.warn("Your browser is not fully supported. If you are using " +
+        "Microsoft Edge, please upgrade to the latest version")
+}
 ;(function($B) {
 
 // Detect whether we are in a Web Worker
@@ -26,6 +33,8 @@ if($B.isNode){
 
 var href = _window.location.href
 $B.protocol = href.split(':')[0]
+
+$B.BigInt = _window.BigInt
 
 var $path
 
@@ -72,7 +81,7 @@ $B.webworkers = {}
 // Mapping between a module name and its path (url)
 $B.$py_module_path = {}
 
-// File cache
+// File cache, indexed by module names
 $B.file_cache = {}
 
 // Mapping between a Python module name and its source code
@@ -153,7 +162,6 @@ $B.set_func_names = function(klass, module){
         klass.$infos.__qualname__ = name
     }else{
         var name = klass.__name__
-        console.log("bizarre", klass)
         klass.$infos = {
             __name__: name,
             __module__: module,

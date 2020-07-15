@@ -39,7 +39,11 @@ list.__add__ = function(self, other){
         throw _b_.TypeError.$factory('can only concatenate list (not "' +
             $B.class_name(other) + '") to list')
     }
-    var res = self.valueOf().concat(other.valueOf())
+    var res = self.slice(),
+        is_js = other.$brython_class == "js" // list of JS objects
+    for(const item of other){
+        res.push(is_js ? $B.$JS2Py(item) : item)
+    }
     res.__brython__ = true
     if(isinstance(self, tuple)){res = tuple.$factory(res)}
     return res
@@ -127,13 +131,18 @@ list.__eq__ = function(self, other){
     return _b_.NotImplemented
 }
 
-list.__getitem__ = function(self, arg){
-    var $ = $B.args("__getitem__",2,{self: null, key: null},
-        ["self", "key"], arguments, {}, null, null),
-        self = $.self,
-        key = $.key
+list.__getitem__ = function(self, key){
+    // var $ = $B.args("__getitem__",2,{self: null, key: null},
+    //     ["self", "key"], arguments, {}, null, null),
+    //     self = $.self,
+    //     key = $.key
+    $B.check_no_kw("__getitem__", self, key)
+    $B.check_nb_args("__getitem__", 2, arguments)
+    return list.$getitem(self, key)
+}
 
-    var factory = $B.get_class(self).$factory
+list.$getitem = function(self, key){
+    var factory = (self.__class__ || $B.get_class(self)).$factory
 
     if(isinstance(key, _b_.int)){
         var items = self.valueOf(),
@@ -143,8 +152,12 @@ list.__getitem__ = function(self, arg){
 
         throw _b_.IndexError.$factory("list index out of range")
     }
-    if(isinstance(key, _b_.slice)){
+    if(key.__class__ === _b_.slice || isinstance(key, _b_.slice)){
         // Find integer values for start, stop and step
+        if(key.start === _b_.None && key.stop === _b_.None &&
+                key.step === _b_.None){
+            return self.slice()
+        }
         var s = _b_.slice.$conv_for_seq(key, self.length)
         // Return the sliced list
         var res = [],
@@ -298,7 +311,7 @@ list.__lt__ = function(self, other){
     }
     var i = 0
     while(i < self.length){
-        if(i >= other.length){return true}
+        if(i >= other.length){return false}
         if($B.rich_comp("__eq__", self[i], other[i])){
             i++
         }else{
@@ -348,25 +361,29 @@ list.__new__ = function(cls, ...args){
     var res = []
     res.__class__ = cls
     res.__brython__ = true
-    res.__dict__ = _b_.dict.$factory()
+    res.__dict__ = $B.empty_dict()
     return res
 }
 
-
 list.__repr__ = function(self){
-    if(self === undefined){return "<class 'list'>"}
+    if($B.repr.enter(self)){ // in py_utils.js
+        return '[...]'
+    }
+    var _r = [],
+        res
 
-    var _r = []
     for(var i = 0; i < self.length; i++){
-        if(self[i] === self){_r.push('[...]')}
-        else{_r.push(_b_.repr(self[i]))}
+        _r.push(_b_.repr(self[i]))
     }
 
     if(self.__class__ === tuple){
         if(self.length == 1){return "(" + _r[0] + ",)"}
-        return "(" + _r.join(", ") + ")"
+        res = "(" + _r.join(", ") + ")"
+    }else{
+        res = "[" + _r.join(", ") + "]"
     }
-    return "[" + _r.join(", ") + "]"
+    $B.repr.leave(self)
+    return res
 }
 
 list.__setattr__ = function(self, attr, value){
@@ -380,7 +397,7 @@ list.__setattr__ = function(self, attr, value){
         }
     }
     // list subclass : use __dict__
-    self.__dict__.$string_dict[attr] = value
+    _b_.dict.$setitem(self.__dict__, attr, value)
     return $N
 }
 
@@ -425,10 +442,15 @@ $B.make_rmethods(list)
 
 var _ops = ["add", "sub"]
 
-list.append = function(){
+list.append = function(self, x){
+    $B.check_no_kw("append", self, x)
+    $B.check_nb_args("append", 2, arguments)
+    /*
     var $ = $B.args("append", 2 ,{self: null, x: null}, ["self", "x"],
         arguments, {}, null, null)
     $.self[$.self.length] = $.x
+    */
+    self.push(x)
     return $N
 }
 
@@ -493,7 +515,7 @@ list.index = function(){
 list.insert = function(){
     var $ = $B.args("insert", 3, {self: null, i: null, item: null},
         ["self", "i", "item"], arguments, {}, null, null)
-    $.self.splice($.i,0,$.item)
+    $.self.splice($.i, 0, $.item)
     return $N
 }
 
@@ -624,10 +646,14 @@ list.sort = function(self){
         keys = _b_.list.$factory(_b_.dict.$$keys(kw_args))
 
     for(var i = 0; i < keys.length; i++){
-        if(keys[i] == "key"){func = kw_args.$string_dict[keys[i]]}
-        else if(keys[i] == "reverse"){reverse = kw_args.$string_dict[keys[i]]}
-        else{throw _b_.TypeError.$factory("'" + keys[i] +
-            "' is an invalid keyword argument for this function")}
+        if(keys[i] == "key"){
+            func = kw_args.$string_dict[keys[i]][0]
+        }else if(keys[i] == "reverse"){
+            reverse = kw_args.$string_dict[keys[i]][0]
+        }else{
+            throw _b_.TypeError.$factory("'" + keys[i] +
+                "' is an invalid keyword argument for this function")
+        }
     }
     if(self.length == 0){return}
 
@@ -653,10 +679,10 @@ list.sort = function(self){
         if(func === $N){
             if(reverse){
                 cmp = function(b, a) {
-                    res = getattr(a, "__le__")(b)
+                    res = getattr(a, "__lt__")(b)
                     if(res === _b_.NotImplemented){
                         throw _b_.TypeError.$factory("unorderable types: " +
-                            $B.class_name(b) + "() <=" +
+                            $B.class_name(b) + "() < " +
                             $B.class_name(a) + "()")
                     }
                     if(res){
@@ -667,10 +693,10 @@ list.sort = function(self){
                 }
             }else{
                 cmp = function(a, b){
-                    res = getattr(a, "__le__")(b)
+                    res = getattr(a, "__lt__")(b)
                     if(res === _b_.NotImplemented){
                         throw _b_.TypeError.$factory("unorderable types: " +
-                            $B.class_name(a) + "() <=" +
+                            $B.class_name(a) + "() < " +
                             $B.class_name(b) + "()")
                     }
                     if(res){
@@ -685,10 +711,10 @@ list.sort = function(self){
                 cmp = function(b, a) {
                     var _a = func(a),
                         _b = func(b)
-                    res = getattr(_a, "__le__")(_b)
+                    res = getattr(_a, "__lt__")(_b)
                     if(res === _b_.NotImplemented){
                         throw _b_.TypeError.$factory("unorderable types: " +
-                            $B.class_name(b) + "() <=" +
+                            $B.class_name(b) + "() < " +
                             $B.class_name(a) + "()")
                     }
                     if(res){
@@ -704,7 +730,7 @@ list.sort = function(self){
                     res = $B.$getattr(_a, "__lt__")(_b)
                     if(res === _b_.NotImplemented){
                         throw _b_.TypeError.$factory("unorderable types: " +
-                            $B.class_name(a) + "() <=" +
+                            $B.class_name(a) + "() < " +
                             $B.class_name(b) + "()")
                     }
                     if(res){
@@ -835,7 +861,7 @@ tuple.$factory = function(){
 $B.fast_tuple = function(array){
     array.__class__ = tuple
     array.__brython__ = true
-    array.__dict__ = _b_.dict.$factory()
+    array.__dict__ = $B.empty_dict()
     return array
 }
 // add tuple methods
@@ -877,7 +903,7 @@ function c_mul(a, b){
     return parseInt(s.substr(0, s.length - 1), 16)
 }
 
-tuple.__hash__ = function (self) {
+tuple.__hash__ = function(self){
   // http://nullege.com/codes/show/src%40p%40y%40pypy-HEAD%40pypy%40rlib%40test%40test_objectmodel.py/145/pypy.rlib.objectmodel._hash_float/python
   var x = 0x3456789
   for(var i = 0, len = self.length; i < len; i++){
@@ -899,7 +925,7 @@ tuple.__new__ = function(cls, ...args){
     var self = []
     self.__class__ = cls
     self.__brython__ = true
-    self.__dict__ = _b_.dict.$factory()
+    self.__dict__ = $B.empty_dict()
     var arg = $B.$iter(args[0]),
         next_func = $B.$call(getattr(arg, "__next__"))
     while(1){

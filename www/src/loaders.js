@@ -21,7 +21,8 @@ function idb_load(evt, module){
 
     var timestamp = $B.timestamp
 
-    if(res === undefined || res.timestamp != $B.timestamp){
+    if(res === undefined || res.timestamp != $B.timestamp ||
+            ($B.VFS[module] && res.source_ts !== $B.VFS[module].timestamp)){
         // Not found or not with the same date as in brython_stdlib.js:
         // search in VFS
         if($B.VFS[module] !== undefined){
@@ -169,6 +170,7 @@ function idb_get(module){
 $B.idb_open = function(obj){
     $B.idb_name = "brython-cache"
     var idb_cx = $B.idb_cx = indexedDB.open($B.idb_name)
+
     idb_cx.onsuccess = function(){
         var db = idb_cx.result
         if(!db.objectStoreNames.contains("modules")){
@@ -200,7 +202,13 @@ $B.idb_open = function(obj){
                 record,
                 outdated = []
 
-            store.openCursor().onsuccess = function(evt){
+            var openCursor = store.openCursor()
+
+            openCursor.onerror = function(evt){
+                console.log("open cursor error", evt)
+            }
+
+            openCursor.onsuccess = function(evt){
                 cursor = evt.target.result
                 if(cursor){
                     record = cursor.value
@@ -248,6 +256,11 @@ $B.idb_open = function(obj){
     }
     idb_cx.onerror = function(){
         console.info('could not open indexedDB database')
+        // Proceed without indexedDB
+        $B.idb_cx = null
+        $B.idb_name = null
+        $B.$options.indexedDB = false
+        loop()
     }
 }
 
@@ -259,7 +272,8 @@ $B.ajax_load_script = function(script){
             name, true])
     }else if($B.protocol != "file"){
         var req = new XMLHttpRequest(),
-            qs = $B.$options.cache ? '' : '?' + Date.now()
+            qs = $B.$options.cache ? '' :
+                    (url.search(/\?/) > -1 ? '&' : '?') + Date.now()
         req.open("GET", url + qs, true)
         req.onreadystatechange = function(){
             if(this.readyState == 4){
@@ -270,10 +284,10 @@ $B.ajax_load_script = function(script){
                     }else{
                         $B.tasks.splice(0, 0, [$B.run_script, src, name, true])
                     }
+                    loop()
                 }else if(this.status == 404){
                     throw Error(url + " not found")
                 }
-                loop()
             }
         }
         req.send()
@@ -281,7 +295,6 @@ $B.ajax_load_script = function(script){
         throw _b_.IOError.$factory("can't load external script at " +
             script.url + " (Ajax calls not supported with protocol file:///)")
     }
-    loop()
 }
 
 function add_jsmodule(module, source){
@@ -301,7 +314,7 @@ var inImported = $B.inImported = function(module){
             source = elts[1],
             is_package = elts.length == 4
         if(ext==".py"){
-            if($B.idb_cx){
+            if($B.idb_cx && !$B.idb_cx.$closed){
                 $B.tasks.splice(0, 0, [idb_get, module])
             }
         }else{
@@ -316,7 +329,7 @@ var inImported = $B.inImported = function(module){
 var loop = $B.loop = function(){
     if($B.tasks.length == 0){
         // No more task to process.
-        if($B.idb_cx){
+        if($B.idb_cx && ! $B.idb_cx.$closed){
             var db = $B.idb_cx.result,
                 tx = db.transaction("modules", "readwrite"),
                 store = tx.objectStore("modules")
@@ -324,7 +337,9 @@ var loop = $B.loop = function(){
                 var module = $B.outdated.pop(),
                     req = store.delete(module)
                 req.onsuccess = function(event){
-                    console.info("delete outdated", module)
+                    if($B.debug > 1){
+                        console.info("delete outdated", module)
+                    }
                     document.dispatchEvent(new CustomEvent('precompile',
                         {detail: 'remove outdated ' + module +
                          ' from cache'}))
@@ -346,7 +361,6 @@ var loop = $B.loop = function(){
             var script = task[1],
                 script_id = script.__name__.replace(/\./g, "_"),
                 module = $B.module.$factory(script.__name__)
-
             module.$src = script.$src
             module.__file__ = script.__file__
             $B.imported[script_id] = module
@@ -387,15 +401,21 @@ $B.has_indexedDB = self.indexedDB !== undefined
 
 $B.handle_error = function(err){
     // Print the error traceback on the standard error stream
+    if($B.debug > 1){
+        console.log("handle error", err.__class__, err.args)
+    }
     if(err.__class__ !== undefined){
         var name = $B.class_name(err),
-            trace = _b_.getattr(err, 'info')
+            trace = $B.$getattr(err, 'info')
         if(name == 'SyntaxError' || name == 'IndentationError'){
             var offset = err.args[3]
             trace += '\n    ' + ' '.repeat(offset) + '^' +
                 '\n' + name + ': '+err.args[0]
         }else{
-            trace += '\n' + name + ': ' + err.args
+            trace += '\n' + name
+            if(err.args[0] && err.args[0] !== _b_.None){
+                trace += ': ' + _b_.str.$factory(err.args[0])
+            }
         }
     }else{
         console.log(err)

@@ -1,4 +1,4 @@
-<!DOCTYPE html> 
+<!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="/brython.css">
 
 <script src="/src/brython.js"></script>
+<script type="text/javascript" src="/src/brython_stdlib.js"></script>
+<script src="/assets/header.brython.js"></script>
 
 <script type="text/python3">
 from browser import window, document, html, highlight
@@ -20,7 +22,6 @@ def run(ev):
     while tg.tagName != 'BUTTON':
         tg = tg.parent
     exec(tg.elt.text.strip(), {})
-    elt.focus()
 
 target = 'content'
 for elt in document[target].get(selector='.exec'):
@@ -56,13 +57,10 @@ for elt in document[target].get(selector='.python'):
 </head>
 <body onLoad="brython(1)">
 
-<scripts>
+<div id="banner_row">
+<span class="logo"><a href="/index.html">brython</a></span>
+</div>
 
-<table id="banner" cellpadding=0 cellspacing=0>
-<tr id="banner_row">
-<td class="logo"><a href="/index.html" class="logo">Brython</a></td>
-</tr>
-</table>
 
 <table width="100%">
 <tr>

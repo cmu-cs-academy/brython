@@ -659,9 +659,10 @@ Random.paretovariate = function(){
 
 function is_integer(x){
     return _b_.isinstance(x, _b_.int) || (
-        _b_.isinstance(x, _b_.float) && 
+        _b_.isinstance(x, _b_.float) &&
             x.valueOf() == Math.floor(x.valueOf()))
 }
+
 Random.randint = function(self, a, b){
     var $ = $B.args('randint', 3,
         {self: null, a:null, b:null},
@@ -673,8 +674,7 @@ Random.randint = function(self, a, b){
     if(! is_integer($.b)){
         throw _b_.ValueError.$factory("non-integer value for stop")
     }
-
-    return Random.randrange($.self, $.a, $.b + 1)
+    return Random.randrange($.self, $.a, $B.add($.b, 1))
 }
 
 Random.random = function(self){
@@ -691,12 +691,16 @@ Random.randrange = function(){
         self = $.self,
         _random = self._random
 
-    for(var i = 1, len = arguments.length; i < len; i++){
-        if(! is_integer(arguments[i])){
-            throw _b_.ValueError.$factory("non-integer arg " + i +
-                " for randrange()")
-        }
+    if(! is_integer($.x)){
+        throw _b_.ValueError.$factory("non-integer arg 1 for randrange()")
     }
+    if($.stop !== null && ! is_integer($.stop)){
+        throw _b_.ValueError.$factory("non-integer arg 2 for randrange()")
+    }
+    if($.step !== null && ! is_integer($.step)){
+        throw _b_.ValueError.$factory("non-integer arg 3 for randrange()")
+    }
+
     if($.stop === null){
         var start = 0, stop = $.x.valueOf(), step = 1
     }else{
@@ -939,6 +943,7 @@ Random.shuffle = function(x, random){
             x_set(i, temp)
         }
     }
+    return _b_.None
 }
 
 Random.triangular = function(){

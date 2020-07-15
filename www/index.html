@@ -1,51 +1,27 @@
 <!doctype html>
 <html>
 <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 <meta name="description" content="Brython">
 <meta name="keywords" content="Python,Brython">
 <meta name="author" content="Pierre Quentel">
-<meta http-equiv="content-type" content="text/html;charset=utf-8">
+<title>Brython</title>
 
 <link rel="icon" type="image/png" href="favicon.png" />
 
 <noscript>Please enable Javascript to view this page correctly.</noscript>
 
 <script type="text/javascript" src="/src/brython.js"></script>
-<script type="text/javascript" src="/src/brython_dist.js"></script>
+<script type="text/javascript" src="/src/brython_stdlib.js"></script>
+
+<link rel="stylesheet" href="/brython.css">
 
 <script src="/assets/header.brython.js"></script>
 
 <script type="text/python">
-"""On page load, Brython inspects all the scripts in the page and, if
-brython_stdlib.js is loaded, finds all the modules it has to import. If the
-Brython version has not changed, it loads the Javascript translation of these
-modules from the indexedDB cache.
-
-If it has changed, the outdated modules in the cache are removed and a new
-version of the translation to Javascript is stored in the cache. These actions
-(storing in or removing from the cache) trigger a custom event called
-'precompile'. This script captures this event and displays a message at the
-top of the page to explain why the loading takes some time."""
-
-from browser import document, bind, html
-
-report = document["report"]
-
-@bind(document, 'precompile')
-def precompile(ev):
-  if not list(report.select("div")):
-      report <= html.DIV("New Brython version detected, please wait")
-      zone = html.DIV("&nbsp;", id="report_message", style=dict(width="0px"))
-      report <= zone
-  if ev.detail == "close":
-      report.style.display = "none"
-  else:
-      document["report_message"].width += 5
-
-</script>
-
-<script type="text/python">
 """Load header and text according to the language."""
+
 from browser import document, html
 import header
 
@@ -59,15 +35,6 @@ document["content"].html = document[f"content_{language}"].html
 if qs_lang:
     document[f"c_{qs_lang}"].href += f"?lang={qs_lang}"
 
-# If user changes the language in the select box, reload the page.
-def change_language(ev):
-    sel = ev.target
-    new_lang = sel.options[sel.selectedIndex].value
-    document.location.href = f"index.html?lang={new_lang}"
-
-for elt in document.select("select.language"):
-    elt.bind('change', change_language)
-
 </script>
 
 <script type="text/python">
@@ -75,7 +42,6 @@ for elt in document.select("select.language"):
 
 import time
 import math
-import datetime
 
 from browser import document
 import browser.timer
@@ -84,11 +50,11 @@ sin, cos = math.sin, math.cos
 width, height = 250, 250 # canvas dimensions
 ray = 100 # clock ray
 
-background = "#111"
+background = "SteelBlue"
 digits = "#fff"
-border = "#333"
+border = "blue"
 
-def needle(angle, r1, r2, color="#000000"):
+def needle(angle, r1, r2):
     """Draw a needle at specified angle in specified color.
     r1 and r2 are percentages of clock ray.
     """
@@ -113,8 +79,10 @@ def set_clock():
     show_hours()
 
     # print day
-    now = datetime.datetime.now()
-    day = now.day
+    now_time = time.time()
+    now = time.localtime(now_time)
+    microsecs = now_time - int(now_time)
+    day = now.tm_mday
     ctx.font = "bold 14px Arial"
     ctx.textAlign = "center"
     ctx.textBaseline = "middle"
@@ -123,16 +91,16 @@ def set_clock():
 
     # draw needles for hour, minute, seconds
     ctx.lineWidth = 2
-    hour = now.hour % 12 + now.minute / 60
+    hour = now.tm_hour % 12 + now.tm_min / 60
     angle = hour * 2 * math.pi / 12 - math.pi / 2
-    needle(angle, 0.05, 0.5)
-    minute = now.minute
+    needle(angle, 0.05, 0.45)
+    minute = now.tm_min
     angle = minute * 2 *math.pi / 60 - math.pi / 2
-    needle(angle, 0.05, 0.85)
+    needle(angle, 0.05, 0.7)
     ctx.lineWidth = 1
-    second = now.second + now.microsecond / 1_000_000
+    second = now.tm_sec + microsecs
     angle = second * 2 * math.pi / 60 - math.pi / 2
-    needle(angle, 0.05, 0.85, "#FF0000") # in red
+    needle(angle, 0.05, 0.8)
 
 def show_hours():
     ctx.beginPath()
@@ -141,8 +109,8 @@ def show_hours():
     ctx.fill()
     for i in range(1, 13):
         angle = i * math.pi / 6 - math.pi / 2
-        x3 = width / 2 + ray * cos(angle) * 0.75
-        y3 = height / 2 + ray * sin(angle) * 0.75
+        x3 = width / 2 + ray * cos(angle) * 0.82
+        y3 = height / 2 + ray * sin(angle) * 0.82
         ctx.font = "18px Arial"
         ctx.textAlign = "center"
         ctx.textBaseline = "middle"
@@ -161,72 +129,33 @@ if hasattr(canvas, 'getContext'):
     ctx.fillStyle = background
     ctx.fill()
 
-    ctx.beginPath()
-    ctx.lineWidth = 6
-    ctx.arc(width / 2,height / 2, ray + 3, 0, 2 * math.pi)
-    ctx.strokeStyle = border
-    ctx.stroke()
-
-    for i in range(60):
-        ctx.lineWidth = 1
-        if i % 5 == 0:
-            ctx.lineWidth = 3
-        angle = i * 2 * math.pi / 60 - math.pi / 3
-        x1 = width / 2 + ray * cos(angle)
-        y1 = height / 2 + ray * sin(angle)
-        x2 = width / 2 + ray * cos(angle) * 0.9
-        y2 = height / 2 + ray * sin(angle) * 0.9
-        ctx.beginPath()
-        ctx.strokeStyle = digits
-        ctx.moveTo(x1, y1)
-        ctx.lineTo(x2, y2)
-        ctx.stroke()
     browser.timer.set_interval(set_clock, 100)
     show_hours()
 else:
-    document['navig_zone'].html = "On Internet Explorer 9 or more, " \
-        "use a Standard rendering engine"
+    document['navig_zone'].html = "canvas is not supported"
 
 </script>
 
-<title>Brython</title>
 
-<link rel="stylesheet" href="/brython.css">
-<style>
-#report_message {
-    background-color: var(--dark-2);
-}
-</style>
 </head>
 
 <body onload="brython(1)">
 
-<table id="banner" cellpadding=0 cellspacing=0>
-<tr id="banner_row">
-<td class="logo"><a href="../index.html" class="logo">Brython</a></td>
-</tr>
-</table>
-
-<div id="report"></div>
+<div id="banner_row">
+<span class="logo"><a href="/index.html">brython</a></span>
+</div>
 
 <div id="content"></div>
 
 <div id="content_en" style="height:1px;visibility:hidden">
 
 <table style="width:85%;margin-left:10%">
-<tr>
-<td>
+  <tr>
+    <td>
+      <H2>A Python 3 implementation for client-side web programming</H2>
+    </td>
 
-<H2>A Python 3 implementation for client-side web programming</H2>
-</td>
-<td valign="top">
-<select class="language" id="change_lang_en">
-<option value="en" selected>English
-<option value="es">Espa&ntilde;ol
-<option value="fr">Fran&ccedil;ais
-</select>
-</td>
-</tr>
+  </tr>
 </table>
 
 <table style="width:85%;margin-left:10%">
@@ -262,13 +191,7 @@ However, right click and view the source of this page...
 
 <H2>Une implémentation de Python 3 pour la programmation web côté client</H2>
 </td>
-<td valign="top">
-<select class="language" id="change_lang_fr">
-<option value="en">English
-<option value="es">Espa&ntilde;ol
-<option value="fr" selected>Fran&ccedil;ais
-</select>
-</td>
+
 </tr>
 </table>
 
@@ -304,13 +227,7 @@ Maintenant, regardez le code source de cette page...
 
 <H2>Una implementación de Python para la programación web del lado del cliente</H2>
 </td>
-<td valign="top">
-<select class="language" id="change_lang_en">
-<option value="en">English
-<option value="es" selected>Espa&ntilde;ol
-<option value="fr">Fran&ccedil;ais
-</select>
-</td>
+
 </tr>
 </table>
 

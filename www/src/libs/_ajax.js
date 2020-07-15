@@ -34,75 +34,96 @@ function _read(req){
     if(xhr.responseType == "json"){
         return $B.structuredclone2pyobj(xhr.response)
     }
-    if(xhr.responseType == "arraybuffer"){
-        var abuf = new Uint8Array(xhr.response)
-        res = []
-        for(var i = 0, len = abuf.length; i < len; i++){
-            res.push(abuf[i])
-        }
-        return _b_.bytes.$factory(res)
+    var abuf = new Uint8Array(xhr.response)
+    res = []
+    for(var i = 0, len = abuf.length; i < len; i++){
+        res.push(abuf[i])
+    }
+    var b = _b_.bytes.$factory(res)
+
+    if(xhr.mode == "binary"){
+        return b
     }else{
-        return xhr.responseText
+        var encoding = xhr.encoding || "utf-8"
+        return _b_.bytes.decode(b, encoding)
     }
 }
 
 function handle_kwargs(self, kw, method){
     var data,
+        encoding,
         headers,
         cache,
-        mode,
+        mode = "text",
         timeout = {}
     for(var key in kw.$string_dict){
         if(key == "data"){
-            var params = kw.$string_dict[key]
+            var params = kw.$string_dict[key][0]
             if(typeof params == "string"){
                 data = params
-            }else{
-                if(params.__class__ !== _b_.dict){
-                    throw _b_.TypeError.$factory("wrong type for data, " +
-                        "expected dict or str, got " + $B.class_name(params))
-                }
+            }else if(params.__class__ === _b_.dict){
                 params = params.$string_dict
                 var items = []
                 for(var key in params){
                     items.push(encodeURIComponent(key) + "=" +
-                               encodeURIComponent(params[key]))
+                               encodeURIComponent(params[key][0]))
                 }
                 data = items.join("&")
+            }else if(params.__class__ === $B.JSObject){
+                data = params.js
+            }else{
+                throw _b_.TypeError.$factory("wrong type for data: " +
+                    $B.class_name(params))
             }
-        }else if(key=="headers"){
+        }else if(key == "encoding"){
+            encoding = kw.$string_dict[key][0]
+            self.js.encoding = encoding
+        }else if(key == "headers"){
             headers = kw.$string_dict[key].$string_dict
             for(var key in headers){
-                self.js.setRequestHeader(key, headers[key])
+                self.js.setRequestHeader(key, headers[key][0])
             }
         }else if(key.startsWith("on")){
             var event = key.substr(2)
             if(event == "timeout"){
-                timeout.func = kw.$string_dict[key]
+                timeout.func = kw.$string_dict[key][0]
             }else{
-                var f = kw.$string_dict[key]
+                var f = kw.$string_dict[key][0]
                 ajax.bind(self, event, f)
             }
         }else if(key == "mode"){
-            if(kw.$string_dict[key] == "binary"){
-                self.js.responseType = "arraybuffer"
-                mode = "binary"
-            }else if(kw.$string_dict[key] == "json"){
+            var mode = kw.$string_dict[key][0]
+            if(mode == "json"){
                 self.js.responseType = "json"
-                mode = "json"
+            }else{
+                self.js.responseType = "arraybuffer"
+                if(mode != "text" && mode != "binary"){
+                    throw _b_.ValueError.$factory("invalid mode: " + mode)
+                }
             }
+            self.js.mode = mode
         }else if(key == "timeout"){
-            timeout.seconds = kw.$string_dict[key]
+            timeout.seconds = kw.$string_dict[key][0]
         }else if(key == "cache"){
-            cache = kw.$string_dict[key]
+            cache = kw.$string_dict[key][0]
         }
+    }
+    if(encoding && mode != "text"){
+        throw _b_.ValueError.$factory("encoding not supported for mode " +
+            mode)
     }
     if((method == "post" || method == "put") && ! headers){
         // For POST requests, set default header
         self.js.setRequestHeader("Content-type",
                                  "application/x-www-form-urlencoded")
     }
-    return {cache: cache, data:data, mode: mode, timeout: timeout}
+    return {
+        cache: cache,
+        data:data,
+        encoding: encoding,
+        mode: mode,
+        timeout: timeout
+    }
 }
 
 var ajax = {
@@ -236,7 +257,7 @@ ajax.$factory = function(){
     return res
 }
 
-function _request_without_body(){
+function _request_without_body(method){
     var $ = $B.args(method, 3, {method: null, url: null, blocking: null},
         ["method", "url", "blocking"], arguments, {blocking: false},
         null, "kw"),
@@ -263,7 +284,7 @@ function _request_without_body(){
     self.js.send()
 }
 
-function _request_with_body(){
+function _request_with_body(method){
     var $ = $B.args(method, 3, {method: null, url: null, blocking: null},
         ["method", "url", "blocking"], arguments, {blocking: false},
         null, "kw"),
@@ -310,6 +331,7 @@ function put(){
 }
 
 function file_upload(){
+    // ajax.file_upload(url, file, method="POST", **callbacks)
     var $ = $B.args("file_upload", 2, {url: null, "file": file},
             ["url", "file"], arguments, {}, null, "kw"),
         url = $.url,
@@ -317,15 +339,22 @@ function file_upload(){
         kw = $.kw
 
     var formdata = new FormData()
-    formdata.append('filetosave', file, file.name)
+    // file is a JSObject
+    formdata.append('filetosave', file.js, file.js.name)
 
-    var self = ajax.$factory()
-    self.js.open('POST', url, True)
+    var self = ajax.$factory(),
+        method = 'POST'
+
+    if(kw.$string_dict.method !== undefined){
+        method = kw.$string_dict.method[0]
+    }
+
+    self.js.open(method, url, True)
     self.js.send(formdata)
 
     for(key in kw.$string_dict){
         if(key.startsWith("on")){
-            ajax.bind(self, key.substr(2), kw.$string_dict[key])
+            ajax.bind(self, key.substr(2), kw.$string_dict[key][0])
         }
     }
 }

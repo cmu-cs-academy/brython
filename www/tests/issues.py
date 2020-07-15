@@ -1944,7 +1944,7 @@ try:
     exec("a = +25, b = 25")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "can't assign to operator"
+    assert exc.args[0] == "cannot assign to operator"
 
 # issue 949
 class A(object):
@@ -1990,7 +1990,7 @@ try:
     exec("x + x += 10")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "can't assign to operator"
+    assert exc.args[0] == "cannot assign to operator"
 
 # issue 965
 assertRaises(SyntaxError, exec, "if:x=2")
@@ -2002,7 +2002,7 @@ try:
     exec("x = 400 - a, y = 400 - b")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "can't assign to operator"
+    assert exc.args[0] == "cannot assign to operator"
 
 # issue 975
 l = [1, 2, 3]
@@ -2440,7 +2440,7 @@ class TestObject:
 
 assert TestDescriptor.counter == 1
 
-# issue #1273
+# issue 1273
 lambda x, y, *, k=20: x+y+k
 lambda *args: args
 l6 = lambda x, y, *, k=20: x+y+k
@@ -2460,6 +2460,161 @@ assertRaises(TypeError, l22, 1)
 assert l22(b=2) == 2
 l24 = lambda a, *, b, **kwds,: (a + b, kwds)
 assert l24(1, b=2, c=24) == (3, {'c': 24})
+
+# issue 1276
+class A: pass
+
+x = A()
+x.a = 1
+
+try:
+    exec("(x.a < 2) += 100")
+    raise Exception("should have raised SyntaxError")
+except SyntaxError as exc:
+    assert exc.args[0] == "cannot assign to comparison"
+
+try:
+    exec("(x.a * 2) += 100")
+    raise Exception("should have raised SyntaxError")
+except SyntaxError as exc:
+    assert exc.args[0] == "cannot assign to operator"
+
+# issue 1278
+import textwrap
+assert textwrap.wrap('1234 123', width=5) == ['1234', '123']
+assert textwrap.wrap('12345 123', width=5) == ['12345', '123']
+assert textwrap.wrap('123456 123', width=5, break_long_words=False) == \
+    ['123456', '123']
+
+# issue 1286
+assertRaises(ZeroDivisionError, tuple, (1/0 for n in range(10)))
+
+def zde1():
+    {1 / 0 for n in range(10)}
+
+assertRaises(ZeroDivisionError, zde1)
+
+def zde2():
+    sum(1 / 0 for n in range(10))
+
+assertRaises(ZeroDivisionError, zde2)
+
+def zde3():
+    [1 / 0 for n in range(10)]
+
+assertRaises(ZeroDivisionError, zde3)
+
+def zde4():
+    {n: 1 / 0 for n in range(10)}
+
+assertRaises(ZeroDivisionError, zde4)
+
+try:
+    [1/0 for n in range(10)]
+    raise AssertionError(f"should have raised ZeroDivisionError")
+except ZeroDivisionError:
+    pass
+
+try:
+    list(1/0 for n in range(10))
+    raise AssertionError(f"should have raised ZeroDivisionError")
+except ZeroDivisionError:
+    pass
+
+try:
+    {1/0 for n in range(10)}
+    raise AssertionError(f"should have raised ZeroDivisionError")
+except ZeroDivisionError:
+    pass
+
+try:
+    {n: 1/0 for n in range(10)}
+    raise AssertionError(f"should have raised ZeroDivisionError")
+except ZeroDivisionError:
+    pass
+
+assertRaises(NameError, tuple, (d999['missing key'] for n in range(10)))
+
+# continuation lines inside comprehensions
+
+[n for \
+    n in range(10)]
+
+# change definition of range
+def range(n):
+  return 'abc'
+
+t = []
+for i in range(10):
+  t.append(i)
+
+assert t == ['a', 'b', 'c']
+
+# reset range to builtins
+range = __builtins__.range
+
+assert list(range(3)) == [0, 1, 2]
+
+# issue 1292
+assertRaises(SyntaxError, exec, "for in range(1):\n pass")
+
+# issue 1297
+assertRaises(SyntaxError, exec, "for i in range = 10")
+
+# ternary
+x = 1 if True is not None else 2, 3, 4
+assert x == (1, 3, 4)
+
+# issue 1323
+try:
+    exit()
+    raise AssertionError("should have raised SystemExit")
+except SystemExit:
+    pass
+
+# issue 1331
+assert [*{*['a', 'b', 'a']}] == ['a', 'b']
+assert [*{'a': 1, 'b': 2}] == ['a', 'b']
+
+# issue 1366
+class A(object):
+     def __str__(self):
+        return "A __str__ output."
+
+class B(A):
+    def __str__(self):
+        return super().__str__() + " (from B)"
+
+x = A()
+assert str(x) == "A __str__ output."
+y = B()
+assert str(y) == "A __str__ output. (from B)"
+
+# issue 1445
+ge = (*((i, i*2) for i in range(3)),)
+assert list(ge) == [(0, 0), (1, 2), (2, 4)]
+assert [*((i, i*2) for i in range(3))] == [(0, 0), (1, 2), (2, 4)]
+
+def matrix(s, types=None, char='|'):
+  ds = ([j.strip() for j in i.split(char)]
+    for i in s.strip().splitlines()
+      if not i.strip().startswith('#'))
+
+  if not types:
+    yield from ds
+  elif isinstance(types, (list, tuple)):
+    for i in ds:
+      yield [k(v or k()) for k, v in zip(types, i)]
+  else:
+    for i in ds:
+      yield [types(v or types()) for v in i]
+
+m = [*matrix('''
+#l | r
+ 1 | 2
+ 3 | 4
+''', (int, int))]
+assert m == [[1, 2], [3, 4]]
 
 # ==========================================
 # Finally, report that all tests have passed
