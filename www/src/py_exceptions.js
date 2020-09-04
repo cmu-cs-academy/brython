@@ -208,6 +208,7 @@ traceback.__getattribute__ = function(self, attr){
                     try{
                         return src.split("\n")[parseInt(info[0] - 1)].trim()
                     }catch(err){
+                        console.log("error in attr tb_lasti of", self)
                         console.log(src, info)
                         throw err
                     }
@@ -712,7 +713,7 @@ $make_exc([["StopIteration","err.value = arguments[0]"],
     "LookupError", "MemoryError",
     "NameError", "OSError", "ReferenceError", "RuntimeError",
     ["SyntaxError", "err.msg = arguments[0]"],
-    "SystemError", "TypeError", "ValueError", "Warning"],_b_.Exception)
+    "SystemError", "TypeError", "ValueError", "Warning"], _b_.Exception)
 $make_exc(["FloatingPointError", "OverflowError", "ZeroDivisionError"],
     _b_.ArithmeticError)
 $make_exc([["ModuleNotFoundError", "err.name = arguments[0]"]], _b_.ImportError)

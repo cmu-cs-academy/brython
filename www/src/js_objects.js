@@ -6,15 +6,37 @@ var object = _b_.object
 
 var _window = self;
 
-$B.pyobj2structuredclone = function(obj){
+function to_simple(value){
+    switch(typeof value){
+        case 'string':
+        case 'number':
+            return value
+        case 'boolean':
+            return value ? "true" : "false"
+        case 'object':
+            if(value === _b_.None){
+                return 'null'
+            }else if(value instanceof Number){
+                return value.valueOf()
+            }
+        default:
+        console.log("erreur", value)
+            throw _b_.TypeError.$factory("keys must be str, int, " +
+                "float, bool or None, not " + $B.class_name(value))
+    }
+}
+
+$B.pyobj2structuredclone = function(obj, strict){
     // If the Python object supports the structured clone algorithm, return
     // the result, else raise an exception
+    // If "strict" is false, dictionaries with non-string keys are supported
+    strict = strict === undefined ? true : strict
     if(typeof obj == "boolean" || typeof obj == "number" ||
             typeof obj == "string"){
         return obj
     }else if(obj instanceof Number){
         return obj.valueOf()
-    }else if(obj === null){
+    }else if(obj === _b_.None){
         return null // _b_.None
     }else if(Array.isArray(obj) || obj.__class__ === _b_.list ||
             obj.__class__ === _b_.tuple){
@@ -23,15 +45,18 @@ $B.pyobj2structuredclone = function(obj){
             res.push($B.pyobj2structuredclone(obj[i]))
         }
         return res
-    }else if(obj.__class__ === _b_.dict){
-        if(Object.keys(obj.$numeric_dict).length > 0 ||
-                Object.keys(obj.$object_dict).length > 0){
-            throw _b_.TypeError.$factory("a dictionary with non-string " +
-                "keys cannot be sent to or from a Web Worker")
+    }else if(_b_.isinstance(obj, _b_.dict)){
+        if(strict){
+            if(Object.keys(obj.$numeric_dict).length > 0 ||
+                    Object.keys(obj.$object_dict).length > 0){
+                throw _b_.TypeError.$factory("a dictionary with non-string " +
+                    "keys does not support structured clone")
+            }
         }
-        var res = {}
-        for(var key in obj.$string_dict){
-            res[key] = $B.pyobj2structuredclone(obj.$string_dict[key][0])
+        var items = $B.dict_to_list(obj),
+            res = {}
+        for(var i = 0, len = items.length; i < len; i++){
+            res[to_simple(items[i][0])] = $B.pyobj2structuredclone(items[i][1])
         }
         return res
     }else{
@@ -633,7 +658,7 @@ $B.JSObj = $B.make_class("JSObj",
 )
 
 $B.JSObj.__getattribute__ = function(self, attr){
-    var test = attr == "onkeydown"
+    var test = false // attr == "FileReader"
     if(test){
         console.log("__ga__", self, attr)
     }
@@ -788,6 +813,15 @@ $B.JSObj.__len__ = function(self){
 
 $B.JSObj.__repr__ = $B.JSObj.__str__ = function(self){
     return '<Javascript ' + self.constructor.name + ' object>'
+}
+
+$B.JSObj.bind = function(self, evt, func){
+    // "bind" is an alias for "addEventListener"
+    var js_func = function(ev) {
+        return func(jsobj2pyobj(ev))
+    }
+    self.addEventListener(evt, js_func)
+    return _b_.None
 }
 
 $B.JSObj.to_dict = function(self){

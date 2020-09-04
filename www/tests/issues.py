@@ -2616,6 +2616,122 @@ m = [*matrix('''
 ''', (int, int))]
 assert m == [[1, 2], [3, 4]]
 
+# issue 1448
+class Property:
+  def __set_name__(self, owner, name):
+    assert owner.__name__ == "Cat"
+
+class Cat:
+  name = Property()
+
+  def test(self):
+    pass
+
+# issue 1461
+def todict(obj):
+  # dict
+  if isinstance(obj, dict):
+    return {k: todict(v) for k, v in obj.items()}
+  # slot objects
+  elif hasattr(obj, '__slots__'):
+    return {k: todict(getattr(obj, k)) for k in obj.__slots__} # brython issue
+  # something iterable, like tuples or lists
+  elif hasattr(obj, "__iter__") and not isinstance(obj, str):
+    return type(obj)(todict(v) for v in obj)
+  # simple classes
+  elif hasattr(obj, "__dict__"):
+    return {k: todict(v) for k, v in obj.__dict__.items()
+      if not callable(v) and not k.startswith('_')}
+  # finally simple type
+  else:
+    return obj
+
+class Cat:
+  __slots__ = ('name', 'age', 'breed')
+
+  def __init__(self,
+      name='', age=0, breed='test'):
+    self.name = name
+    self.age = age
+    self.breed = breed
+
+  def __repr__(self):
+    return self.__class__.__name__ + '(' + ', '.join(f'{k}={getattr(self, k, None)!r}'
+        for k in self.__slots__) + ')'
+
+assert str(todict(Cat(Cat()))) == \
+    "{'name': {'name': '', 'age': 0, 'breed': 'test'}, 'age': 0, 'breed': 'test'}"
+
+# issue 1472
+try:
+  exec("""
+myvar = 1
+result.append(myvar)
+def main_func():
+  nonlocal myvar
+  myvar = 3
+  result.append(myvar)
+  result.append("hello")
+
+main_func()
+result.append(myvar)
+""")
+  raise AssertionError("should have raised SyntaxError")
+except SyntaxError as e:
+  assert e.args[0] == "no binding for nonlocal 'myvar' found"
+
+result = []
+exec("""
+def f():
+  myvar = 1
+  result.append(myvar)
+  def main_func():
+    nonlocal myvar
+    myvar = 3
+    result.append(myvar)
+    result.append("hello")
+
+  main_func()
+  result.append(myvar)
+f()
+""")
+assert result == [1, 3, 'hello', 3]
+
+result = []
+exec("""
+def f():
+  myvar = 1
+  result.append(myvar)
+  def main_func():
+    global myvar
+    myvar = 3
+    result.append(myvar)
+    result.append("hello")
+
+  main_func()
+  result.append(myvar)
+f()
+""")
+assert result == [1, 3, 'hello', 1]
+
+result = []
+def f():
+  exec("""
+myvar = 1
+result.append(myvar)
+
+def main_func():
+  global myvar
+  myvar = 3
+  result.append(myvar)
+
+main_func()
+result.append(myvar)
+""")
+
+f()
+assert result == [1, 3, 3]
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================

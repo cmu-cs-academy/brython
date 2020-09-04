@@ -45,13 +45,18 @@ $B.$class_constructor = function(class_name, class_obj, bases,
 
     var mro0 = class_obj
 
+    // A class that overrides __eq__() and does not define __hash__()
+    // will have its __hash__() implicitly set to None
+    if(class_obj.__eq__ !== undefined && class_obj.__hash__ === undefined){
+        class_obj.__hash__ = _b_.None
+    }
+
     // Replace non-class bases that have a __mro_entries__ (PEP 560)
     var orig_bases = bases.slice(),
         use_mro_entries = false
     for(var i = 0; i < bases.length; i++){
         if(bases[i] === undefined ||
-                (bases[i].__mro__ === undefined &&
-                bases[i].__class__ !== $B.JSObject)){
+                (bases[i].__mro__ === undefined)){
             var mro_entries = $B.$getattr(bases[i], "__mro_entries__",
                 _b_.None)
             if(mro_entries !== _b_.None){
@@ -69,7 +74,7 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     // - if the class has parents, inherit the class of the first parent
     // - otherwise default to type
     if(metaclass === undefined){
-        if(bases && bases.length > 0 && bases[0].__class__ !== $B.JSObject){
+        if(bases && bases.length > 0){
             metaclass = bases[0].__class__
             if(metaclass === undefined){
                 // Might inherit a Javascript constructor
@@ -105,7 +110,7 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     }
     // Use __prepare__ (PEP 3115)
     var prepare = $B.$getattr(metaclass, "__prepare__", _b_.None),
-        cl_dict = prepare(class_name, bases) // dict or dict-like
+        cl_dict = $B.$call(prepare)(class_name, bases) // dict or dict-like
 
     if(cl_dict.__class__ !== _b_.dict){
         set_class_item = $B.$getattr(cl_dict, "__setitem__")
@@ -118,13 +123,9 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     // Transform class object into a dictionary
     for(var attr in class_obj){
         if(attr == "__annotations__"){
-            var rank = cl_dict.$order
-            if(cl_dict.$string_dict[attr] !== undefined){
-                cl_dict.$string_dict[attr] = [class_obj[attr], rank]
-            }else{
-                cl_dict.$string_dict[attr] = [$B.empty_dict(), rank]
+            if(cl_dict.$string_dict[attr] === undefined){
+                cl_dict.$string_dict[attr] = [$B.empty_dict(), cl_dict.$order++]
             }
-            cl_dict.$order++
             for(var key in class_obj[attr].$string_dict){
                 $B.$setitem(cl_dict.$string_dict[attr][0], key,
                     class_obj[attr].$string_dict[key][0])
@@ -163,6 +164,7 @@ $B.$class_constructor = function(class_name, class_obj, bases,
         }
     }
     class_dict.__mro__ = _b_.type.mro(class_dict).slice(1)
+
 
     // Check if at least one method is abstract (cf PEP 3119)
     // If this is the case, the class cannot be instanciated
@@ -221,7 +223,7 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     kls.__module__ = module
     kls.$infos = {
         __module__: module,
-        __name__: class_name,
+        __name__: $B.from_alias(class_name),
         __qualname__: class_name
     }
     kls.$subclasses = []
@@ -246,21 +248,11 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     for(var i = 0; i < bases.length; i++){
         bases[i].$subclasses  = bases[i].$subclasses || []
         bases[i].$subclasses.push(kls)
-        // call __init_subclass__ with the extra keyword arguments
-        if(i == 0){
-            var init_subclass = _b_.type.__getattribute__(bases[i],
-                "__init_subclass__", _b_.None)
-            if(init_subclass.$infos.__func__ !== undefined){
-                init_subclass.$infos.__func__(kls, {$nat: "kw", kw: extra_kwargs})
-            }else{
-                init_subclass(kls, {$nat: "kw", kw: extra_kwargs})
-            }
-        }
     }
-    if(bases.length == 0){
-        $B.$getattr(metaclass, "__init_subclass__")(kls,
-            {$nat: "kw", kw:extra_kwargs})
-    }
+    var sup = _b_.$$super.$factory(kls, kls)
+    var init_subclass = _b_.$$super.__getattribute__(sup, "__init_subclass__")
+    init_subclass({$nat: "kw", kw: extra_kwargs})
+
     if(!is_instanciable){
         function nofactory(){
             throw _b_.TypeError.$factory("Can't instantiate abstract class " +
@@ -315,7 +307,7 @@ type.__format__ = function(klass, fmt_spec){
     return _b_.str.$factory(klass)
 }
 
-type.__getattribute__ = function(klass, attr){
+ type.__getattribute__ = function(klass, attr){
     switch(attr) {
         case "__annotations__":
             var mro = [klass].concat(klass.__mro__),
@@ -367,7 +359,7 @@ type.__getattribute__ = function(klass, attr){
                 function(key){delete klass[key]})
     }
     var res = klass[attr]
-    var $test = false // attr == "__init_subclass__" // && klass.$infos.__name__ == "generator"
+    var $test = false // attr == "__hash__" // && klass.$infos.__name__ == "generator"
     if($test){
         console.log("attr", attr, "of", klass, res, res + "")
     }
@@ -491,6 +483,9 @@ type.__getattribute__ = function(klass, attr){
             if(attr == "__class_getitem__" && res.__class__ !== $B.method){
                 res = _b_.classmethod.$factory(res)
             }
+            if(attr == "__init_subclass__"){
+                res = _b_.classmethod.$factory(res)
+            }
             if(res.__class__ === $B.method){
                 return res.__get__(null, klass)
             }else{
@@ -512,9 +507,9 @@ type.__init__ = function(){
     // Returns nothing
 }
 
-type.__init_subclass__ = function(cls, kwargs){
+type.__init_subclass__ = function(){
     // Default implementation only checks that no keyword arguments were passed
-    var $ = $B.args("__init_subclass__", 1, {cls: null}, ["cls"],
+    var $ = $B.args("__init_subclass__", 1, {}, [],
         arguments, {}, "args", "kwargs")
     if($.kwargs !== undefined){
         if($.kwargs.__class__ !== _b_.dict ||
@@ -575,11 +570,13 @@ type.__new__ = function(meta, name, bases, cl_dict){
         __dict__ : cl_dict,
         $infos:{
             __name__: name.replace("$$", ""),
-            __module__: cl_dict.$string_dict.__module__
+            __module__: module
         },
         $is_class: true,
         $has_setattr: cl_dict.$has_setattr
     }
+
+    class_dict.__mro__ = type.mro(class_dict).slice(1)
 
     // set class attributes for faster lookups
     var items = $B.dict_to_list(cl_dict) // defined in py_dict.js
@@ -613,7 +610,6 @@ type.__new__ = function(meta, name, bases, cl_dict){
         }
     }
 
-    class_dict.__mro__ = type.mro(class_dict).slice(1)
     return class_dict
 }
 

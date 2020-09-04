@@ -233,7 +233,9 @@ $B.get_class = function(obj){
             case "boolean":
                 return _b_.bool
             case "function":
+                // Functions defined in Brython have an attribute $infos
                 if(obj.$is_js_func){
+                    // Javascript function or constructor
                     return $B.JSObj
                 }
                 obj.__class__ = $B.Function
@@ -291,7 +293,7 @@ $B.$dict_comp = function(module_name, parent_scope, items, line_num){
     // items is ["x: x * 2", "for x in A", "if x > 2"]
 
     var ix = $B.UUID(),
-        res = "res" + ix,
+        res = "comp_result_" + $B.lambda_magic + ix,
         py = res + " = {}\n", // Python code
         indent = 0
     for(var i = 1, len = items.length; i < len; i++){
@@ -310,7 +312,7 @@ $B.$dict_comp = function(module_name, parent_scope, items, line_num){
         outer_expr = root.outermost_expr.to_js(),
         js = root.to_js()
 
-    js += '\nreturn $locals["' + res + '"]\n'
+    js += '\nreturn ' + res + '\n'
 
     js = "(function(expr){" + js + "})(" + outer_expr + ")"
     $B.clear_ns(dictcomp_name)
@@ -512,26 +514,7 @@ $B.$JS2Py = function(src){
             Object.getPrototypeOf(src) === Array.prototype){
         src.$brython_class = "js" // used in make_iterator_class
     }
-    var klass = $B.get_class(src)
-    if(klass !== undefined){
-        if(klass === $B.JSObject){
-            src = src.js
-        }else{
-            return src
-        }
-    }
-    if(typeof src == "object"){
-        if($B.$isNode(src)){return $B.DOMNode.$factory(src)}
-        if($B.$isEvent(src)){return $B.$DOMEvent(src)}
-        if($B.$isNodeList(src)){
-            var res = []
-            for(const item of src){
-                res.push($B.$JS2Py(item))
-            }
-            return _b_.list.$factory(res)
-        }
-    }
-    return $B.JSObject.$factory(src)
+    return src
 }
 
 // Functions used if we can guess the type from lexical analysis
@@ -748,9 +731,6 @@ $B.$setitem = function(obj, item, value){
     }else if(obj.__class__ === _b_.dict){
         _b_.dict.$setitem(obj, item, value)
         return
-    }else if(obj.__class__ === $B.JSObject){
-        $B.JSObject.__setattr__(obj, item, value)
-        return
     }else if(obj.__class__ === _b_.list){
         return _b_.list.$setitem(obj, item, value)
     }
@@ -860,6 +840,10 @@ $B.$is = function(a, b){
     if(a instanceof Number && b instanceof Number){
         return a.valueOf() == b.valueOf()
     }
+    if((a === _b_.int && b == $B.long_int) ||
+            (a === $B.long_int && b === _b_.int)){
+        return true
+    }
     return a === b
 }
 
@@ -926,13 +910,6 @@ $B.$call = function(callable){
     }else if(callable.$is_class){
         // Use metaclass __call__, cache result in callable.$factory
         return callable.$factory = $B.$instance_creator(callable)
-    }else if(callable.__class__ === $B.JSObject){
-        if(typeof(callable.js) == "function"){
-            return callable.js
-        }else{
-            throw _b_.TypeError.$factory("'" + $B.class_name(callable) +
-                "' object is not callable")
-        }
     }
     try{
         return $B.$getattr(callable, "__call__")
@@ -944,8 +921,12 @@ $B.$call = function(callable){
 
 // Default standard output and error
 // Can be reset by sys.stdout or sys.stderr
-var $io = $B.make_class("io", function(){
-    return {__class__: $io}
+var $io = $B.make_class("io",
+    function(out){
+        return {
+            __class__: $io,
+            out
+        }
     }
 )
 
@@ -955,12 +936,16 @@ $io.flush = function(){
 
 $io.write = function(self, msg){
     // Default to printing to browser console
-    console.log(msg)
+    console[self.out](msg)
     return _b_.None
 }
 
-$B.stderr = $io.$factory()
-$B.stdout = $io.$factory()
+if(console.error !== undefined){
+    $B.stderr = $io.$factory("error")
+}else{
+    $B.stderr = $io.$factory("log")
+}
+$B.stdout = $io.$factory("log")
 
 $B.stdin = {
     __class__: $io,
@@ -1268,7 +1253,7 @@ $B.leave_frame = function(arg){
     // Leave execution frame
     if($B.frames_stack.length == 0){console.log("empty stack"); return}
     // When leaving a module, arg is set as an object of the form
-    // {value: _b_.None}
+    // {$locals, value: _b_.None}
     if(arg && arg.value !== undefined && $B.tracefunc){
         if($B.last($B.frames_stack)[1].$f_trace === undefined){
             $B.last($B.frames_stack)[1].$f_trace = $B.tracefunc
@@ -1280,9 +1265,14 @@ $B.leave_frame = function(arg){
     var frame = $B.frames_stack.pop()
     frame[1].$current_exception = undefined
     if(frame[1].$close_generators){
-        // The attribute $close_generators is set in $B.$call
+        // The attribute $close_generators is set in
+        // py_generator.js/$B.generator
         for(var i = 0, len = frame[1].$close_generators.length; i < len; i++){
-            frame[1].$close_generators[i].return()
+            var gen = frame[1].$close_generators[i]
+            // Attribute $has_run is set if generator has already been run
+            if(gen.$has_run){
+                gen.return()
+            }
         }
     }
     return _b_.None

@@ -31,31 +31,116 @@ eval(bltns)
 var str_hash = _b_.str.__hash__,
     $N = _b_.None
 
-var set_ops = ["eq", "add", "sub", "and", "or", "xor", "le", "lt", "ge", "gt"]
+var set_ops = ["eq", "le", "lt", "ge", "gt",
+    "sub", "rsub", "and", "or", "xor"]
 
-$B.make_view = function(name, set_like){
-    var klass = $B.make_class(name, function(items){
+// methods to compare non set-like views
+function is_sublist(t1, t2){
+    // Return true if all elements of t1 are in t2
+    for(var i = 0, ilen = t1.length; i < ilen; i++){
+        var x = t1[i],
+            flag = false
+        for(var j = 0, jlen = t2.length; j < jlen; j++){
+            if($B.rich_comp("__eq__", x, t2[j])){
+                t2.splice(j, 1)
+                flag = true
+                break
+            }
+        }
+        if(! flag){
+            return false
+        }
+    }
+    return true
+}
+
+dict_view_op = {
+    __eq__: function(t1, t2){
+        return t1.length == t2.length && is_sublist(t1, t2)
+    },
+    __ne__: function(t1, t2){
+        return ! dict_view_op.__eq__(t1, t2)
+    },
+    __lt__: function(t1, t2){
+        return t1.length < t2.length && is_sublist(t1, t2)
+    },
+    __gt__: function(t1, t2){
+        return dict_view_op.__lt__(t2, t1)
+    },
+    __le__: function(t1, t2){
+        return t1.length <= t2.length && is_sublist(t1, t2)
+    },
+    __ge__: function(t1, t2){
+        return dict_view_op.__le__(t2, t1)
+    },
+    __and__: function(t1, t2){
+        var items = []
+        for(var i = 0, ilen = t1.length; i < ilen; i++){
+            var x = t1[i]
+                flag = false
+            for(var j = 0, jlen = t2.length; j < jlen; j++){
+                if($B.rich_comp("__eq__", x, t2[j])){
+                    t2.splice(j, 1)
+                    items.push(x)
+                    break
+                }
+            }
+        }
+        return items
+    },
+    __or__: function(t1, t2){
+        var items = t1
+        for(var j = 0, jlen = t2.length; j < jlen; j++){
+            var y = t2[j],
+                flag = false
+            for(var i = 0, ilen = t1.length; i < ilen; i++){
+                if($B.rich_comp("__eq__", y, t1[i])){
+                    t2.splice(j, 1)
+                    flag = true
+                    break
+                }
+            }
+            if(! flag){
+                items.push(y)
+            }
+        }
+        return items
+    }
+
+}
+
+$B.make_view = function(name){
+    var klass = $B.make_class(name, function(items, set_like){
         return {
             __class__: klass,
             __dict__: $B.empty_dict(),
             counter: -1,
             items: items,
-            len: items.length
+            len: items.length,
+            set_like: set_like
         }
     })
 
-    if(set_like){
         for(var i = 0, len = set_ops.length; i < len; i++){
             var op = "__" + set_ops[i] + "__"
             klass[op] = (function(op){
                 return function(self, other){
                     // compare set of items to other
-                    return _b_.set[op](_b_.set.$factory(self),
-                        _b_.set.$factory(other))
+                    if(self.set_like){
+                        return _b_.set[op](_b_.set.$factory(self),
+                            _b_.set.$factory(other))
+                    }else{
+                        // Non-set like views can only be compared to
+                        // instances of the same class
+                        if(other.__class__ !== klass){
+                            return false
+                        }
+                        var other_items = _b_.list.$factory(other)
+                        return dict_view_op[op](self.items, other_items)
+                    }
                 }
             })(op)
         }
-    }
     klass.__iter__ = function(self){
         var it = klass.$iterator.$factory(self.items)
         it.len_func = self.len_func
@@ -123,7 +208,7 @@ function to_list(d, ix){
                 items.push([attr, val])
             }
         }
-    }else{
+    }else if(_b_.isinstance(d, _b_.dict)){
         for(var k in d.$numeric_dict){
             items.push([parseFloat(k), d.$numeric_dict[k]])
         }
@@ -141,7 +226,6 @@ function to_list(d, ix){
         })
         items = items.map(function(item){return [item[0], item[1][0]]})
     }
-
     if(ix !== undefined){
         return items.map(function(item){return item[ix]})
     }else{
@@ -166,7 +250,6 @@ function dict_iterator_next(self){
     }
     throw _b_.StopIteration.$factory("StopIteration")
 }
-
 
 var $copy_dict = function(left, right){
     var _l = to_list(right),
@@ -439,9 +522,11 @@ function init_from_list(self, args){
                 self.$version++
                 break
             case 'number':
-                self.$numeric_dict[item[0]] = [item[1], self.$order++]
-                self.$version++
-                break
+                if(item[0] != 0 && item[0] != 1){
+                    self.$numeric_dict[item[0]] = [item[1], self.$order++]
+                    self.$version++
+                    break
+                }
             default:
                 si(self, item[0], item[1])
                 break
@@ -453,10 +538,7 @@ dict.__init__ = function(self, first, second){
     var $
     if(first === undefined){return $N}
     if(second === undefined){
-        if(first.__class__ === $B.JSObject){
-            self.$jsobj = first.js
-            return $N
-        }else if(first.$nat != 'kw' && $B.get_class(first) === $B.JSObj){
+        if(first.$nat != 'kw' && $B.get_class(first) === $B.JSObj){
             for(var key in first){
                 self.$string_dict[key] = [first[key], self.$order++]
             }
@@ -660,7 +742,7 @@ dict.$setitem = function(self, key, value, $hash){
     // use computing hash(key) again, nor testing equality of keys
     if(self.$jsobj){
         if(self.$from_js){
-            // dictionary created by method to_dict of JSObject instances
+            // dictionary created by method to_dict of JSObj instances
             value = $B.pyobj2jsobj(value)
         }
         if(self.$jsobj.__class__ === _b_.type){
@@ -694,11 +776,39 @@ dict.$setitem = function(self, key, value, $hash){
                 // existing key: preserve order
                 self.$numeric_dict[key][0] = value
             }else{
-                // new key
-                self.$numeric_dict[key] = [value, self.$order++]
+                // special case for 0 and 1 if True or False are keys
+                var done = false
+                if((key == 0 || key == 1) &&
+                        self.$object_dict[key] !== undefined){
+                    for(const item of self.$object_dict[key]){
+                        if((key == 0 && item[0] === false) ||
+                                (key == 1 && item[0] === true)){
+                            // replace value
+                            item[1][0] = value
+                            done = true
+                        }
+                    }
+                }
+                if(! done){
+                    // new key
+                    self.$numeric_dict[key] = [value, self.$order++]
+                }
                 self.$version++
             }
             return $N
+        case "boolean":
+            // true replaces 1 and false replaces 0
+            var num = key ? 1 : 0
+            if(self.$numeric_dict[num] !== undefined){
+                var order = self.$numeric_dict[num][1] // preserve order
+                self.$numeric_dict[num] = [value, order]
+                return
+            }
+            if(self.$object_dict[num] !== undefined){
+                self.$object_dict[num].push([key, [value, self.$order++]])
+            }else{
+                self.$object_dict[num] = [[key, [value, self.$order++]]]
+            }
     }
 
     // if we got here the key is more complex, use default method
@@ -830,12 +940,23 @@ dict.items = function(self){
            _msg = "items() takes no arguments (" + _len + " given)"
        throw _b_.TypeError.$factory(_msg)
     }
-    var it = dict_items.$factory(to_list(self))
+    var items = to_list(self),
+        set_like = true
+    // Check if all values are hashable
+    for(var i = 0, len = items.length; i < len; i++){
+        try{
+            _b_.hash(items[i][1])
+        }catch(err){
+            set_like = false
+            break
+        }
+    }
+    var it = dict_items.$factory(to_list(self), set_like)
     it.len_func = function(){return dict.__len__(self)}
     return it
 }
 
-var dict_keys = $B.make_view("dict_keys", true)
+var dict_keys = $B.make_view("dict_keys")
 dict_keys.$iterator = $B.make_iterator_class("dict_keyiterator")
 
 dict.$$keys = function(self){
@@ -844,7 +965,7 @@ dict.$$keys = function(self){
            _msg = "keys() takes no arguments (" + _len + " given)"
        throw _b_.TypeError.$factory(_msg)
     }
-    var it = dict_keys.$factory(to_list(self, 0))
+    var it = dict_keys.$factory(to_list(self, 0), true)
     it.len_func = function(){return dict.__len__(self)}
     return it
 }
@@ -964,7 +1085,8 @@ dict.values = function(self){
            _msg = "values() takes no arguments (" + _len + " given)"
        throw _b_.TypeError.$factory(_msg)
     }
-    var it = dict_values.$factory(to_list(self, 1))
+    var values = to_list(self, 1)
+    var it = dict_values.$factory(to_list(self, 1), false)
     it.len_func = function(){return dict.__len__(self)}
     return it
 }

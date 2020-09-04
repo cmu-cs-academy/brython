@@ -179,8 +179,11 @@ function $builtin_base_convert_helper(obj, base) {
   }
 
   if(obj.__class__ === $B.long_int){
-     if(obj.pos){return prefix + $B.long_int.to_base(obj, base)}
-     return '-' + prefix + $B.long_int.to_base(-obj, base)
+      var res = prefix + $B.long_int.to_base(obj, base)
+      if(! obj.pos){
+          res = "-" + res
+      }
+      return res
   }
 
   var value = $B.$GetInt(obj)
@@ -508,8 +511,8 @@ function $$eval(src, _globals, _locals){
 
     var current_frame = $B.frames_stack[$B.frames_stack.length - 1]
     if(current_frame !== undefined){
-        var current_locals_id = current_frame[0].replace(/\./, '_'),
-            current_globals_id = current_frame[2].replace(/\./, '_')
+        var current_locals_id = current_frame[0].replace(/\./g, '_'),
+            current_globals_id = current_frame[2].replace(/\./g, '_')
     }
     var stack_len = $B.frames_stack.length
 
@@ -533,7 +536,7 @@ function $$eval(src, _globals, _locals){
         }
 
         var local_scope = {
-            module: locals_id,
+            module: globals_id,
             id: locals_id,
             binding: {},
             bindings: {}
@@ -744,7 +747,7 @@ function $$eval(src, _globals, _locals){
                 }
             }
             js = root.to_js()
-
+            
             var locals_obj = eval("$locals_" + locals_id),
                 globals_obj = eval("$locals_" + globals_id)
             if(_globals === _b_.None){
@@ -1122,11 +1125,6 @@ $B.$getattr = function(obj, attr, _default){
               return function(){return subclasses}
           }
           break
-      case '$$new':
-          if(klass === $B.JSObject && obj.js_func !== undefined){
-              return $B.JSConstructor.$factory(obj)
-          }
-          break
     }
 
     if(typeof obj == 'function') {
@@ -1271,7 +1269,7 @@ function globals(){
     // [locals_name, locals_obj, globals_name, globals_obj]
     check_nb_args('globals', 0, arguments)
     var res = $B.obj_dict($B.last($B.frames_stack)[3])
-    res.$jsobj.__BRYTHON__ = $B.JSObject.$factory($B) // issue 1181
+    res.$jsobj.__BRYTHON__ = $B.JSObj.$factory($B) // issue 1181
     res.$is_namespace = true
     return res
 }
@@ -1314,7 +1312,7 @@ function hash(obj){
     var klass = obj.__class__ || $B.get_class(obj)
     if(klass === undefined){
         throw _b_.TypeError.$factory("unhashable type: '" +
-                _b_.str.$factory($B.JSObject.$factory(obj)) + "'")
+                _b_.str.$factory($B.JSObj.$factory(obj)) + "'")
     }
     var hash_method = $B.$getattr(klass, '__hash__', _b_.None)
 
@@ -1323,9 +1321,6 @@ function hash(obj){
                 $B.class_name(obj) + "'")
     }
 
-    if(hash_method.$infos === undefined){
-        return obj.__hashvalue__ = hashfunc()
-    }
 
     // If no specific __hash__ method is supplied for the instance but
     // a __eq__ method is defined, the object is not hashable
@@ -1346,7 +1341,7 @@ function hash(obj){
             return obj.__hashvalue__ = _b_.object.__hash__(obj)
         }
     }else{
-        return obj.__hashvalue__ = $B.$call(hash_method)(obj)
+        return $B.$call(hash_method)(obj)
     }
 }
 
@@ -1481,18 +1476,11 @@ function isinstance(obj, cls){
             }
         }else if(obj.contructor === Number && Number.isFinite(obj)){
             if(cls == _b_.float){return true}
-            else if($B.builtin_classes.indexOf(cls) > -1){
-                return false
-            }
         }else if(typeof obj == 'number' && Number.isFinite(obj)){
             if(Number.isFinite(obj) && cls == _b_.int){return true}
-            else if($B.builtin_classes.indexOf(cls) > -1){
-                return false
-            }
         }
         klass = $B.get_class(obj)
     }
-
     if(klass === undefined){return false}
 
     // Return true if one of the parents of obj class is cls
@@ -2480,12 +2468,27 @@ $$super.__getattribute__ = function(self, attr){
             }
         }
     }
+    var $test = false // attr == "__init_subclass__"
 
-    var f = _b_.type.__getattribute__(mro[0], attr)
+    // search attr in parent classes; same as getattr() but skips __thisclass__
+    var f
+    for(var i = 0, len = mro.length; i < len; i++){
+        if(mro[i][attr] !== undefined){
+            f = mro[i][attr]
+            break
+        }
+    }
+    if(f === undefined){
+        if($test){
+            console.log("no attr", attr, self, "mro", mro)
+        }
+        throw _b_.AttributeError.$factory(attr)
+    }
 
-    var $test = false // attr == "__new__"
-    if($test){console.log("super", attr, self, f, f + '')}
-    if(f.$type == "staticmethod"){return f}
+    if($test){console.log("super", attr, self, "mro", mro,
+        "found in mro[0]", mro[0],
+        f, f + '')}
+    if(f.$type == "staticmethod" || attr == "__new__"){return f}
     else{
         if(f.__class__ === $B.method){
             // If the function is a bound method, use the underlying function

@@ -685,7 +685,6 @@ DOMNode.__getattribute__ = function(self, attr){
         case "html":
         case "id":
         case "parent":
-        case "query":
         case "text":
             return DOMNode[attr](self)
 
@@ -760,6 +759,32 @@ DOMNode.__getattribute__ = function(self, attr){
         }
     }
 
+    if(attr == "query" && self.nodeType == 9){
+        // document.query is a instance of class Query, representing the
+        // Query String
+        var res = {
+            __class__: Query,
+            _keys : [],
+            _values : {}
+        }
+        var qs = location.search.substr(1).split('&')
+        if(location.search != ""){
+            for(var i = 0; i < qs.length; i++){
+                var pos = qs[i].search("="),
+                    elts = [qs[i].substr(0, pos), qs[i].substr(pos + 1)],
+                    key = decodeURIComponent(elts[0]),
+                    value = decodeURIComponent(elts[1])
+                if(res._keys.indexOf(key) > -1){
+                    res._values[key].push(value)
+                }else{
+                    res._keys.push(key)
+                    res._values[key] = [value]
+                }
+            }
+        }
+        return res
+    }
+
     // Looking for property. If the attribute is in the forbidden
     // arena ... look for the aliased version
     var property = self[attr]
@@ -808,9 +833,6 @@ DOMNode.__getattribute__ = function(self, attr){
                                 arg.$cache = f1
                             }
                             args[pos++] = f1
-                        }
-                        else if(_b_.isinstance(arg, JSObject)){
-                            args[pos++] = arg.js
                         }else if(_b_.isinstance(arg, DOMNode)){
                             args[pos++] = arg
                         }else if(arg === _b_.None){
@@ -830,7 +852,7 @@ DOMNode.__getattribute__ = function(self, attr){
             return func
         }
         if(attr == 'options'){return Options.$factory(self)}
-        if(attr == 'style'){return $B.JSObject.$factory(self[attr])}
+        if(attr == 'style'){return $B.JSObj.$factory(self[attr])}
         if(Array.isArray(res)){return res} // issue #619
         return $B.$JS2Py(res)
     }
@@ -920,6 +942,7 @@ DOMNode.__le__ = function(self, other){
                 $B.class_name(other) + "' object to DOMNode instance")
         }
     }
+    return true // to allow chained appends
 }
 
 DOMNode.__len__ = function(self){return self.length}
@@ -1043,11 +1066,6 @@ DOMNode.__setattr__ = function(self, attr, value){
         }
 
         // Set the property
-        if(value.__class__ === $B.JSObject &&
-                value.js instanceof EventTarget){
-            // Cf. issue #1393
-            value = value.js
-        }
         self[attr] = value
 
         return _b_.None
@@ -1618,29 +1636,7 @@ Query.keys = function(self){
     return self._keys
 }
 
-DOMNode.query = function(self){
-
-    var res = {
-        __class__: Query,
-        _keys : [],
-        _values : {}
-    }
-    var qs = location.search.substr(1).split('&')
-    for(var i = 0; i < qs.length; i++){
-        var pos = qs[i].search("="),
-            elts = [qs[i].substr(0,pos),qs[i].substr(pos + 1)],
-            key = decodeURIComponent(elts[0]),
-            value = decodeURIComponent(elts[1])
-        if(res._keys.indexOf(key) > -1){
-            res._values[key].push(value)
-        }else{
-            res._keys.push(key)
-            res._values[key] = [value]
-        }
-    }
-
-    return res
-}
+$B.set_func_names(Query, "<dom>")
 
 // class used for tag sums
 var TagSum = {
@@ -1707,7 +1703,7 @@ $B.set_func_names(TagSum, "<dom>")
 
 $B.TagSum = TagSum // used in _html.js and _svg.js
 
-var win = JSObject.$factory(_window)
+var win = $B.JSObj.$factory(_window)
 
 win.get_postMessage = function(msg,targetOrigin){
     if(_b_.isinstance(msg, dict)){
