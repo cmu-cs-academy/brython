@@ -2,6 +2,7 @@ os: linux
 dist: focal
 language: node_js
 node_js: node
+python: 3.9
 
 jobs:
   include:
@@ -28,7 +29,6 @@ jobs:
         - ./node_modules/.bin/testem --launch "Firefox,Headless Chrome" -t www/tests/qunit/run_tests.html ci
 
     - language: python
-      python: 3.8
       before_install: pip install --upgrade pip
       before_script: pip install flake8
       script:
