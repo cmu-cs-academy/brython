@@ -20,43 +20,50 @@ var responseType = {
 
 function handle_kwargs(kw, method){
     var data,
-        cache = "no-cache",
+        cache = false,
         format = "text",
         headers = {},
         timeout = {}
     for(var key in kw.$string_dict){
         if(key == "data"){
-            var params = kw.$string_dict[key]
+            var params = kw.$string_dict[key][0]
             if(typeof params == "string"){
                 data = params
+            }else if(_b_.isinstance(params, _b_.bytes)){
+                data = new ArrayBuffer(params.source.length)
+                var array = new Int8Array(data)
+                for(var i = 0, len = params.source.length; i < len; i++){
+                    array[i] = params.source[i]
+                }
             }else{
                 if(params.__class__ !== _b_.dict){
                     throw _b_.TypeError.$factory("wrong type for data, " +
-                        "expected dict or str, got " + $B.class_name(params))
+                        "expected dict, bytes or str, got " + 
+                        $B.class_name(params))
                 }
                 params = params.$string_dict
                 var items = []
                 for(var key in params){
                     items.push(encodeURIComponent(key) + "=" +
-                               encodeURIComponent(params[key]))
+                               encodeURIComponent(params[key][0]))
                 }
                 data = items.join("&")
             }
         }else if(key == "headers"){
-            headers = kw.$string_dict[key].$string_dict
+            headers = _b_.dict.$to_obj(kw.$string_dict[key][0])
         }else if(key.startsWith("on")){
             var event = key.substr(2)
             if(event == "timeout"){
-                timeout.func = kw.$string_dict[key]
+                timeout.func = kw.$string_dict[key][0]
             }else{
-                ajax.bind(self, event, kw.$string_dict[key])
+                ajax.bind(self, event, kw.$string_dict[key][0])
             }
         }else if(key == "timeout"){
-            timeout.seconds = kw.$string_dict[key]
+            timeout.seconds = kw.$string_dict[key][0]
         }else if(key == "cache"){
-            cache = kw.$string_dict[key]
+            cache = kw.$string_dict[key][0]
         }else if(key == "format"){
-            format = kw.$string_dict[key]
+            format = kw.$string_dict[key][0]
         }
     }
     if(method == "post"){
@@ -81,14 +88,14 @@ function ajax(){
     var $ = $B.args("ajax", 2, {method: null, url: null},
             ["method", "url"], arguments, {},
             null, "kw"),
-        method = $.method,
+        method = $.method.toUpperCase(),
         url = $.url,
         kw = $.kw
     var args = handle_kwargs(kw, "get")
-    if(! args.cache){
-        url = "?ts" + (new Date()).getTime() + "=0"
+    if(method == "GET" && ! args.cache){
+        url = url + "?ts" + (new Date()).getTime() + "=0"
     }
-    if(args.body){
+    if(args.body && method == "GET"){
         url = url + (args.cache ? "?" : "&") + args.body
     }
     var func = function(){
@@ -106,7 +113,11 @@ function ajax(){
                     resolve(this)
                 }
             }
-            xhr.send()
+            if(method == "POST" && args.body){
+                xhr.send(args.body)
+            }else{
+                xhr.send()
+            }
         })
     }
     func.$infos = {
@@ -163,7 +174,7 @@ HTTPRequest.data = _b_.property.$factory(function(self){
 HTTPRequest.response_headers = _b_.property.$factory(function(self){
     var headers = self.getAllResponseHeaders()
     if(headers === null){return _b_.None}
-    var res = _b_.dict.$factory()
+    var res = $B.empty_dict()
     if(headers.length > 0){
         // Convert the header string into an array
         // of individual headers
@@ -173,7 +184,7 @@ HTTPRequest.response_headers = _b_.property.$factory(function(self){
           var parts = line.split(': ')
           var header = parts.shift()
           var value = parts.join(': ')
-          res.$string_dict[header] = value
+          _b_.dict.$setitem(res, header, value)
         })
     }
     return res
@@ -199,16 +210,12 @@ function run(coro){
     var handle_success = function(){
             $B.leave_frame()
         },
-        handle_error = function(ev){
-            console.log("handle error, ev", ev)
-            var err_msg = "Traceback (most recent call last):\n"
-            err_msg += $B.print_stack(ev.$stack)
-            if(ev.__class){
-                err_msg += "\n" + ev.__class__.$infos.__name__ +
-                    ': ' + ev.args[0]
-            }
-            $B.builtins.print(err_msg)
-            throw ev
+        handle_error = function(err){
+            // coro.$stack is a snapshot of the frames stack when the async
+            // function was called. Restore it to get the correct call tree
+            console.log("Exception in asynchronous function")
+            err.$stack = coro.$stack.concat([$B.last(err.$stack)])
+            $B.handle_error(err)
         }
 
     var $ = $B.args("run", 3, {coro: null, onsuccess: null, onerror: null},
@@ -230,10 +237,9 @@ function run(coro){
     }else{
         error_func = handle_error
     }
-    // Add top frame a second time to get the correct frame when the async
-    // function exits
-    $B.frames_stack.push($B.last($B.frames_stack))
+    var save_stack = $B.frames_stack.slice()
     $B.coroutine.send(coro).then(onsuccess).catch(error_func)
+    $B.frames_stack = save_stack
     return _b_.None
 }
 

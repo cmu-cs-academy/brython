@@ -203,4 +203,70 @@ assert b'%a' % 3.14 == b'3.14'
 assert b'%a' % b'abc' == b"b'abc'"
 assert b'%a' % 'def' == b"'def'"
 
+# issue 1306
+bstrs = [b'', b' ', b'\n', b'\n\n', b'a\nb', b'one\ntwo\nthree',
+         b'one\ntwo\nthree\n', b'one\ntwo\nthree\n\n']
+good = [
+[], [],
+[], [],
+[], [],
+[b' '], [b' '],
+[b' '], [b' '],
+[b' '], [b' '],
+[b''], [b'\n'],
+[b''], [b'\r'],
+[b''], [b'\r\n'],
+[b'', b''], [b'\n', b'\n'],
+[b'', b''], [b'\r', b'\r'],
+[b'', b''], [b'\r\n', b'\r\n'],
+[b'a', b'b'], [b'a\n', b'b'],
+[b'a', b'b'], [b'a\r', b'b'],
+[b'a', b'b'], [b'a\r\n', b'b'],
+[b'one', b'two', b'three'], [b'one\n', b'two\n', b'three'],
+[b'one', b'two', b'three'], [b'one\r', b'two\r', b'three'],
+[b'one', b'two', b'three'], [b'one\r\n', b'two\r\n', b'three'],
+[b'one', b'two', b'three'], [b'one\n', b'two\n', b'three\n'],
+[b'one', b'two', b'three'], [b'one\r', b'two\r', b'three\r'],
+[b'one', b'two', b'three'], [b'one\r\n', b'two\r\n', b'three\r\n'],
+[b'one', b'two', b'three', b''], [b'one\n', b'two\n', b'three\n', b'\n'],
+[b'one', b'two', b'three', b''], [b'one\r', b'two\r', b'three\r', b'\r'],
+[b'one', b'two', b'three', b''], [b'one\r\n', b'two\r\n', b'three\r\n', b'\r\n']
+]
+ii = 0
+for ss in bstrs:
+    for sep in (b'\n', b'\r', b'\r\n'):
+        ss_ = ss.replace(b'\n', sep)
+        for args in ((), (True,)):
+            ll = ss_.splitlines(*args)
+            if ll != good[ii]:
+                raise AssertionError('%s%s => %s != %s' % (
+                    repr(ss_), ' (keepends)' if args==(True,) else '', ll, good[ii]))
+            ii += 1
+
+# issue 1339
+
+seq1 =  [0, 1, 2]
+seq2 =  '\x00\x01\x02'
+seq3 = b'\x00\x01\x02'
+class foo:
+    def __init__(self, x):
+        self.x = x
+    def __index__(self):
+        return self.x
+
+assert seq1[foo(1):] == seq1[1:]
+assert seq2[foo(1):] == seq2[1:]
+assert seq3[foo(1):] == seq3[1:]
+
+# PEP 616
+b = b'beforeremove'
+assert b.removeprefix(b"before") == b"remove"
+assert b.removeprefix(b"z") == b
+
+b = b"removeafter"
+assert b.removesuffix(b"after") == b"remove"
+assert b == b"removeafter"
+
+assert b.removesuffix(b"z") == b
+
 print('passed all tests...')

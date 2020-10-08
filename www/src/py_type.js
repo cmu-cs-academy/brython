@@ -5,14 +5,13 @@ var _b_ = $B.builtins
 // generic code for class constructor
 $B.$class_constructor = function(class_name, class_obj, bases,
         parents_names, kwargs){
-
     bases = bases || []
     var metaclass
 
     var module = class_obj.__module__
     if(module === undefined){
         // Get module of current frame
-        module = $B.last($B.frames_stack)[2]
+        module = class_obj.__module__ = $B.last($B.frames_stack)[2]
     }
 
     // check if parents are defined
@@ -45,13 +44,18 @@ $B.$class_constructor = function(class_name, class_obj, bases,
 
     var mro0 = class_obj
 
+    // A class that overrides __eq__() and does not define __hash__()
+    // will have its __hash__() implicitly set to None
+    if(class_obj.__eq__ !== undefined && class_obj.__hash__ === undefined){
+        class_obj.__hash__ = _b_.None
+    }
+
     // Replace non-class bases that have a __mro_entries__ (PEP 560)
     var orig_bases = bases.slice(),
         use_mro_entries = false
     for(var i = 0; i < bases.length; i++){
         if(bases[i] === undefined ||
-                (bases[i].__mro__ === undefined &&
-                bases[i].__class__ !== $B.JSObject)){
+                (bases[i].__mro__ === undefined)){
             var mro_entries = $B.$getattr(bases[i], "__mro_entries__",
                 _b_.None)
             if(mro_entries !== _b_.None){
@@ -69,14 +73,28 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     // - if the class has parents, inherit the class of the first parent
     // - otherwise default to type
     if(metaclass === undefined){
-        if(bases && bases.length > 0 && bases[0].__class__ !== $B.JSObject){
+        if(bases && bases.length > 0){
             metaclass = bases[0].__class__
+            if(metaclass === undefined){
+                // Might inherit a Javascript constructor
+                if(typeof bases[0] == "function"){
+                    if(bases.length != 1){
+                        throw _b_.TypeError.$factory("A Brython class " +
+                            "can inherit at most 1 Javascript constructor")
+                    }
+                    metaclass = bases[0].__class__ = $B.JSMeta
+                    $B.set_func_names(bases[0], module)
+                }else{
+                    throw _b_.TypeError.$factory("Argument of " + class_name +
+                        "is not a class (type '" + $B.class_name(bases[0]) +
+                        "')")
+                }
+            }
             for(var i = 1; i < bases.length; i++){
                 var mc = bases[i].__class__
-                if(mc === metaclass){
-                    // same metaclass, do nothing
-                }else if(mc.__bases__ &&
-                        mc.__bases__.indexOf(metaclass) > -1){
+                if(mc === metaclass || _b_.issubclass(metaclass, mc)){
+                    // same metaclass or a subclass, do nothing
+                }else if(_b_.issubclass(mc, metaclass)){
                     metaclass = mc
                 }else if(metaclass.__bases__ &&
                         metaclass.__bases__.indexOf(mc) == -1){
@@ -91,24 +109,25 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     }
     // Use __prepare__ (PEP 3115)
     var prepare = $B.$getattr(metaclass, "__prepare__", _b_.None),
-        cl_dict = prepare(class_name, bases) // dict or dict-like
+        cl_dict = $B.$call(prepare)(class_name, bases) // dict or dict-like
 
     if(cl_dict.__class__ !== _b_.dict){
         set_class_item = $B.$getattr(cl_dict, "__setitem__")
     }else{
         set_class_item = function(attr, value){
-            cl_dict.$string_dict[attr] = value
+            cl_dict.$string_dict[attr] = [value, cl_dict.$order++]
         }
     }
 
     // Transform class object into a dictionary
     for(var attr in class_obj){
         if(attr == "__annotations__"){
-            cl_dict.$string_dict[attr] = cl_dict.$string_dict[attr] ||
-                _b_.dict.$factory()
+            if(cl_dict.$string_dict[attr] === undefined){
+                cl_dict.$string_dict[attr] = [$B.empty_dict(), cl_dict.$order++]
+            }
             for(var key in class_obj[attr].$string_dict){
-                $B.$setitem(cl_dict.$string_dict[attr], key,
-                    class_obj[attr].$string_dict[key])
+                $B.$setitem(cl_dict.$string_dict[attr][0], key,
+                    class_obj[attr].$string_dict[key][0])
             }
         }else{
             if(attr.charAt(0) != "$" || attr.substr(0,2) == "$$"){
@@ -129,7 +148,7 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     }
     if(cl_dict.__class__ === _b_.dict){
         for(var key in cl_dict.$string_dict){
-            class_dict[key] = cl_dict.$string_dict[key]
+            class_dict[key] = cl_dict.$string_dict[key][0]
         }
     }else{
         var get_class_item = $B.$getattr(cl_dict, "__getitem__")
@@ -144,7 +163,8 @@ $B.$class_constructor = function(class_name, class_obj, bases,
         }
     }
     class_dict.__mro__ = _b_.type.mro(class_dict).slice(1)
-    
+
+
     // Check if at least one method is abstract (cf PEP 3119)
     // If this is the case, the class cannot be instanciated
     var is_instanciable = true,
@@ -202,8 +222,8 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     kls.__module__ = module
     kls.$infos = {
         __module__: module,
-        __name__: class_name,
-        __qualname__: class_name
+        __name__: $B.from_alias(class_name),
+        __qualname__: class_obj.$qualname
     }
     kls.$subclasses = []
 
@@ -227,21 +247,11 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     for(var i = 0; i < bases.length; i++){
         bases[i].$subclasses  = bases[i].$subclasses || []
         bases[i].$subclasses.push(kls)
-        // call __init_subclass__ with the extra keyword arguments
-        if(i == 0){
-            var init_subclass = _b_.type.__getattribute__(bases[i],
-                "__init_subclass__")
-            if(init_subclass.$infos.__func__ !== undefined){
-                init_subclass.$infos.__func__(kls, {$nat: "kw", kw: extra_kwargs})
-            }else{
-                init_subclass(kls, {$nat: "kw", kw: extra_kwargs})
-            }
-        }
     }
-    if(bases.length == 0){
-        $B.$getattr(metaclass, "__init_subclass__")(kls,
-            {$nat: "kw", kw:extra_kwargs})
-    }
+    var sup = _b_.$$super.$factory(kls, kls)
+    var init_subclass = _b_.$$super.__getattribute__(sup, "__init_subclass__")
+    init_subclass({$nat: "kw", kw: extra_kwargs})
+
     if(!is_instanciable){
         function nofactory(){
             throw _b_.TypeError.$factory("Can't instantiate abstract class " +
@@ -258,6 +268,9 @@ $B.$class_constructor = function(class_name, class_obj, bases,
 var type = $B.make_class("type",
     function(obj, bases, cl_dict){
         if(arguments.length == 1){
+            if(obj === undefined){
+                return $B.UndefinedClass
+            }
             return obj.__class__ || $B.get_class(obj)
         }
         return type.__new__(type, obj, bases, cl_dict)
@@ -293,14 +306,14 @@ type.__format__ = function(klass, fmt_spec){
     return _b_.str.$factory(klass)
 }
 
-type.__getattribute__ = function(klass, attr){
+ type.__getattribute__ = function(klass, attr){
     switch(attr) {
         case "__annotations__":
             var mro = [klass].concat(klass.__mro__),
                 res
             for(var i = 0, len = mro.length; i < len; i++){
                 if(mro[i].__dict__){
-                    var ann = mro[i].__dict__.$string_dict.__annotations__
+                    var ann = mro[i].__dict__.$string_dict.__annotations__[0]
                     if(ann){
                         if(res === undefined){
                             res = ann
@@ -315,7 +328,7 @@ type.__getattribute__ = function(klass, attr){
                     }
                 }
             }
-            if(res === undefined){res = _b_.dict.$factory()}
+            if(res === undefined){res = $B.empty_dict()}
             return res
         case "__bases__":
             var res = klass.__bases__ || _b_.tuple.$factory()
@@ -345,7 +358,7 @@ type.__getattribute__ = function(klass, attr){
                 function(key){delete klass[key]})
     }
     var res = klass[attr]
-    var $test = false // attr=="__str__" // && klass.$infos.__name__ == "N"
+    var $test = false // attr == "__hash__" // && klass.$infos.__name__ == "generator"
     if($test){
         console.log("attr", attr, "of", klass, res, res + "")
     }
@@ -368,6 +381,9 @@ type.__getattribute__ = function(klass, attr){
         var v = klass[attr]
         if(v === undefined){
             var mro = klass.__mro__
+            if(mro === undefined){
+                console.log("pas de mro pour", klass)
+            }
             for(var i = 0; i < mro.length; i++){
                 var v = mro[i][attr]
                 if(v !== undefined){
@@ -381,7 +397,7 @@ type.__getattribute__ = function(klass, attr){
 
         if(res === undefined){
             // search in metaclass
-            var meta = klass.__class__,
+            var meta = klass.__class__ || $B.get_class(klass),
                 res = meta[attr]
             if($test){console.log("search in meta", meta, res)}
             if(res === undefined){
@@ -431,9 +447,9 @@ type.__getattribute__ = function(klass, attr){
 
     if(res !== undefined){
         if($test){console.log("res", res)}
-        // If the attribute is a property, return the result of fget()
+        // If the attribute is a property, return it
         if(res.__class__ === _b_.property){
-            return res //.fget(klass)
+            return res
         }
         if(res.__get__){
             if(res.__class__ === method){
@@ -448,6 +464,11 @@ type.__getattribute__ = function(klass, attr){
                 result = res.__get__(klass)
             }
             return result
+        }else if(res.__class__ && res.__class__.__get__){
+            // issue #1391
+            if(!(attr.startsWith("__") && attr.endsWith("__"))){
+                return res.__class__.__get__(res, _b_.None, klass)
+            }
         }
         if(typeof res == "function"){
             // method
@@ -459,6 +480,9 @@ type.__getattribute__ = function(klass, attr){
 
             if(attr == "__new__"){res.$type = "staticmethod"}
             if(attr == "__class_getitem__" && res.__class__ !== $B.method){
+                res = _b_.classmethod.$factory(res)
+            }
+            if(attr == "__init_subclass__"){
                 res = _b_.classmethod.$factory(res)
             }
             if(res.__class__ === $B.method){
@@ -482,9 +506,9 @@ type.__init__ = function(){
     // Returns nothing
 }
 
-type.__init_subclass__ = function(cls, kwargs){
+type.__init_subclass__ = function(){
     // Default implementation only checks that no keyword arguments were passed
-    var $ = $B.args("__init_subclass__", 1, {cls: null}, ["cls"],
+    var $ = $B.args("__init_subclass__", 1, {}, [],
         arguments, {}, "args", "kwargs")
     if($.kwargs !== undefined){
         if($.kwargs.__class__ !== _b_.dict ||
@@ -535,17 +559,23 @@ type.__new__ = function(meta, name, bases, cl_dict){
     // __dict__ attribute
 
     // Create the class dictionary
+    var module = cl_dict.$string_dict.__module__
+    if(module){
+        module = module[0]
+    }
     var class_dict = {
         __class__ : meta,
         __bases__ : bases,
         __dict__ : cl_dict,
         $infos:{
             __name__: name.replace("$$", ""),
-            __module__: cl_dict.$string_dict.__module__
+            __module__: module
         },
         $is_class: true,
         $has_setattr: cl_dict.$has_setattr
     }
+
+    class_dict.__mro__ = type.mro(class_dict).slice(1)
 
     // set class attributes for faster lookups
     var items = $B.dict_to_list(cl_dict) // defined in py_dict.js
@@ -563,7 +593,12 @@ type.__new__ = function(meta, name, bases, cl_dict){
             }
         }
         if(typeof v == "function"){
+            if(v.$infos === undefined){
+                console.log("type new", v, v + "")
+                console.log($B.frames_stack.slice())
+            }
             v.$infos.$class = class_dict
+            v.$infos.__qualname__ = name + '.' + v.$infos.__name__
             if(v.$infos.$defaults){
                 // If the function was set an attribute __defaults__, it is
                 // stored in v.$infos.$defaults (cf. Function.__setattr__ in
@@ -575,7 +610,6 @@ type.__new__ = function(meta, name, bases, cl_dict){
         }
     }
 
-    class_dict.__mro__ = type.mro(class_dict).slice(1)
     return class_dict
 }
 
@@ -583,7 +617,7 @@ type.__repr__ = type.__str__ = function(kls){
     if(kls.$infos === undefined){
         console.log("no $infos", kls)
     }
-    var qualname = kls.$infos.__name__
+    var qualname = kls.$infos.__qualname__
     if(kls.$infos.__module__    &&
             kls.$infos.__module__ != "builtins" &&
             !kls.$infos.__module__.startsWith("$")){
@@ -593,7 +627,7 @@ type.__repr__ = type.__str__ = function(kls){
 }
 
 type.__prepare__ = function(){
-    return _b_.dict.$factory()
+    return $B.empty_dict()
 }
 
 type.__qualname__ = {
@@ -626,35 +660,10 @@ type.mro = function(cls){
             pos = 0
         if(bases[i] === undefined ||
                 bases[i].__mro__ === undefined){
-            if(bases[i].__class__ === $B.JSObject){
+            if(bases[i].__class__ === undefined){
                 // Brython class inherits a Javascript constructor. The
                 // constructor is the attribute js_func
-                var js_func = bases[i].js_func
-                bases[i] = {
-                    __class__: _b_.type,
-                    __mro__: [_b_.object],
-                    __name__: js_func.name,
-                    __init__: function(instance, ...args){
-                        args.forEach(function(arg, i){
-                            args[i] = $B.pyobj2jsobj(arg)
-                        })
-                        js_func.apply(instance, args)
-                        // Transform function attributes into methods
-                        for(var attr in instance){
-                            if(typeof instance[attr] == "function"){
-                                instance[attr] = (function(f){
-                                    return function(){
-                                        var res = f.apply(instance, arguments)
-                                        return $B.jsobj2pyobj(res)
-                                    }
-                                })(instance[attr])
-                            }
-                        }
-                    }
-                }
-                bases[i].__init__.$infos = {
-                    __name__: bases[i].$infos.__name__
-                }
+                return [_b_.object]
             }else{
                 throw _b_.TypeError.$factory(
                     "Object passed as base class is not a class")
@@ -741,13 +750,6 @@ $B.set_func_names(wrapper_descriptor, "builtins")
 
 type.__call__.__class__ = wrapper_descriptor
 
-// class of constructors
-$B.$factory = {
-    __class__: type,
-    $is_class: true
-}
-$B.$factory.__mro__ = [type, _b_.object]
-
 
 var $instance_creator = $B.$instance_creator = function(klass){
     // return the function to initalise a class instance
@@ -782,7 +784,7 @@ var $instance_creator = $B.$instance_creator = function(klass){
             factory = function(){
                 var obj = {
                     __class__: klass,
-                    __dict__: _b_.dict.$factory()
+                    __dict__: $B.empty_dict()
                 }
                 klass.__init__.bind(null, obj).apply(null, arguments)
                 return obj
@@ -796,7 +798,7 @@ var $instance_creator = $B.$instance_creator = function(klass){
                         throw _b_.TypeError.$factory("object() takes no parameters")
                     }
                 }
-                return {__class__: klass, __dict__:_b_.dict.$factory()}
+                return {__class__: klass, __dict__: $B.empty_dict()}
             }
         }
     }else{
@@ -920,6 +922,66 @@ $B.set_func_names(method, "builtins")
 $B.method_descriptor = $B.make_class("method_descriptor")
 
 $B.classmethod_descriptor = $B.make_class("classmethod_descriptor")
+
+// PEP 585
+$B.GenericAlias = $B.make_class("GenericAlias",
+    function(origin_class, items){
+        return {
+            __class__: $B.GenericAlias,
+            origin_class,
+            items
+        }
+    }
+)
+
+$B.GenericAlias.__args__ = {
+    __get__: function(self){
+        return $B.fast_tuple(self.items)
+    }
+}
+
+$B.GenericAlias.__call__ = function(self, ...args){
+    return self.origin_class.$factory.apply(null, args)
+}
+
+$B.GenericAlias.__eq__ = function(self, other){
+    return $B.rich_comp("__eq__", self.origin_class, other.origin_class) &&
+        $B.rich_comp("__eq__", self.items, other.items)
+}
+
+$B.GenericAlias.__getitem__ = function(self, item){
+    throw _b_.TypeError.$factory("descriptor '__getitem__' for '" +
+        self.origin_class.$infos.__name__ +"' objects doesn't apply to a '" +
+        $B.class_name(item) +"' object")
+}
+
+$B.GenericAlias.__origin__ = {
+    __get__: function(self){
+        return self.origin_class
+    }
+}
+
+$B.GenericAlias.__parameters__ = {
+    __get__: function(self){
+        // In PEP 585 : "a lazily computed tuple (possibly empty) of unique
+        // type variables found in __args__", but what are "unique type
+        // variables" ?
+        return $B.fast_tuple([])
+    }
+}
+
+$B.GenericAlias.__repr__ = function(self){
+    var items = self.items
+    for(var i = 0, len = items.length; i < len; i++){
+        if(items[i] === _b_.Ellipsis){
+            items[i] = '...'
+        }else{
+            items[i] = items[i].$infos.__name__
+        }
+    }
+    return self.origin_class.$infos.__qualname__ + '[' +
+        items.join(", ") + ']'
+}
 
 // this could not be done before $type and $factory are defined
 _b_.object.__class__ = type

@@ -226,8 +226,8 @@ class ModulesFinder:
                             package = module[:module.rfind(".")]
                         else:
                             package = ""
-                        imports = self.get_imports(module_dict[module][1],
-                            package)
+                        module_dict[module][2] = list(self.get_imports(
+                            module_dict[module][1], package))
         return finder.imports
 
     def norm_indent(self, script):
@@ -253,7 +253,7 @@ class ModulesFinder:
         imports = set()
         for dirname, dirnames, filenames in os.walk(self.directory):
             for name in dirnames:
-                if name.endswith('__dist__'):
+                if name.endswith('__dist__') or name.endswith("__pycache__"):
                     # don't inspect files in the subfolder __dist__
                     dirnames.remove(name)
                     break
@@ -276,12 +276,12 @@ class ModulesFinder:
                     for script in parser.scripts:
                         script = self.norm_indent(script)
                         try:
-                            imports |= self.get_imports(script)
+                            self.get_imports(script)
                         except SyntaxError:
                             print('syntax error', path)
                             traceback.print_exc(file=sys.stderr)
                 elif ext.lower() == '.py':
-                    print("python", filename)
+                    #print("python", filename)
                     if filename == "list_modules.py":
                         continue
                     if dirname != self.directory and not is_package(dirname):
@@ -297,13 +297,11 @@ class ModulesFinder:
                         except SyntaxError:
                             print('syntax error', path)
                             traceback.print_exc(file=sys.stderr)
-        self.imports = sorted(list(imports))
 
     def make_brython_modules(self):
         """Build brython_modules.js from the list of modules needed by the
         application.
         """
-        print("modules", self.modules, "http" in self.modules)
         vfs = {"$timestamp": int(1000 * time.time())}
         for module in self.modules:
             dico = stdlib if module in stdlib else user_modules
@@ -316,6 +314,35 @@ class ModulesFinder:
         # save in brython_modules.js
         path = os.path.join(stdlib_dir, "brython_modules.js")
         print('Saving in %s' % path)
+        if os.path.exists(path):
+            # If brython_modules.js already exists, check if there have been
+            # changes. Cf. issue #1471.
+            changes = False
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+                start_str = "var scripts = "
+                start_pos = content.find(start_str)
+                end_pos = content.find("__BRYTHON__.update_VFS(scripts)")
+                data = content[start_pos + len(start_str):end_pos].strip()
+                old_vfs = json.loads(data)
+                if old_vfs.keys() != vfs.keys():
+                    changes = True
+                else:
+                    changes = True
+                    for key in old_vfs:
+                        if key == "$timestamp":
+                            continue
+                        if not key in vfs:
+                            break
+                        elif vfs[key][1] != old_vfs[key][1]:
+                            break
+                    else: # no break
+                        changes = False
+
+            if not changes:
+                print("No change: brython_modules.js not updated")
+                return
+
         with open(path, "w", encoding="utf-8") as out:
             # Add VFS_timestamp ; used to test if the indexedDB must be
             # refreshed
@@ -464,13 +491,16 @@ else:
     sp_dir = os.path.join(stdlib_dir, "Lib", "site-packages")
     if os.path.exists(sp_dir):
         print("search in site-packages...")
+        mf = ModulesFinder()
         for dirpath, dirnames, filenames in os.walk(sp_dir):
+            if dirpath.endswith("__pycache__"):
+                continue
             package = dirpath[len(sp_dir) + 1:]
             for filename in filenames:
                 if not filename.endswith(".py"):
-                    print("skip non-Python module", filename)
                     continue
                 fullpath = os.path.join(dirpath, filename)
+                #print(fullpath)
                 is_package = False
                 if not package:
                     # file in site-packages
@@ -483,9 +513,10 @@ else:
                     module = ".".join(elts)
                 with open(fullpath, encoding="utf-8") as f:
                     src = f.read()
-                mf = ModulesFinder()
-                imports = mf.get_imports(src)
-                stdlib[module] = [".py", src, list(imports), is_package]
+                #imports = mf.get_imports(src)
+                stdlib[module] = [".py", src, None]
+                if is_package:
+                    stdlib[module].append(1)
 
 packages = {os.getcwd(), os.getcwd() + '/Lib/site-packages'}
 
@@ -533,10 +564,10 @@ for dirname, dirnames, filenames in os.walk(base_dir):
                 module_name = "{}.{}".format(package, name)
             with open(path, encoding="utf-8") as fobj:
                 src = fobj.read()
-            mf = ModulesFinder(dirname)
-            imports = mf.get_imports(src, package or None)
-            imports = sorted(list(imports))
-            user_modules[module_name] = [ext, src, imports]
+            #mf = ModulesFinder(dirname)
+            #imports = mf.get_imports(src, package or None)
+            #imports = sorted(list(imports))
+            user_modules[module_name] = [ext, src, None]
             if module_name == package:
                 user_modules[module_name].append(1)
 

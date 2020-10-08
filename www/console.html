@@ -1,19 +1,21 @@
 <!doctype html>
 <html>
 <head>
-    <title>Brython interactive mode</title>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
     <meta name=robots content="index, follow">
     <meta name=description content=Brython >
     <meta name=author content="Pierre Quentel">
     <meta name=keywords content="Python, Brython">
     <meta name=viewport content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Brython interactive mode</title>
     <link rel="icon" type="image/png" href="favicon.png" />
     <noscript>Please enable Javascript to view this page correctly.</noscript>
 
     <link rel=stylesheet href="/brython.css">
 
     <script src="/src/brython.js"></script>
+    <script src="/src/brython_stdlib.js"></script>
 
     <style>
     .codearea {
@@ -23,10 +25,7 @@
         font-size:14px;
         overflow:auto
     }
-    div, textarea {
-        height:100%;
-        width:98%
-    }
+
     </style>
 </head>
 
@@ -36,11 +35,16 @@
         <tr id="banner_row" ></tr>
     </table>
 
-    <textarea id=code class=codearea rows=20></textarea>
+    <textarea id="code" class="codearea" rows="20" cols="80"></textarea>
 
     <div id=content></div>
 
-    <script type="text/python3" src="tests/console.py"></script>
+    <script type="text/python3">
+  from interpreter import Interpreter
+
+  # open REPL in textarea with id "code"
+  Interpreter("code")
+  </script>
 
     <div>
         The console can be embedded in a web page by adding

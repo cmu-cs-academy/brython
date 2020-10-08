@@ -251,4 +251,33 @@ assert 2.7 in s
 s2 = s.copy()
 assert 2.7 in s2
 
+# issue 1329
+try:
+    hash({1, 2, 3})
+    raise Exception("should have raised TypeError")
+except TypeError:
+    pass
+
+s = set()
+try:
+    s.add({1,2,3})
+    raise Exception("should have raised TypeError")
+except TypeError:
+    pass
+
+# issue 1468
+s1 = set()
+assert str(s1) == "set()"
+s1.add('hello')
+assert str(s1) == "{'hello'}"
+
+s1 = set()
+class Foo:
+    s1 = s1
+    def __repr__(self):
+        return 'Foo(s1=%r)' % self.s1
+
+s1.add(Foo())
+assert str(s1) == "{Foo(s1=set(...))}", str(s1)
+
 print("passed all tests..")

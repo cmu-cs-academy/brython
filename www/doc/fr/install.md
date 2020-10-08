@@ -1,16 +1,39 @@
-Première installation
----------------------
+Sans installation
+-----------------
+On peut utiliser Brython sans avoir à installer quoi que ce soit, il suffit
+d'inclure les scripts Brython dans la page HTML depuis un CDN:
 
-Pour installer Brython :
+```xml
+<script src="https://cdn.jsdelivr.net/npm/brython@3.9.0/brython.min.js">
+</script>
+<script src="https://cdn.jsdelivr.net/npm/brython@3.9.0/brython_stdlib.js">
+</script>
+```
+
+ou
+
+```xml
+<script src="https://cdnjs.cloudflare.com/ajax/libs/brython/3.9.0/brython.min.js">
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/brython/3.9.0/brython_stdlib.min.js">
+</script>
+```
+
+Installation locale
+-------------------
+
+Pour installer Brython localement:
 
 - si votre PC peut utiliser CPython et pip, installez le package `brython` par
 ```console
 pip install brython
 ```
 
+Le package installe un logiciel client `brython-cli` (équivalent à `python -m brython`).
+
 > puis dans un répertoire vide, exécutez
 >```console
->python -m brython --install
+>brython-cli --install
 >```
 
 - si vous ne pouvez pas utiliser cette méthode, aller sur la [page des publications]
@@ -48,7 +71,7 @@ Dans le répertoire de l'application, vous pouvez ensuite mettre à jour les
 fichiers Brython (__brython.js__ et __brython_stdlib.js__) par:
 
 ```console
-python -m brython --update
+brython-cli --update
 ```
 
 Installer un package CPython
@@ -59,7 +82,7 @@ Brython par la commande `--add_package <nom du package>`.
 Par exemple:
 ```console
 pip install attrs
-python -m brython --add_package attrs
+brython-cli --add_package attrs
 ```
 
 Pour cela il faut naturellement que tous les fichiers du package soient

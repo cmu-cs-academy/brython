@@ -23,14 +23,14 @@ Un exemple simple :
 </head>
 <body onload="brython()">
 <script type="text/python">
-from browser import document, alert
-
-# associe une fonction à l'événement "click" sur le bouton
+from browser import document
+from browser.widgets.dialog import InfoDialog
 
 def click(ev):
-    alert(document["zone"].value)
+    InfoDialog("Hello", f"Bonjour, {document['zone'].value} !")
 
-document["echo"].bind("click")
+# associe une fonction à l'événement "click" sur le bouton
+document["echo"].bind("click", click)
 </script>
 <input id="zone">
 <button id="echo">click !</button>
@@ -43,15 +43,15 @@ document["echo"].bind("click")
 
 essayez :<p>
 <script type="text/python">
-from browser import document, alert
+from browser import document
+from browser.widgets.dialog import InfoDialog
 
-# bind event 'click' on button to function click
 def click(ev):
-    alert(document["zone"].value)
+    InfoDialog("Hello", f"Bonjour, {document['zone'].value} !")
 
+# bind event 'click' on button to function click()
 document["echo"].bind("click", click)
 </script>
-
 <input id="zone" autocomplete="off">
 <button id="echo">clic !</button>
 </td>
@@ -86,6 +86,15 @@ _src_ de la balise `<script>` :
 
 Attention, dans ce deuxième cas le script Python est récupéré par un appel
 Ajax : il doit donc se trouver dans le même domaine que la page HTML.
+
+Ce script a normalement l'extension __`.py`__. Dans certains cas les serveurs
+interprètent un appel Ajax vers cette extension comme une demande
+d'exécuter le script sur le serveur. Dans ce cas il faut changer l'extension,
+par exemple la remplacer par __`.bry`__ comme dans le code suivant:
+
+```xml
+<script type="text/python" src="test.bry"></script>
+```
 
 Quand on clique sur le bouton, la fonction `echo()` définie dans le script
 Python est exécutée. Cette fonction récupère la valeur de l'élément INPUT

@@ -13,6 +13,18 @@ var float_check = function(x) {
     return _b_.float.$factory(x)
 }
 
+function check_int(x){
+    if(! _b_.isinstance(x, int)){
+        throw _b_.TypeError.$factory("'" + $B.class_name(x) +
+            "' object cannot be interpreted as an integer")
+    }
+}
+
+function check_int_or_round_float(x){
+    return (x instanceof Number && x == Math.floor(x)) ||
+            _b_.isinstance(x, int)
+}
+
 var isWholeNumber = function(x){return (x * 10) % 10 == 0}
 
 var isOdd = function(x) {return isWholeNumber(x) && 2 * Math.floor(x / 2) != x}
@@ -265,6 +277,30 @@ var _mod = {
        throw _b_.ValueError.$factory(
            'object is not a number and does not contain __ceil__')
     },
+    comb: function(n, k){
+        $B.check_nb_args('comb', 2, arguments)
+        $B.check_no_kw('comb', n, k)
+
+        // raise TypeError if n or k is not an integer
+        check_int(n)
+        check_int(k)
+
+        if(k < 0){
+            throw _b_.ValueError.$factory("k must be a non-negative integer")
+        }
+        if(n < 0){
+            throw _b_.ValueError.$factory("n must be a non-negative integer")
+        }
+
+        if(k > n){
+            return 0
+        }
+        // Evaluates to n! / (k! * (n - k)!)
+        var fn = _mod.factorial(n),
+            fk = _mod.factorial(k),
+            fn_k = _mod.factorial(n - k)
+        return $B.floordiv(fn, $B.mul(fk, fn_k))
+    },
     copysign: function(x, y){
         $B.check_nb_args('copysign', 2, arguments)
         $B.check_no_kw('copysign', x,y)
@@ -294,6 +330,48 @@ var _mod = {
         $B.check_nb_args('degrees', 1, arguments)
         $B.check_no_kw('degrees', x)
         return float.$factory(float_check(x) * 180 / Math.PI)
+    },
+    dist: function(p, q){
+        $B.check_nb_args('dist', 2, arguments)
+        $B.check_no_kw('dist', p, q)
+        var itp = _b_.iter(p),
+            itq = _b_.iter(q),
+            res = 0
+        while(true){
+            try{
+                var next_p = _b_.next(itp)
+            }catch(err){
+                if(err.__class__ === _b_.StopIteration){
+                    // check that the other iterator is also exhausted
+                    try{
+                        var next_q = _b_.next(itq)
+                        throw _b_.ValueError.$factory("both points must have " +
+                            "the same number of dimensions")
+                    }catch(err){
+                        if(err.__class__ === _b_.StopIteration){
+                            if(typeof res == "number" || res instanceof Number){
+                                return Math.sqrt(res)
+                            }else{
+                                return Math.sqrt(parseInt(res.value))
+                            }
+                        }
+                        throw err
+                    }
+                }
+                throw err
+            }
+            try{
+                var next_q = _b_.next(itq),
+                    diff = $B.sub(next_p, next_q)
+                res = $B.add(res, $B.mul(diff, diff))
+            }catch(err){
+                if(err.__class__ === _b_.StopIteration){
+                    throw _b_.ValueError.$factory("both points must have " +
+                        "the same number of dimensions")
+                }
+                throw err
+            }
+        }
     },
     e: float.$factory(Math.E),
     erf: function(x){
@@ -370,9 +448,15 @@ var _mod = {
         $B.check_no_kw('factorial', x)
 
          //using code from http://stackoverflow.com/questions/3959211/fast-factorial-function-in-javascript
-         var y = float_check(x),
-             r = 1
-         for(var i = 2; i <= y; i++){r *= i}
+         if(! check_int_or_round_float(x)){
+             throw _b_.ValueError.$factory("factorial() only accepts integral values")
+         }else if($B.rich_comp("__lt__", x, 0)){
+             throw _b_.ValueError.$factory("factorial() not defined for negative values")
+         }
+         var r = 1
+         for(var i = 2; i <= x; i++){
+             r = $B.mul(r, i)
+         }
          return r
     },
     floor: function(x){
@@ -488,24 +572,37 @@ var _mod = {
             b = $B.PyNumber_Index($.b)
         if(a == 0 && b == 0){return 0}
         // https://stackoverflow.com/questions/17445231/js-how-to-find-the-greatest-common-divisor
-        a = Math.abs(a);
-        b = Math.abs(b);
-        if(b > a){var temp = a; a = b; b = temp;}
+        a = _b_.abs(a)
+        b = _b_.abs(b)
+        if($B.rich_comp("__gt__", b, a)){
+            var temp = a
+            a = b
+            b = temp
+        }
         while(true){
-            if(b == 0){return a}
-            a %= b
-            if(a == 0){return b}
-            b %= a
+            if(b == 0){
+                return a
+            }
+            a = $B.rich_op("mod", a, b)
+            if(a == 0){
+                return b
+            }
+            b = $B.rich_op("mod", b, a)
         }
     },
     hypot: function(x, y){
-        $B.check_nb_args('hypot', 2, arguments)
-        $B.check_no_kw('hypot', x,y)
-
-       if(_b_.$isinf(x) || _b_.$isinf(y)){return float.$factory('inf')}
-       var x1 = float_check(x),
-           y1 = float_check(y)
-       return float.$factory(Math.sqrt(x1 * x1 + y1 * y1))
+        var $ = $B.args("hypot", 2, {x: null, y:null}, ['x', 'y'],
+                    arguments, {}, "args", null),
+            args = [x, y].concat($.args),
+            res = 0
+        for (var i = 0, len = args.length; i < len; i++){
+            if(_b_.$isinf(args[i])){
+                return float.$factory('inf')
+            }
+            float_check(args[i])
+            res += args[i] * args[i]
+        }
+        return float.$factory(Math.sqrt(res))
     },
     inf: float.$factory('inf'),
     isclose: function(){
@@ -548,6 +645,38 @@ var _mod = {
         $B.check_nb_args('isnan', 1, arguments)
         $B.check_no_kw('isnan', x)
         return isNaN(float_check(x))
+    },
+    isqrt: function(x){
+        $B.check_nb_args('isqrt', 1, arguments)
+        $B.check_no_kw('isqrt', x)
+
+        x = $B.PyNumber_Index(x)
+        if($B.rich_comp("__lt__", x, 0)){
+            throw _b_.ValueError.$factory(
+                "isqrt() argument must be nonnegative")
+        }
+        if(typeof x == "number"){
+            return Math.floor(Math.sqrt(x))
+        }else{ // big integer
+            var v = parseInt(x.value),
+                candidate = Math.floor(Math.sqrt(v)),
+                c1
+            // Use successive approximations : sqr = (sqr + (x / sqr)) / 2
+            // Limit to 100 iterations
+            for(var i = 0; i < 100; i++){
+                c1 = $B.floordiv($B.add(candidate,
+                    $B.floordiv(x, candidate)), 2)
+                if(c1 === candidate || c1.value === candidate.value){
+                    break
+                }
+                candidate = c1
+            }
+            if($B.rich_comp("__gt__", $B.mul(candidate, candidate), x)){
+                // Result might be greater by 1
+                candidate = $B.sub(candidate, 1)
+            }
+            return candidate
+        }
     },
     ldexp: function(x, i){
         $B.check_nb_args('ldexp', 2, arguments)
@@ -617,6 +746,35 @@ var _mod = {
        return _b_.tuple.$factory([i, float.$factory(x2)])
     },
     nan: float.$factory('nan'),
+    perm: function(n, k){
+        var $ = $B.args("perm", 2, {n: null, k: null}, ['n', 'k'],
+                        arguments, {k: _b_.None}, null, null),
+            n = $.n,
+            k = $.k
+
+        if(k === _b_.None){
+            check_int(n)
+            return _mod.factorial(n)
+        }
+        // raise TypeError if n or k is not an integer
+        check_int(n)
+        check_int(k)
+
+        if(k < 0){
+            throw _b_.ValueError.$factory("k must be a non-negative integer")
+        }
+        if(n < 0){
+            throw _b_.ValueError.$factory("n must be a non-negative integer")
+        }
+
+        if(k > n){
+            return 0
+        }
+        // Evaluates to n! / (n - k)!
+        var fn = _mod.factorial(n),
+            fn_k = _mod.factorial(n - k)
+        return $B.floordiv(fn, fn_k)
+    },
     pi : float.$factory(Math.PI),
     pow: function(x, y){
         $B.check_nb_args('pow', 2, arguments)
@@ -672,6 +830,30 @@ var _mod = {
         if(_b_.$isinf(r)){return float.$factory('inf')}
 
         return r
+    },
+    prod: function(){
+        var $ = $B.args("prod", 1, {iterable:null, start:null},
+                        ["iterable", "start"], arguments, {start: 1}, "*",
+                        null),
+            iterable = $.iterable,
+            start = $.start
+        var res = start,
+            it = _b_.iter(iterable),
+            x
+        while(true){
+            try{
+                x = _b_.next(it)
+                if(x == 0){
+                    return 0
+                }
+                res = $B.mul(res, x)
+            }catch(err){
+                if(err.__class__ === _b_.StopIteration){
+                    return res
+                }
+                throw err
+            }
+        }
     },
     radians: function(x){
         $B.check_nb_args('radians', 1, arguments)

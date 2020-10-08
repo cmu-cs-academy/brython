@@ -4,14 +4,14 @@ var _b_ = $B.builtins
 
 function $err(op, other){
     var msg = "unsupported operand type(s) for " + op +
-        ": 'int' and '" + $B.class_name(other) + "'"
+        " : 'int' and '" + $B.class_name(other) + "'"
     throw _b_.TypeError.$factory(msg)
 }
 
 function int_value(obj){
     // Instances of int subclasses that call int.__new__(cls, value)
-    // have an attribute $value set
-    return obj.$value !== undefined ? obj.$value : obj
+    // have an attribute $brython_value set
+    return obj.$brython_value !== undefined ? obj.$brython_value : obj
 }
 
 // dictionary for built-in class 'int'
@@ -144,7 +144,10 @@ int.__bool__ = function(self){
 
 int.__ceil__ = function(self){return Math.ceil(int_value(self))}
 
-int.__divmod__ = function(self, other){return _b_.divmod(self, other)}
+int.__divmod__ = function(self, other){
+    return $B.fast_tuple([int.__floordiv__(self, other),
+        int.__mod__(self, other)])
+}
 
 int.__eq__ = function(self, other){
     // compare object "self" to class "int"
@@ -242,7 +245,7 @@ int.__floordiv__ = function(self, other){
         }
         return Math.floor(self / other)
     }
-    if(hasattr(other, "__rfloordiv__")){
+    if(_b_.hasattr(other, "__rfloordiv__")){
         return $B.$getattr(other, "__rfloordiv__")(self)
     }
     $err("//", other)
@@ -297,7 +300,9 @@ int.__mod__ = function(self, other) {
             "integer division or modulo by zero")}
         return (self % other + other) % other
     }
-    if(hasattr(other, "__rmod__")){return $B.$getattr(other, "__rmod__")(self)}
+    if(_b_.hasattr(other, "__rmod__")){
+        return $B.$getattr(other, "__rmod__")(self)
+    }
     $err("%", other)
 }
 
@@ -362,15 +367,26 @@ int.__new__ = function(cls, value){
     if(cls === int){return int.$factory(value)}
     return {
         __class__: cls,
-        __dict__: _b_.dict.$factory(),
-        $value: value || 0
+        __dict__: $B.empty_dict(),
+        $brython_value: value || 0
     }
 }
 
 int.__pos__ = function(self){return self}
 
+function extended_euclidean(a, b){
+    var d, u, v
+    if(b == 0){
+      return [a, 1, 0]
+    }else{
+      [d, u, v] = extended_euclidean(b, a % b)
+      return [d, v, u - Math.floor(a / b) * v]
+    }
+}
+
+$B.use_bigint = 0
 int.__pow__ = function(self, other, z){
-    if(_b_.isinstance(other, int)){
+    if(typeof other == "number"  || _b_.isinstance(other, int)){
         other = int_value(other)
         switch(other.valueOf()) {
             case 0:
@@ -378,7 +394,7 @@ int.__pow__ = function(self, other, z){
             case 1:
                 return int.$factory(self.valueOf())
       }
-      if(z !== undefined && z !== null){
+      if(z !== undefined && z !== _b_.None){
           // If z is provided, the algorithm is faster than computing
           // self ** other then applying the modulo z
           if(z == 1){return 0}
@@ -386,6 +402,15 @@ int.__pow__ = function(self, other, z){
               base = self % z,
               exponent = other,
               long_int = $B.long_int
+          if(exponent < 0){
+              var gcd, inv, _
+              [gcd, inv, _] = extended_euclidean(self, z)
+              if(gcd !== 1){
+                  throw _b_.ValueError.$factory("not relative primes: " +
+                      self + ' and ' + z)
+              }
+              return int.__pow__(inv, -exponent, z)
+          }
           while(exponent > 0){
               if(exponent % 2 == 1){
                   if(result * base > $B.max_int){
@@ -412,8 +437,16 @@ int.__pow__ = function(self, other, z){
       if(res > $B.min_int && res < $B.max_int){return res}
       else if(res !== Infinity && !isFinite(res)){return res}
       else{
-          return int.$factory($B.long_int.__pow__($B.long_int.$factory(self),
-             $B.long_int.$factory(other)))
+          if($B.BigInt){
+              $B.use_bigint++
+              return {
+                  __class__: $B.long_int,
+                  value: ($B.BigInt(self) ** $B.BigInt(other)).toString(),
+                  pos: true
+              }
+          }
+          return $B.long_int.__pow__($B.long_int.$from_int(self),
+             $B.long_int.$from_int(other))
       }
     }
     if(_b_.isinstance(other, _b_.float)) {
@@ -427,7 +460,10 @@ int.__pow__ = function(self, other, z){
             ln = Math.log(self)
         return $B.make_complex(preal * Math.cos(ln), preal * Math.sin(ln))
     }
-    if(hasattr(other, "__rpow__")){return $B.$getattr(other, "__rpow__")(self)}
+    var rpow = $B.$getattr(other, "__rpow__", _b_.None)
+    if(rpow !== _b_.None){
+        return rpow(self)
+    }
     $err("**", other)
 }
 
@@ -459,7 +495,7 @@ int.__setattr__ = function(self, attr, value){
         }
     }
     // subclasses of int can have attributes set
-    self.__dict__.$string_dict[attr] = value
+    _b_.dict.$setitem(self.__dict__, attr, value)
     return _b_.None
 }
 
@@ -570,6 +606,8 @@ var $op_func = function(self, other){
     }
     var rsub = $B.$getattr(other, "__rsub__", _b_.None)
     if(rsub !== _b_.None){return rsub(self)}
+    console.log("err", self, other)
+    console.log($B.frames_stack.slice())
     throw $err("-", other)
 }
 $op_func += "" // source code
@@ -643,6 +681,7 @@ int.$factory = function(value, base){
         base = $ns["base"]
 
     if(_b_.isinstance(value, _b_.float) && base == 10){
+        value = _b_.float.numerator(value) // for float subclasses
         if(value < $B.min_int || value > $B.max_int){
             return $B.long_int.$from_float(value)
         }
@@ -694,7 +733,7 @@ int.$factory = function(value, base){
                 (_value == "0b" || _value == "0o" || _value == "0x")){
            throw _b_.ValueError.$factory("invalid value")
         }
-        if(_value.length >2) {
+        if(_value.length > 2) {
             var _pre = _value.substr(0, 2).toUpperCase()
             if(base == 0){
                 if(_pre == "0B"){base = 2}
@@ -721,7 +760,9 @@ int.$factory = function(value, base){
         }else{
             value = _value.replace(/_/g, "")
         }
-        if(base <= 10 && ! isFinite(value)){invalid(_value, base)}
+        if(base <= 10 && ! isFinite(value)){
+            invalid(_value, base)
+        }
         var res = parseInt(value, base)
         if(res < $B.min_int || res > $B.max_int){
             return $B.long_int.$factory(value, base)
@@ -740,25 +781,6 @@ int.$factory = function(value, base){
             "object or a number, not '" + $B.class_name(value) + "'")
     }
     return num_value
-
-    /*
-    var $trunc = $B.$getattr(value, "__trunc__", _b_.None)
-    if($trunc !== _b_.None){
-        var res = $trunc(),
-            int_func = $int
-        if(int_func === _b_.None){
-            throw _b_.TypeError.$factory("__trunc__ returned non-Integral (type "+
-                $B.class_name(res) + ")")
-        }
-        var res = int_func()
-        if(_b_.isinstance(res, int)){return int_value(res)}
-        throw _b_.TypeError.$factory("__trunc__ returned non-Integral (type "+
-                $B.class_name(res) + ")")
-    }
-    throw _b_.TypeError.$factory(
-        "int() argument must be a string, a bytes-like " +
-        "object or a number, not '" + $B.class_name(value) + "'")
-    */
 }
 
 $B.set_func_names(int, "builtins")

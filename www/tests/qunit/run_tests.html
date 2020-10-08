@@ -15,7 +15,7 @@
     <link id="link_none2" rel="pythonpath" href="/nowhere2" hreflang="x-none" />
     <link id="link_empty_vfs" rel="pythonpath prefetch" href="../test.empty.vfs.js" />
   </head>
-  <body onload="brython({debug:1, cache:'none', static_stdlib_import:true})">
+  <body onload="brython({debug:1, static_stdlib_import:true})">
     <!-- QUnit init -->
     <div id="qunit"></div>
     <div id="qunit-fixture"></div>
@@ -33,9 +33,11 @@
     <script type="text/javascript" src="../dom_js_tests.js"></script>
     <!-- HTML needed to run tests included in dom.py -->
     <div id="dom-test-element-id"></div>
+    <div id="banner_row"></div>
 
     <!-- Javascript code needed to run JSObject tests -->
     <script type="text/javascript" src="../jsobj_tests.js"></script>
+    <script type="text/javascript" src="/src/brython_stdlib.js"></script>
 <script>
 QUnit.test('web_worker', function(assert) {
     var w = new Worker('../../tests/web_worker_tests.js');
@@ -54,7 +56,6 @@ QUnit.test('web_worker', function(assert) {
 </script>
 
 <script type="text/python3">
-from javascript import JSObject
 from browser import window
 import brython_test_utils as utils
 from   brython_test_utils import unittest as test_utils
@@ -71,7 +72,6 @@ def testTraceback(qunit):
     #     f()
     # except Exception:
     #     exception_info = traceback.format_exc()
-    #     assert 'f()' in exception_info
     #     assert '1 / 0' in exception_info
     #     assert ', in f' in exception_info
 
@@ -100,7 +100,7 @@ def testTraceback(qunit):
         trace = traceback.format_exc()
         assert "line 9, in f" in trace
         assert "line 6, in h" in trace
-        assert "line 5, in <lambda>" in trace
+        assert "line 5, in lambda" in trace
         assert "line 2, in g" in trace
 
     # issue 976
@@ -136,11 +136,28 @@ def qunit_add_tests(suite):
 
 qunit_add_tests(test_utils.load_brython_test_cases('..'))
 
-from unittest.loader import TestLoader
-import test.test_dict
-import test.test_grammar
-qunit_add_tests(TestLoader().loadTestsFromModule(test.test_dict))
-qunit_add_tests(TestLoader().loadTestsFromModule(test.test_grammar))
+
+def fail_qunit(name, message):
+    def the_test(qunit):
+        qunit.ok(False, message)
+    _QUnit.test(name, the_test)
+
+try:
+    from unittest.loader import TestLoader
+except:
+    fail_qunit('Loading unittest.loader.TestLoader', traceback.format_exc())
+
+try:
+    import test.test_dict
+    qunit_add_tests(TestLoader().loadTestsFromModule(test.test_dict))
+except:
+    fail_qunit('Loading test.test_dict', traceback.format_exc())
+
+try:
+    import test.test_grammar
+    qunit_add_tests(TestLoader().loadTestsFromModule(test.test_grammar))
+except:
+    fail_qunit('Loading test.test_grammar', traceback.format_exc())
 </script>
 
   </body>

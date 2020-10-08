@@ -102,7 +102,7 @@ req.send({'x': 0, 'y': 1})
 GET and POST calls can be performed in a more straightforward way with the
 matching functions:
 
-`get(`_url[, blocking=False, headers={}, mode="text", timeout=None, cache=False, data="", **callbacks]_`)`
+`get(`_url[, blocking=False, headers={}, mode="text", encoding="utf-8", timeout=None, cache=False, data="", **callbacks]_`)`
 
 and the same for `delete`, `head` and `options`.
 
@@ -117,6 +117,8 @@ and the same for `put`.
 > _headers_ is a dictionary with the HTTP headers key / values
 
 > _mode_ is "text" or "binary"
+
+> if _mode_ is "text", _encoding_ is the text file encoding
 
 > _data_ is either a string, or a dictionary. In the second case, the
 > dictionary is converted into a string of the form `x=1&y=2`.
@@ -173,7 +175,7 @@ To send files entered in a form by a tag such as
 ```
 the module provides the function
 
-`file_upload(`_url, file, [**callbacks]_`)`
+`file_upload(`_url, file, method="POST", field_name="filetosave",  [**callbacks]_`)`
 
 > _file_ is the file object to upload to the _url_, usually the result of an
 > expression
@@ -183,6 +185,12 @@ for file in document["choosefiles"].files:
     ...
 ```
 </blockquote>
+
+> _method_ is the method used for the upload call, "POST" by default but can
+> be set to "PUT"
+
+> _field_name_ is the name of the field associated with the file to send. It
+> will be used on the server side to get the data
 
 Example:
 ```xml

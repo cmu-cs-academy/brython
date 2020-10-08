@@ -270,11 +270,11 @@ class A:
 
 
 a = A()
-assert str(A.f) == "<function A.f>"
-assert str(type(A.f)) == "<class 'function'>"
-assert str(a.f) == "<bound method A.f of <__main__.A object>>"
+assert str(A.f).startswith("<function A.f")
+assert str(type(A.f)) == "<class 'function'>", str(type(A.f))
+assert str(a.f).startswith("<bound method A.f of"), str(a.f)
 assert str(type(a.f)) == "<class 'method'>"
-assert str(a.f.__func__) == "<function A.f>"
+assert str(a.f.__func__).startswith("<function A.f")
 
 assert a.f.__func__ == A.f
 assert A.f_cl == a.f_cl
@@ -452,5 +452,157 @@ assert p.introduce_self() == "Hello, my name is John"
 
 q = Person("Pete")
 assert q.introduce_self() == "Hello, my name is Pete"
+
+# a class inherits 2 classes with different metaclasses
+class BasicMeta(type):
+    pass
+
+class ManagedProperties(BasicMeta):
+    pass
+
+def with_metaclass(meta, *bases):
+    class metaclass(meta):
+        def __new__(cls, name, this_bases, d):
+            return meta(name, bases, d)
+    return type.__new__(metaclass, "NewBase", (), {})
+
+class EvalfMixin(object):
+  pass
+
+class Basic(with_metaclass(ManagedProperties)):
+  pass
+
+class Expr1(Basic, EvalfMixin):
+  pass
+
+class Expr2(EvalfMixin, Basic):
+  pass
+
+assert Expr1.__class__ is ManagedProperties
+assert Expr2.__class__ is ManagedProperties
+
+# issue 1390
+class desc(object):
+    def __get__(self, instance, owner):
+        return 5
+
+class A:
+    x = desc()
+
+assert A.x == 5
+
+# issue 1392
+class A():
+    b = "This is b"
+    message = "This is a"
+
+    def __init__(self):
+        self.x = 5
+
+assert "b" in A.__dict__
+assert "message" in A.__dict__
+assert "__init__" in A.__dict__
+
+d = A.__dict__["__dict__"]
+try:
+    d.b
+    raise Exception("should have raised AttributeError")
+except AttributeError:
+    pass
+
+# super() with multiple inheritance
+trace = []
+
+class A:
+  pass
+
+class B:
+  def __init__(self):
+    trace.append("init B")
+
+class C(A, B):
+  def __init__(self):
+    superinit = super(C, self).__init__
+    superinit()
+
+C()
+assert trace == ['init B']
+
+# issue 1457
+class CNS:
+    def __init__(self):
+        self._dct = {}
+    def __setitem__(self, item, value):
+        self._dct[item.lower()] = value
+    def __getitem__(self, item):
+        return self._dct[item]
+
+class CMeta(type):
+    @classmethod
+    def __prepare__(metacls, name, bases, **kwds):
+        return {'__annotations__': CNS()}
+
+class CC(metaclass=CMeta):
+    XX: 'ANNOT'
+
+assert CC.__annotations__['xx'] == 'ANNOT'
+
+# similar to issue 600: == with subclassing
+class A_eqWithoutOverride:
+    pass
+
+class B_eqWithoutOverride(A_eqWithoutOverride):
+    pass
+
+a_eqWithoutOverride = A_eqWithoutOverride()
+b_eqWithoutOverride = B_eqWithoutOverride()
+assert (a_eqWithoutOverride == a_eqWithoutOverride)
+assert (b_eqWithoutOverride == b_eqWithoutOverride)
+assert (a_eqWithoutOverride != b_eqWithoutOverride)
+assert not (a_eqWithoutOverride == b_eqWithoutOverride)
+assert (b_eqWithoutOverride != a_eqWithoutOverride)
+assert not (b_eqWithoutOverride == a_eqWithoutOverride)
+
+# issue 1488
+class Foobar:
+
+    class Foo:
+
+        def __str__(self):
+            return "foo"
+
+    class Bar(Foo):
+
+        def __init__(self):
+            super().__init__()
+
+        def __str__(self):
+            return "bar"
+
+assert str(Foobar.Bar()) == "bar"
+
+# super() in a function outside of a class
+def f():
+    super()
+
+try:
+    f()
+    raise Exception("should have raised RuntimeError")
+except RuntimeError as exc:
+    assert exc.args[0] == "super(): no arguments"
+
+# super() with a single argument
+# found in https://www.artima.com/weblogs/viewpost.jsp?thread=236278
+class B:
+    a = 1
+
+class C(B):
+    pass
+
+class D(C):
+    sup = super(C)
+
+d = D()
+assert d.sup.a == 1
 
 print('passed all tests..')

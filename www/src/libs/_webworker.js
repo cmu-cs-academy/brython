@@ -8,22 +8,12 @@ var brython_scripts = ['brython', 'brython_stdlib']
 
 var wclass = $B.make_class("Worker",
     function(worker){
-        return {
-            __class__: wclass,
-            js: worker
-        }
+        var res = worker
+        res.send = res.postMessage
+        return res
     }
 )
-wclass.__mro__ = [$B.JSObject, _b_.object]
-wclass.send = function(self){
-    var $ = $B.args("send", 1, {self: null}, ["self"], arguments, {}, "args",
-                null),
-            args = $.args
-    for(var i = 0, len = args.length; i < len; i++){
-        args[i] = $B.pyobj2structuredclone(args[i])
-    }
-    self.js.postMessage.apply(self.js, args)
-}
+wclass.__mro__ = [$B.JSObj, _b_.object]
 
 $B.set_func_names(wclass, "browser.worker")
 
@@ -48,6 +38,8 @@ var _Worker = $B.make_class("Worker", function(id, onmessage, onerror){
         // restore brython_path
         header += '__BRYTHON__.brython_path = "' + $B.brython_path +
             '"\n'
+        // restore path for imports (cf. issue #1305)
+        header += '__BRYTHON__.path = "' + $B.path +'".split(",")\n'
         // Call brython() to initialize internal Brython values
         header += 'brython(1)\n'
         js = header + js

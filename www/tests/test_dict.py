@@ -108,4 +108,91 @@ class X:
 d = {0: set()}
 assert not (0, X()) in d.items()
 
+# issue 1285 : preserve insertion order
+
+d = dict()
+d.update({(1, 0): 0, (2, 0): 0, (3, 0): 0})
+assert str(d) == "{(1, 0): 0, (2, 0): 0, (3, 0): 0}"
+
+import random
+
+class A:
+    pass
+
+keys = [1, 'a', (2, 3), 2, 'c', (5, 6, 7), A()]
+
+for i in range(100):
+    random.shuffle(keys)
+    d = {k: k for k in keys}
+    assert list(d) == keys
+
+while keys:
+    key = random.choice(keys)
+    keys.remove(key)
+    del d[key]
+    assert list(d) == keys
+
+# issue 1290
+assert len({'a': 'b'}.values()) == 1
+assert len({'a': 'b'}.keys()) == 1
+assert len({'a': 'b'}.items()) == 1
+
+# issue 1337
+d = {}
+d['a'] = []
+d['b'] = {0: d}
+assert repr(d) == str(d) == "{'a': [], 'b': {0: {...}}}"
+
+# PEP 584
+d = {'spam': 1, 'eggs': 2, 'cheese': 3}
+e = {'cheese': 'cheddar', 'aardvark': 'Ethel'}
+assert d | e == {'spam': 1, 'eggs': 2, 'cheese': 'cheddar',
+                 'aardvark': 'Ethel'}
+assert e | d == {'aardvark': 'Ethel', 'spam': 1, 'eggs': 2, 'cheese': 3}
+d |= e
+assert d == {'spam': 1, 'eggs': 2, 'cheese': 'cheddar', 'aardvark': 'Ethel'}
+
+# issue 1437
+a = {1:1, 2:2}
+a.update({1:3})
+assert str(a) == '{1: 3, 2: 2}'
+a.update({4:4})
+assert str(a) == '{1: 3, 2: 2, 4: 4}'
+
+b = {'a': 1, 'b': 2}
+b['a'] = 3
+assert str(b) == "{'a': 3, 'b': 2}"
+
+# issue 1450
+d = {}
+
+class Exc(Exception): pass
+
+class BadHash(object):
+    fail = False
+    def __hash__(self):
+        if self.fail:
+            raise Exc()
+        else:
+            return 42
+
+x = BadHash()
+d[x] = 42
+x.fail = True
+try:
+    d.__getitem__(x)
+    raise Exception("should have raise Exc")
+except Exc:
+    pass
+
+# handle 1 and True, 0 and False
+d = {'a': 1, 1: 2, 1.5: 3, True: 4, False: 5, None: 6}
+assert str(d) == "{'a': 1, 1: 4, 1.5: 3, False: 5, None: 6}"
+
+d = {'a': 1, 1: 2, 'b': 3, True: 4}
+assert str(d) == "{'a': 1, 1: 4, 'b': 3}"
+
+d = {'a': 1, True: 2, 'b': 3, 1: 4}
+assert str(d) == "{'a': 1, True: 4, 'b': 3}"
+
 print("passed all tests..")

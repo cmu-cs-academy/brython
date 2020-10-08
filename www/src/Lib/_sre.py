@@ -83,8 +83,9 @@ class SRE_Pattern:
         """If the whole string matches this regular expression, return a
         corresponding match object. Return None if the string does not match
         the pattern; note that this is different from a zero-length match."""
-        if not string.endswith("$"):
-            string += "$"
+        end = "$" if isinstance(string, str) else b"$"
+        if not string.endswith(end):
+            string += end
         state = _State(string, pos, endpos, self.flags)
         if state.match(self._code):
             return SRE_Match(self, state)
@@ -214,8 +215,8 @@ class SRE_Pattern:
         return _list
         #return iter(scanner.search, None)
 
-    def scanner(self, string, start=0, end=sys.maxsize):
-        return SRE_Scanner(self, string, start, end)
+    def scanner(self, string, pos=0, endpos=sys.maxsize):
+        return SRE_Scanner(self, string, pos, endpos)
 
     def __copy__(self):
         raise TypeError("cannot copy this pattern object")

@@ -3,6 +3,7 @@
 
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
 
 <title>Brython demo</title>
 
@@ -106,6 +107,19 @@ code{
     background-color: var(--clear-2);
     border-radius: 4px;
 }
+
+a.anchor-as-button{
+    text-decoration: none;
+    color: #000;
+    background-color: #ddd;
+    padding: 0.2em;
+    border-style: solid;
+    border-color: #000;
+    border-width: 1px;
+    margin-top: 0.5em;
+    display: none;
+}
+
 </style>
 
 <script type="text/python">
@@ -117,11 +131,9 @@ header.show()
 
 <body onload="brython({debug:1, indexedDB: false})">
 
-<table id="banner" cellpadding=0 cellspacing=0>
-<tr id="banner_row">
-<td class="logo"><a href="../index.html" class="logo">Brython</a></td>
-</tr>
-</table>
+<div id="banner_row">
+<span class="logo"><a href="/index.html">brython</a></span>
+</div>
 
 <!-- start copy -->
 
@@ -158,7 +170,7 @@ header.show()
 
 
 <div class="example" id="ex0">
-    <button id="button0">display an alert box</button>
+    <button id="button_alert">display an alert box</button>
 
     <script type="text/python" id="script0">
     from browser import document, alert
@@ -166,7 +178,7 @@ header.show()
     def hello(ev):
         alert("Hello !")
 
-    document["button0"].bind("click", hello)
+    document["button_alert"].bind("click", hello)
     </script>
 
     <p>
@@ -187,6 +199,31 @@ header.show()
     function <code>hello</code>.
     The function takes one argument, an object representing the event.
     <p><code>alert</code> is used to display small popup windows.
+    </span>
+</div>
+
+<div class="example" id="ex_dialog">
+    <button id="button_dialog">display a popup window</button>
+
+    <script type="text/python" id="script_dailog">
+    from browser import document
+    from browser.widgets.dialog import InfoDialog
+
+    def hello(ev):
+        InfoDialog("Demo", "Hello world !", left=ev.x, top=ev.y)
+
+    document["button_dialog"].bind("click", hello)
+    </script>
+
+    <p>
+    <pre class="python"></pre>
+
+    <p><span class="comment">
+    Instead of the browser alert box, you can use a dialog box provided
+    by the built-in module <code class="module">browser.widgets.dialog</code>.
+    <p>Here, the box is positioned at the mouse position (given by the attributes
+    <code>x</code> and <code>y</code> of the event object) by keyword arguments
+    <code>left</code> and <code>top</code>.
     </span>
 </div>
 
@@ -530,12 +567,13 @@ the end.
     <span id="zone12" class="zone"></span>
 
     <script type="text/python" id="script12">
-    from browser import document, alert, html
+    from browser import document, html
+    from browser.widgets.dialog import InfoDialog
 
     def show(event):
         dropdown = event.target
         num = dropdown.selectedIndex
-        alert("Selected: {}".format(dropdown.options[num].value))
+        InfoDialog("Demo", "Selected: {}".format(dropdown.options[num].value))
 
     def insert_dropdown(event):
         document["zone12"] <= "Your choice : "
@@ -683,7 +721,7 @@ the end.
 
     <span class="comment">
     We have seen how to get an element by its id : <code>document[element_id]</code>. Here, <code>document["zone13"]</code> is the bordered box at the right of the button.
-    <p>The method <code>get(selector=css_selector)</code> provides a way to select elements based on the <a href="http://www.w3schools.com/cssref/css_selectors.asp" target="_blank">CSS selector syntax</a>. Passing the name of a tag returns a list of all the elements with this tag ; passing <code>.zone</code> returns a list of all the elements whose attribute <code>class</code> is set to <code>"zone"</code>.
+    <p>The method <code>select(css_selector)</code> provides a way to select elements based on the <a href="http://www.w3schools.com/cssref/css_selectors.asp" target="_blank">CSS selector syntax</a>. Passing the name of a tag returns a list of all the elements with this tag ; passing <code>.zone</code> returns a list of all the elements whose attribute <code>class</code> is set to <code>"zone"</code>.
     </span>
 </div>
 
@@ -952,11 +990,15 @@ the end.
 </div>
 
 <div class="example" id="ex50">
-    <button id="button50">select and read a local file</button>
+    <button id="button50">select, read and save a local file</button>
 
     <script type="text/python" id="script50">
-    from browser import window, document as doc
+    from browser import bind, window, document
 
+    load_btn = document["rtfile1"]
+    save_btn = document["save_file"]
+
+    @bind(load_btn, "input")
     def file_read(ev):
 
         def onload(event):
@@ -964,32 +1006,47 @@ the end.
             event.target.
             The file content, as text, is the FileReader instance's "result"
             attribute."""
-            doc['rt1'].value = event.target.result
+            document['rt1'].value = event.target.result
+            # display "save" button
+            save_btn.style.display = "inline"
+            # set attribute "download" to file name
+            save_btn.attrs["download"] = file.name
 
         # Get the selected file as a DOM File object
-        file = doc['rtfile1'].files[0]
+        file = load_btn.files[0]
         # Create a new DOM FileReader instance
         reader = window.FileReader.new()
         # Read the file content as text
         reader.readAsText(file)
         reader.bind("load", onload)
 
-    doc["rtfile1"].bind("input", file_read)
+    @bind(save_btn, "mousedown")
+    def mousedown(evt):
+          """Create a "data URI" to set the downloaded file content
+          Cf. https://developer.mozilla.org/en-US/docs/Web/HTTP/Basics_of_HTTP/Data_URIs
+          """
+          content = window.encodeURIComponent(document['rt1'].value)
+          # set attribute "href" of save link
+          save_btn.attrs["href"] = "data:text/plain," + content
+
+
   </script>
 
-    <input type="file" id="rtfile1">
-    <br><textarea id="rt1" rows=10 cols=60 autocomplete="off"></textarea>
+    <br><input type="file" id="rtfile1">
+    <a id="save_file" href="#" download class="anchor-as-button">save</a>
+    <br><textarea id="rt1" rows="20" cols="60" autocomplete="off"></textarea>
     <p>
     <pre class="python"></pre>
     <p>
 
     <span class="comment">
-    This example shows how to select a local file in the user's machine and display its content in a TEXTAREA.
+    This example is a minimalist text editor : it shows how to select a local
+    file in the user's machine, display its content in a TEXTAREA, and save the
+    TEXTAREA content to disk.
     <p>It uses the interface
     <a href="https://developer.mozilla.org/en-US/docs/Web/API/File" target="_blank" class="external">File</a> of the DOM API.
     </span>
 </div>
-
 <div class="example" id="ex5">
     <button id="button5">write in the browser console</button>
 
@@ -1166,19 +1223,19 @@ current = "home"
 
 def load_example(ev):
     global current
+    # remove dialogs
+    for dialog in document.select(".brython-dialog-main"):
+        dialog.remove()
     if current is not None:
         document[current].style.display = "none"
         document <= document[current]
         document["a"+current].classList.remove("selected")
     example_id = ev.target.num
+    example = document[example_id]
     ev.target.classList.add("selected")
     document["panel"].clear()
-    document["panel"] <= document[example_id]
-    document[example_id].style.display="block"
-    current = example_id
-
-for example in document.get(selector=".example"):
-    # add the Python source inside the example
+    document["panel"] <= example
+    example.style.display="block"
     script = example.get(selector="script")[0]
     src = script.text
     while src.startswith("\n"):
@@ -1193,6 +1250,10 @@ for example in document.get(selector=".example"):
         code_elt[0].html = src.html
     else:
         example <= src
+    current = example_id
+
+for example in document.get(selector=".example"):
+    # add the Python source inside the example
 
     # create a menu entry
     button = example.get(selector="button")[0]

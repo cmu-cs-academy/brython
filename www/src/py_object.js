@@ -109,9 +109,10 @@ object.__ge__ = function(){return _b_.NotImplemented}
 
 object.__getattribute__ = function(obj, attr){
 
-    var klass = obj.__class__ || $B.get_class(obj)
+    var klass = obj.__class__ || $B.get_class(obj),
+        is_own_class_instance_method = false
 
-    var $test = false // attr == "strange"
+    var $test = false // attr == "select"
     if($test){console.log("attr", attr, "de", obj, "klass", klass)}
     if(attr === "__class__"){
         return klass
@@ -122,9 +123,14 @@ object.__getattribute__ = function(obj, attr){
         res = undefined
     }
 
-    if(res === undefined && obj.__dict__ &&
-            obj.__dict__.$string_dict.hasOwnProperty(attr)){
-        return obj.__dict__.$string_dict[attr]
+    if(res === undefined && obj.__dict__){
+        var dict = obj.__dict__
+        if(dict.$string_dict.hasOwnProperty(attr)){
+            if($test){
+                console.log("__dict__ hasOwnProperty", attr, dict.$string_dict[attr])
+            }
+            return dict.$string_dict[attr][0]
+        }
     }
 
     if(res === undefined){
@@ -145,6 +151,11 @@ object.__getattribute__ = function(obj, attr){
                     if($test){console.log("found in", mro[i])}
                     break
                 }
+            }
+        }else{
+            if(res.__class__ !== $B.method && res.__get__ === undefined){
+                // console.log("simple instance method", obj, klass, attr, res)
+                is_own_class_instance_method = true
             }
         }
 
@@ -177,7 +188,7 @@ object.__getattribute__ = function(obj, attr){
         }
         if($test){console.log("get", get)}
         var __get__ = get === undefined ? null :
-            _b_.getattr(res, "__get__", null)
+            $B.$getattr(res, "__get__", null)
 
         if($test){console.log("__get__", __get__)}
         // For descriptors, attribute resolution is done by applying __get__
@@ -255,7 +266,13 @@ object.__getattribute__ = function(obj, attr){
                 if(res.$type == "staticmethod"){return res}
                 else{
                     var self = res.__class__ === $B.method ? klass : obj,
-                        method = res.bind(null, self) // add self as first argument
+                        method = function(){
+                            var args = [self] // add self as first argument
+                            for(var i = 0, len = arguments.length; i < len; i++){
+                                args.push(arguments[i])
+                            }
+                            return res.apply(this, args)
+                        }
                     method.__class__ = $B.method
                     method.__get__ = function(obj, cls){
                         var clmethod = res.bind(null, cls)
@@ -282,6 +299,10 @@ object.__getattribute__ = function(obj, attr){
                         __qualname__: klass.$infos.__name__ + "." + attr
                     }
                     if($test){console.log("return method", method)}
+                    if(is_own_class_instance_method){
+                        obj.$method_cache = obj.$method_cache || {}
+                        obj.$method_cache[attr] = [method, res]
+                    }
                     return method
                 }
             }else{
@@ -311,6 +332,8 @@ object.__getattribute__ = function(obj, attr){
                 return _ga(attr)
             }
             return _ga(obj, attr)
+        }else{
+            throw _b_.AttributeError.$factory(attr)
         }
     }
 }
@@ -332,6 +355,13 @@ object.__init__ = function(){
     return _b_.None
 }
 
+object.__init_subclass__ = function(){
+    // only checks that no argument is passed
+    var $ = $B.args("__init_subclass__", 0, {}, [], arguments, {}, null, null)
+    return _b_.None
+}
+object.__init_subclass__.$type = "staticmethod"
+
 object.__le__ = function(){return _b_.NotImplemented}
 
 object.__lt__ = function(){return _b_.NotImplemented}
@@ -350,7 +380,7 @@ object.__new__ = function(cls, ...args){
     }
     return {
         __class__ : cls,
-        __dict__: _b_.dict.$factory()
+        __dict__: $B.empty_dict()
         }
 }
 
@@ -374,9 +404,10 @@ object.__reduce__ = function(self){
     var res = [_reconstructor]
     res.push(_b_.tuple.$factory([self.__class__].
         concat(self.__class__.__mro__)))
-    var d = _b_.dict.$factory()
+    var d = $B.empty_dict()
     for(var attr in self.__dict__.$string_dict){
-        d.$string_dict[attr] = self.__dict__.$string_dict[attr]
+        _b_.dict.$setitem(d.$string_dict, attr,
+            self.__dict__.$string_dict[attr][0])
     }
     console.log("object.__reduce__, d", d)
     res.push(d)
@@ -399,19 +430,18 @@ object.__reduce_ex__ = function(self){
         self.forEach(function(item){arg2.push(item)})
     }
     res.push(arg2)
-    var d = _b_.dict.$factory(),
+    var d = $B.empty_dict(),
         nb = 0
     if(self.__dict__ === undefined){
-        console.log("no dict", self)
-        $B.frames_stack.forEach(function(frame){
-            console.log(frame[0], frame[1], frame[2])
-        })
+        throw _b_.TypeError.$factory("cannot pickle '" +
+            $B.class_name(self) + "' object")
     }
     for(var attr in self.__dict__.$string_dict){
         if(attr == "__class__" || attr.startsWith("$")){
             continue
         }
-        d.$string_dict[attr] = self.__dict__.$string_dict[attr]
+        _b_.dict.$setitem(d, attr,
+            self.__dict__.$string_dict[attr][0])
         nb++
     }
     if(nb == 0){d = _b_.None}
@@ -452,7 +482,7 @@ object.__setattr__ = function(self, attr, val){
     }
     if($B.aliased_names[attr]){attr = "$$"+attr}
     if(self.__dict__){
-        self.__dict__.$string_dict[attr] = val
+        _b_.dict.$setitem(self.__dict__, attr, val)
     }else{
         // for
         self[attr] = val

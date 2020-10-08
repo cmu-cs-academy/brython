@@ -99,7 +99,7 @@ req.send({'x': 0, 'y': 1})
 Les appels peuvent être effectués plus simplement avec les
 fonctions correspondantes :
 
-`get(`_url[, blocking=False, headers={}, mode="text", timeout=None, cache=False, data="", **callbacks]_`)`
+`get(`_url[, blocking=False, headers={}, mode="text", encoding="utf-8", timeout=None, cache=False, data="", **callbacks]_`)`
 
 et de même pour `delete`, `head` et `options`.
 
@@ -114,6 +114,8 @@ et de même pour `put`.
 > _headers_ est un dictionnaire avec les clés-valeurs des entêtes HTTP
 
 > _mode_ est le mode de lecture : "text" ou "binary"
+
+> si _mode_ est "text", _encoding_ est l'encodage du fichier texte
 
 > _cache_ est un booléen qui indique si la requête GET doit utiliser le cache
 > du navigateur
@@ -169,7 +171,7 @@ Pour envoyer des fichiers saisis dans un formulaire par une balise du type
 ```
 on peut utiliser la fonction
 
-`file_upload(`_url, file, [**callbacks]_`)`
+`file_upload(`_url, file, method="POST", field_name="filetosave", [**callbacks]_`)`
 
 > _file_ est l'objet fichier à envoyer vers l'_url_, typiquement le résultat
 > d'une expression
@@ -179,6 +181,12 @@ for file in document["choosefiles"].files:
     ...
 ```
 </blockquote>
+
+> _method_ est la méthode à utiliser pour l'envoi du fichier ('POST' par
+> défaut, mais peut prendre la valeur 'PUT')
+
+> _field_name_ est le nom du champ associé au fichier envoyé, qui sera utilisé
+> par le serveur pour récupérer les données
 
 Exemple:
 ```xml

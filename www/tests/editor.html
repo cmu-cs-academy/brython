@@ -40,6 +40,8 @@
 
 <script type="text/javascript" src="../src/brython_stdlib.js"></script>
 
+<script src="/assets/header.brython.js"></script>
+
 <script src="ace/ace.js" type="text/javascript" charset="utf-8"></script>
 <script src="ace/ext-language_tools.js" type="text/javascript" charset="utf-8"></script>
 
@@ -52,6 +54,7 @@ import editor
 
 qs_lang,language = header.show()
 
+doc["test_suite"].href = f"index.html?lang={language}"
 # other translations
 
 trans = {
@@ -79,10 +82,11 @@ __BRYTHON__.debug = int(doc['set_debug'].checked)
 doc['set_debug'].bind('change',set_debug)
 
 # next functions are defined in editor.py
-doc['show_js'].bind('click',editor.show_js)
+doc['show_js'].bind('click', editor.show_js)
+doc['share_code'].bind('click', editor.share_code)
 # Create a lambda around editor.run() so that the event object is not passed to it
 doc['run'].bind('click',lambda *args: editor.run())
-doc['show_console'].bind('click',editor.show_console)
+doc['show_console'].bind('click', editor.show_console)
 
 
 
@@ -102,11 +106,9 @@ function run_js(){
 </head>
 <body onload="brython({debug:1})">
 
-<table id=banner cellpadding=0 cellspacing=0>
-<tr id=banner_row >
-<td class="logo"><a href="../index.html" class="logo">Brython</a></td>
-</tr>
-</table>
+<div id="banner_row">
+<span class="logo"><a href="/index.html">brython</a></span>
+</div>
 
 <div id="main_container"></div>
 
@@ -121,6 +123,7 @@ function run_js(){
         Debug<input type="checkbox" id="set_debug" checked>
         <button id="show_console">Python</button>
         <button id="show_js">Javascript</button>
+        <button id="share_code">Share code</button>
     </td>
   </tr>
 
@@ -140,7 +143,7 @@ function run_js(){
     </td>
     <td></td>
     <td>
-      <a href="index.html">Tests suite</a>
+      <a href="#" id="test_suite">Tests suite</a>
     </td>
   </tr>
 </table>

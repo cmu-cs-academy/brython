@@ -59,11 +59,15 @@ str.__add__ = function(self,other){
 }
 
 str.__contains__ = function(self, item){
-    if(!(typeof item == "string")){
+    if(! _b_.isinstance(item, str)){
         throw _b_.TypeError.$factory("'in <string>' requires " +
             "string as left operand, not " + item.__class__)
     }
-    var nbcar = item.length
+    if(typeof item == "string"){
+        var nbcar = item.length
+    }else{
+        var nbcar = _b_.len(item)
+    }
     if(nbcar == 0) {return true} // a string contains the empty string
     if(self.length == 0){return nbcar == 0}
     for(var i = 0, len = self.length; i < len; i++){
@@ -105,6 +109,9 @@ str.__format__ = function(self, format_spec) {
         throw _b_.ValueError.$factory(
             "Sign not allowed in string format specifier")
     }
+    if(fmt.precision){
+        self = self.substr(0, fmt.precision)
+    }
     // For strings, alignment default to left
     fmt.align = fmt.align || "<"
     return $B.format_width(preformat(self, fmt), fmt)
@@ -139,7 +146,11 @@ str.__getitem__ = function(self,arg){
 
 var prefix = 2,
     suffix = 3,
-    mask = (2 ** 32 - 1)
+    mask = (2 ** 32 - 1),
+    str_hash_cache = {}
+
+str.$nb_str_hash_cache = 0
+
 function fnv(p){
     if(p.length == 0){
         return 0
@@ -160,7 +171,16 @@ function fnv(p){
 }
 
 str.__hash__ = function(self) {
-    return fnv(self)
+    if(str_hash_cache[self] !== undefined){
+        return str_hash_cache[self]
+    }
+    str.$nb_str_hash_cache++
+    if(str.$nb_str_hash_cache > 100000){
+        // Avoid memory overflow
+        str.$nb_str_hash_cache = 0
+        str_hash_cache = {}
+    }
+    return str_hash_cache[self] = fnv(self)
 }
 
 str.__init__ = function(self, arg){
@@ -171,11 +191,13 @@ str.__init__ = function(self, arg){
 
 var str_iterator = $B.make_iterator_class("str_iterator")
 str.__iter__ = function(self){
-    var items = self.split("") // list of all characters in string
+    var items = self.split("")
     return str_iterator.$factory(items)
 }
 
-str.__len__ = function(self){return self.length}
+str.__len__ = function(self){
+    return self.length
+}
 
 // Start of section for legacy formatting (with %)
 
@@ -809,12 +831,27 @@ str.__repr__ = function(self){
     // special cases
     res = res.replace(new RegExp("\u0007", "g"), "\\x07").
               replace(new RegExp("\b", "g"), "\\x08").
+              replace(new RegExp("\u000b", "g"), "\\x0b").
               replace(new RegExp("\f", "g"), "\\x0c").
               replace(new RegExp("\n", "g"), "\\n").
               replace(new RegExp("\r", "g"), "\\r").
               replace(new RegExp("\t", "g"), "\\t")
-
     res = res.replace(combining_re, "\u200B$1")
+    // Replace unassigned code point by \uabcd...
+    // Uses function $B.is_unicode_cn() in unicode_data.js
+    var repl = ''
+    for(var i = 0; i < res.length; i++){
+        if($B.is_unicode_cn(res.codePointAt(i))){
+            var s = res.codePointAt(i).toString(16)
+            while(s.length < 4){
+                s = '0' + s
+            }
+            repl += '\\u' + s
+        }else{
+            repl += res.charAt(i)
+        }
+    }
+    res = repl
     if(res.search('"') == -1 && res.search("'") == -1){
         return "'" + res + "'"
     }else if(self.search('"') == -1){
@@ -1244,7 +1281,7 @@ str.format = function(self) {
             // For classes, don't use the class __format__ method
             res += value.__class__.__format__(value, fmt.spec)
         }else{
-            res += _b_.getattr(value, "__format__")(fmt.spec)
+            res += $B.$getattr(value, "__format__")(fmt.spec)
         }
     }
     return res
@@ -1407,8 +1444,8 @@ str.isnumeric = function(self){
     return self.length > 0
 }
 
-var printable,
-    printable_gc = ['Cc', 'Cf', 'Co', 'Cs','Zl', 'Zp', 'Zs']
+var unprintable = {},
+    unprintable_gc = ['Cc', 'Cf', 'Co', 'Cs','Zl', 'Zp', 'Zs']
 
 str.isprintable = function(self){
     /* Return true if all characters in the string are printable or the string
@@ -1416,24 +1453,20 @@ str.isprintable = function(self){
     defined in the Unicode character database as "Other" or "Separator",
     excepting the ASCII space (0x20) which is considered printable. */
 
-    // Set printable if not set yet
-    if(printable === undefined){
-        for(var i = 0; i < printable_gc.length; i++){
-            var table = unicode_tables[printable_gc[i]]
+    // Set unprintable if not set yet
+    if(Object.keys(unprintable).length == 0){
+        for(var i = 0; i < unprintable_gc.length; i++){
+            var table = unicode_tables[unprintable_gc[i]]
             for(var cp in table){
-                printable[cp] = true
+                unprintable[cp] = true
             }
         }
-        printable[32] = true
+        unprintable[32] = true
     }
-
     var $ = $B.args("isprintable", 1, {self: null}, ["self"],
-        arguments, {}, null, null),
-        char,
-        flag
+        arguments, {}, null, null)
     for(var i = 0, len = self.length; i < len; i++){
-        char = self.charCodeAt(i)
-        if(! printable[char]){
+        if(unprintable[self.charCodeAt(i)]){
             return false
         }
     }
@@ -1545,7 +1578,7 @@ str.maketrans = function() {
     var $ = $B.args("maketrans", 3, {x: null, y: null, z: null},
         ["x", "y", "z"], arguments, {y: null, z: null}, null, null)
 
-    var _t = _b_.dict.$factory()
+    var _t = $B.empty_dict()
 
     if($.y === null && $.z === null){
         // If there is only one argument, it must be a dictionary mapping
@@ -1619,6 +1652,32 @@ str.partition = function() {
     if(i == -1){return _b_.tuple.$factory([$.self, "", ""])}
     return _b_.tuple.$factory([$.self.substring(0, i), $.sep,
         $.self.substring(i + $.sep.length)])
+}
+
+str.removeprefix = function(){
+    var $ = $B.args("removeprefix", 2, {self: null, prefix: null},
+                    ["self", "prefix"], arguments, {}, null, null)
+    if(!_b_.isinstance($.prefix, str)){
+        throw _b_.ValueError.$factory("prefix should be str, not " +
+            `'${$B.class_name($.prefix)}'`)
+    }
+    if(str.startswith($.self, $.prefix)){
+        return $.self.substr($.prefix.length)
+    }
+    return $.self.substr(0)
+}
+
+str.removesuffix = function(){
+    var $ = $B.args("removesuffix", 2, {self: null, prefix: null},
+                    ["self", "suffix"], arguments, {}, null, null)
+    if(!_b_.isinstance($.suffix, str)){
+        throw _b_.ValueError.$factory("suffix should be str, not " +
+            `'${$B.class_name($.prefix)}'`)
+    }
+    if($.suffix.length > 0 && str.endswith($.self, $.suffix)){
+        return $.self.substr(0, $.self.length - $.suffix.length)
+    }
+    return $.self.substr(0)
 }
 
 function $re_escape(str){
@@ -1838,38 +1897,37 @@ str.split = function(){
     }
 }
 
-str.splitlines = function(self){
-    var $ = $B.args("splitlines", 2, {self: null, keepends: null},
-        ["self", "keepends"], arguments, {keepends: false}, null, null)
-    if(! _b_.isinstance($.keepends, [_b_.bool, _b_.int])){
-        throw _b_.TypeError.$factory("integer argument expected, got " +
+str.splitlines = function(self) {
+    var $ = $B.args('splitlines', 2, {self: null, keepends: null},
+                    ['self','keepends'], arguments, {keepends: false},
+                    null, null)
+    if(!_b_.isinstance($.keepends,[_b_.bool, _b_.int])){
+        throw _b_.TypeError('integer argument expected, got '+
             $B.get_class($.keepends).__name)
     }
-    var keepends = _b_.int.$factory($.keepends)
-    // Remove trailing line breaks
-    if(keepends){
-        var res = [],
-            start = pos,
-            pos = 0,
-            self = $.self
-        while(pos < self.length){
-            if(self.substr(pos, 2) == "\r\n"){
-                res.push(self.substring(start, pos + 2))
-                start = pos + 2
-                pos = start
-            }else if(self.charAt(pos) == "\r" || self.charAt(pos) == "\n"){
-                res.push(self.substring(start, pos + 1))
-                start = pos + 1
-                pos = start
-            }else{pos++}
-        }
-        var rest = self.substr(start)
-        if(rest){res.push(rest)}
+    var keepends = _b_.int.$factory($.keepends),
+        res = [],
+        self = $.self,
+        start = 0,
+        pos = 0
+    if(!self.length){
         return res
-    }else{
-        var self = $.self.replace(/[\r\n]$/, "")
-        return self.split(/\n|\r\n|\r/)
     }
+    while (pos < self.length) {
+        if(self.substr(pos, 2) == '\r\n'){
+            res.push(self.slice(start, keepends ? pos + 2 : pos))
+            start = pos = pos+2
+        }else if(self[pos] == '\r' || self[pos] == '\n'){
+            res.push(self.slice(start, keepends ? pos+1 : pos))
+            start = pos = pos+1
+        }else{
+            pos++
+        }
+    }
+    if(start < self.length){
+        res.push(self.slice(start))
+    }
+    return res
 }
 
 str.startswith = function(){
@@ -1967,7 +2025,11 @@ str.translate = function(self, table){
         try{
             var repl = getitem(self.charCodeAt(i))
             if(repl !== _b_.None){
-                res.push(String.fromCharCode(repl))
+                if(typeof repl == "string"){
+                    res.push(repl)
+                }else if(typeof repl == "number"){
+                    res.push(String.fromCharCode(repl))
+                }
             }
         }catch(err){
             res.push(self.charAt(i))
@@ -1999,7 +2061,7 @@ str.zfill = function(self, width){
 str.$factory = function(arg, encoding, errors){
     if(arguments.length == 0){return ""}
     if(arg === undefined){
-        throw _b_.TypeError.$factory("str() argument is undefined")
+        return $B.UndefinedClass.__str__()
     }
     if(encoding !== undefined){
         // Arguments may be passed as keywords (cf. issue #1060)
@@ -2036,6 +2098,9 @@ str.$factory = function(arg, encoding, errors){
         // Implicit invocation of __str__ uses method __str__ on the class,
         // even if arg has an attribute __str__
         var klass = arg.__class__ || $B.get_class(arg)
+        if(klass === undefined){
+            return $B.JSObj.__str__($B.JSObj.$factory(arg))
+        }
         var method = $B.$getattr(klass , "__str__", null)
         if(method === null ||
                 // if not better than object.__str__, try __repr__
@@ -2384,10 +2449,13 @@ $B.parse_fstring = function(string){
                     i++
                 }else if(car == "="){
                     // might be a "debug expression", eg f"{x=}"
-                    var ce = current.expression
+                    var ce = current.expression,
+                        last_char = ce.charAt(ce.length - 1),
+                        last_char_re = ('()'.indexOf(last_char) > -1 ? "\\" : "") + last_char
+
                     if(ce.length == 0 ||
                             string.charAt(i + 1) == "=" ||
-                            "=!<>:".search(ce.charAt(ce.length - 1)) > -1){
+                                "=!<>:".search(last_char_re) > -1){
                         current.expression += car + string.charAt(i + 1)
                         i += 2
                     }else{
@@ -2419,5 +2487,95 @@ $B.parse_fstring = function(string){
     if(current.length > 0){elts.push(current)}
     return elts
 }
+
+// Class for strings with surrogate pairs. We can't rely on Javascript
+// strings in this case because they don't count characters like Python
+
+var surrogate = str.$surrogate = $B.make_class("surrogate_string", function(s){
+    // create an instance of str subclass for strings with surrogate pairs
+    var items = []
+    for(var i = 0, len = s.length; i < len; i++){
+        var code = s.charCodeAt(i)
+        if(code >= 0xD800 && code <= 0xDBFF){
+            i++
+            var low = s.charCodeAt(i)
+            code = ((code - 0xD800) * 0x400) + (low - 0xDC00) + 0x10000
+        }
+        items.push(String.fromCodePoint(code))
+    }
+    return {
+        __class__: str.$surrogate,
+        items: items
+    }
+})
+
+surrogate.__mro__ = [str, object]
+
+surrogate.__contains__ = function(self, other){
+    return str.__contains__(self.items.join(''), other)
+}
+
+surrogate.__getitem__ = function(self, arg){
+    if(isinstance(arg, _b_.int)){
+        var pos = arg
+        if(arg < 0){
+            pos += self.items.length
+        }
+        if(pos >= 0 && pos < self.items.length){
+            if(self.items[pos].length == 2){
+                return surrogate.$factory(self.items[pos])
+            }
+            return self.items[pos]
+        }
+        throw _b_.IndexError.$factory("string index out of range")
+    }
+    if(isinstance(arg, slice)) {
+        var s = _b_.slice.$conv_for_seq(arg, self.items.length),
+            start = s.start,
+            stop = s.stop,
+            step = s.step
+        var res = "",
+            i = null
+        if(step > 0){
+            if(stop <= start){return ""}
+            for(var i = start; i < stop; i += step){
+                res += self.items[i]
+            }
+        }else{
+            if(stop >= start){return ''}
+            for(var i = start; i > stop; i += step){
+                res += self.items[i]
+            }
+        }
+        return res
+    }
+    if(isinstance(arg, _b_.bool)){
+        return surrogate.__getitem__(self, _b_.int.$factory(arg))
+    }
+    throw _b_.TypeError.$factory("string indices must be integers")
+}
+
+surrogate.__hash__ = function(self){
+    return str.__hash__(self.items.join(''))
+}
+
+surrogate.__iter__ = function(self){
+    return str_iterator.$factory(self.items)
+}
+
+surrogate.__len__ = function(self){
+    return self.items.length
+}
+
+surrogate.__repr__ = function(self){
+    return str.__repr__(self.items.join(''))
+}
+
+surrogate.__str__ = function(self){
+    return str.__str__(self.items.join(''))
+}
+
+$B.set_func_names(surrogate, "builtins")
+
 
 })(__BRYTHON__)

@@ -874,8 +874,10 @@ var $module=(function($B){
                     'mon_decimal_point': '',
                     'int_frac_digits': 127
              }
-             var res = _b_.dict.$factory()
-             res.$string_dict = conv
+             var res = $B.empty_dict()
+             for(var key in conv){
+                 res.$string_dict[key] = [conv, res.$order++]
+             }
              return res
          },
 

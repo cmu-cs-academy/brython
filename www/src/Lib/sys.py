@@ -20,11 +20,18 @@ builtin_module_names = __BRYTHON__.builtin_module_names
 
 byteorder = 'little'
 
+dont_write_bytecode = True
+
 exec_prefix = __BRYTHON__.brython_path
 
 executable = __BRYTHON__.brython_path + '/brython.js'
 
-argv = __BRYTHON__.__ARGV
+argv = [__BRYTHON__.script_path]
+
+
+def displayhook(value):
+    if value is not None:
+        stdout.write(repr(value))
 
 def exit(i=None):
     raise SystemExit('')
@@ -68,6 +75,10 @@ def getrecursionlimit():
 def intern(string):
     return string
 
+class int_info:
+    bits_per_digit = 30
+    sizeof_digit = 4
+
 maxsize = 2 ** 63 - 1
 
 maxunicode = 1114111
@@ -76,13 +87,10 @@ platform = "brython"
 
 prefix = __BRYTHON__.brython_path
 
-def settrace(tracefunc):
-    print("set trace")
-
 version = '.'.join(str(x) for x in __BRYTHON__.version_info[:3])
 version += " (default, %s) \n[Javascript 1.5] on Brython" \
     % __BRYTHON__.compiled_date
-hexversion = 0x03070000   # python 3.7
+hexversion = 0x030800f0   # python 3.8
 
 class _version_info:
 

@@ -33,94 +33,107 @@ function _read(req){
         res
     if(xhr.responseType == "json"){
         return $B.structuredclone2pyobj(xhr.response)
-    }
-    if(xhr.responseType == "arraybuffer"){
-        var abuf = new Uint8Array(xhr.response)
-        res = []
-        for(var i = 0, len = abuf.length; i < len; i++){
-            res.push(abuf[i])
-        }
-        return _b_.bytes.$factory(res)
-    }else{
+    }else if(xhr.responseType == "" || xhr.responseType == "text"){
         return xhr.responseText
+    }
+    var abuf = new Uint8Array(xhr.response)
+    res = []
+    for(var i = 0, len = abuf.length; i < len; i++){
+        res.push(abuf[i])
+    }
+    var b = _b_.bytes.$factory(res)
+
+    if(xhr.mode == "binary"){
+        return b
+    }else{
+        var encoding = xhr.encoding || "utf-8"
+        return _b_.bytes.decode(b, encoding)
     }
 }
 
 function handle_kwargs(self, kw, method){
     var data,
+        encoding,
         headers,
         cache,
-        mode,
+        mode = "text",
         timeout = {}
     for(var key in kw.$string_dict){
         if(key == "data"){
-            var params = kw.$string_dict[key]
+            var params = kw.$string_dict[key][0]
             if(typeof params == "string"){
                 data = params
-            }else{
-                if(params.__class__ !== _b_.dict){
-                    throw _b_.TypeError.$factory("wrong type for data, " +
-                        "expected dict or str, got " + $B.class_name(params))
-                }
+            }else if(params.__class__ === _b_.dict){
                 params = params.$string_dict
                 var items = []
                 for(var key in params){
                     items.push(encodeURIComponent(key) + "=" +
-                               encodeURIComponent(params[key]))
+                               encodeURIComponent(params[key][0]))
                 }
                 data = items.join("&")
+            }else{
+                throw _b_.TypeError.$factory("wrong type for data: " +
+                    $B.class_name(params))
             }
-        }else if(key=="headers"){
-            headers = kw.$string_dict[key].$string_dict
+        }else if(key == "encoding"){
+            encoding = kw.$string_dict[key][0]
+            self.js.encoding = encoding
+        }else if(key == "headers"){
+            var value = kw.$string_dict[key][0]
+            if(! _b_.isinstance(value, _b_.dict)){
+                throw _b_.ValueError.$factory(
+                    "headers must be a dict, not " + $B.class_name(value))
+            }
+            headers = value.$string_dict
             for(var key in headers){
-                self.js.setRequestHeader(key, headers[key])
+                self.js.setRequestHeader(key, headers[key][0])
             }
         }else if(key.startsWith("on")){
             var event = key.substr(2)
             if(event == "timeout"){
-                timeout.func = kw.$string_dict[key]
+                timeout.func = kw.$string_dict[key][0]
             }else{
-                var f = kw.$string_dict[key]
+                var f = kw.$string_dict[key][0]
                 ajax.bind(self, event, f)
             }
         }else if(key == "mode"){
-            if(kw.$string_dict[key] == "binary"){
-                self.js.responseType = "arraybuffer"
-                mode = "binary"
-            }else if(kw.$string_dict[key] == "json"){
+            var mode = kw.$string_dict[key][0]
+            if(mode == "json"){
                 self.js.responseType = "json"
-                mode = "json"
+            }else{
+                self.js.responseType = "arraybuffer"
+                if(mode != "text" && mode != "binary"){
+                    throw _b_.ValueError.$factory("invalid mode: " + mode)
+                }
             }
+            self.js.mode = mode
         }else if(key == "timeout"){
-            timeout.seconds = kw.$string_dict[key]
+            timeout.seconds = kw.$string_dict[key][0]
         }else if(key == "cache"){
-            cache = kw.$string_dict[key]
+            cache = kw.$string_dict[key][0]
         }
+    }
+    if(encoding && mode != "text"){
+        throw _b_.ValueError.$factory("encoding not supported for mode " +
+            mode)
     }
     if((method == "post" || method == "put") && ! headers){
         // For POST requests, set default header
         self.js.setRequestHeader("Content-type",
                                  "application/x-www-form-urlencoded")
     }
-    return {cache: cache, data:data, mode: mode, timeout: timeout}
+    return {
+        cache: cache,
+        data:data,
+        encoding: encoding,
+        mode: mode,
+        timeout: timeout
+    }
 }
 
 var ajax = {
     __class__: _b_.type,
-    __mro__: [$B.JSObject, _b_.object],
-
-    __getattribute__ : function(self, attr){
-        // Special case for send : accept dict as parameters
-        if(attr == 'send'){
-            return function(params){
-                return ajax.send(self, params)
-            }
-        }else if(attr == 'xml'){ // alias
-            attr = 'responseXML'
-        }
-        // Otherwise default to JSObject method
-        return $B.JSObject.__getattribute__(self, attr)
-    },
+    __mro__: [_b_.object],
 
     __repr__ : function(self){return '<object Ajax>'},
     __str__ : function(self){return '<object Ajax>'},
@@ -129,6 +142,32 @@ var ajax = {
         __module__: "builtins",
         __name__: "ajax"
     },
+
+    __getattribute__: function(self, attr){
+        if(ajax[attr] !== undefined){
+            return function(){
+                return ajax[attr].call(null, self, ...arguments)
+            }
+        }else if(self.js[attr] !== undefined){
+            if(typeof self.js[attr] == "function"){
+                return function(){
+                    if(attr == "setRequestHeader"){
+                        self.$has_request_header = true
+                    }else if(attr == "open"){
+                        self.$method = arguments[0]
+                    }
+                    return self.js[attr](...arguments)
+                }
+            }else{
+                return self.js[attr]
+            }
+        }else if(attr == "text"){
+            return self.js.responseText
+        }else if(attr == "xml"){
+            return self.js.responseXML
+        }
+    },
+
 
     bind: function(self, evt, func){
         // req.bind(evt,func) is the same as req.onevt = func
@@ -170,6 +209,11 @@ var ajax = {
                     add_to_res(res, str.$factory(items[i][0]), items[i][1])
                 }
             }else{
+                if(self.$method && self.$method.toUpperCase() == "POST" &&
+                        ! self.$has_request_header){
+                    self.js.setRequestHeader("Content-Type",
+                        "application/x-www-form-urlencoded")
+                }
                 var items = _b_.list.$factory(_b_.dict.items(params))
                 for(var i = 0, len = items.length; i < len; i++){
                     var key = encodeURIComponent(str.$factory(items[i][0]));
@@ -186,7 +230,8 @@ var ajax = {
                 res = res.substr(0, res.length - 1)
             }
         }else{
-            throw _b_.TypeError("send() argument must be string or dictionary, not '" +
+            throw _b_.TypeError.$factory(
+                "send() argument must be string or dictionary, not '" +
                 str.$factory(params.__class__) + "'")
         }
         self.js.send(res)
@@ -203,6 +248,7 @@ var ajax = {
             function() {self.js.abort();func()},
             seconds * 1000)
     }
+
 }
 
 ajax.$factory = function(){
@@ -236,7 +282,7 @@ ajax.$factory = function(){
     return res
 }
 
-function _request_without_body(){
+function _request_without_body(method){
     var $ = $B.args(method, 3, {method: null, url: null, blocking: null},
         ["method", "url", "blocking"], arguments, {blocking: false},
         null, "kw"),
@@ -244,8 +290,9 @@ function _request_without_body(){
     url = $.url,
     async = !$.blocking,
     kw = $.kw
-    var self = ajax.$factory(),
-        items = handle_kwargs(self, kw, method),
+    var self = ajax.$factory()
+    self.js.open(method.toUpperCase(), url, async)
+    var items = handle_kwargs(self, kw, method),
         qs = items.data,
         timeout = items.timeout
     set_timeout(self, timeout)
@@ -259,11 +306,10 @@ function _request_without_body(){
     self.js.read = function(){
         return _read(self)
     }
-    self.js.open(method.toUpperCase(), url, async)
     self.js.send()
 }
 
-function _request_with_body(){
+function _request_with_body(method){
     var $ = $B.args(method, 3, {method: null, url: null, blocking: null},
         ["method", "url", "blocking"], arguments, {blocking: false},
         null, "kw"),
@@ -310,22 +356,34 @@ function put(){
 }
 
 function file_upload(){
+    // ajax.file_upload(url, file, method="POST", **callbacks)
     var $ = $B.args("file_upload", 2, {url: null, "file": file},
             ["url", "file"], arguments, {}, null, "kw"),
         url = $.url,
         file = $.file,
         kw = $.kw
 
-    var formdata = new FormData()
-    formdata.append('filetosave', file, file.name)
+    var self = ajax.$factory(),
+        method = 'POST',
+        field_name = 'filetosave'
 
-    var self = ajax.$factory()
-    self.js.open('POST', url, True)
+    if(kw.$string_dict.method !== undefined){
+        method = kw.$string_dict.method[0]
+    }
+
+    if(kw.$string_dict.field_name !== undefined){
+        field_name = kw.$string_dict.field_name[0]
+    }
+
+    var formdata = new FormData()
+    formdata.append(field_name, file, file.name)
+
+    self.js.open(method, url, True)
     self.js.send(formdata)
 
     for(key in kw.$string_dict){
         if(key.startsWith("on")){
-            ajax.bind(self, key.substr(2), kw.$string_dict[key])
+            ajax.bind(self, key.substr(2), kw.$string_dict[key][0])
         }
     }
 }

@@ -253,5 +253,91 @@ assertRaises(TypeError, sum, ['a', 'b'], '')
 # issue 1256
 assert "\U00000065" == "e"
 
+# issue 1292
+s = 'abcd'
+assert s[-100:] == 'abcd'
+assert s[:100] == 'abcd'
+assert s[-100:100] == 'abcd'
+
+# issue 1306
+strs = ['', ' ', '\n', '\n\n', 'a\nb', 'one\ntwo\nthree',
+        'one\ntwo\nthree\n', 'one\ntwo\nthree\n\n']
+good = [
+[], [],
+[], [],
+[], [],
+[' '], [' '],
+[' '], [' '],
+[' '], [' '],
+[''], ['\n'],
+[''], ['\r'],
+[''], ['\r\n'],
+['', ''], ['\n', '\n'],
+['', ''], ['\r', '\r'],
+['', ''], ['\r\n', '\r\n'],
+['a', 'b'], ['a\n', 'b'],
+['a', 'b'], ['a\r', 'b'],
+['a', 'b'], ['a\r\n', 'b'],
+['one', 'two', 'three'], ['one\n', 'two\n', 'three'],
+['one', 'two', 'three'], ['one\r', 'two\r', 'three'],
+['one', 'two', 'three'], ['one\r\n', 'two\r\n', 'three'],
+['one', 'two', 'three'], ['one\n', 'two\n', 'three\n'],
+['one', 'two', 'three'], ['one\r', 'two\r', 'three\r'],
+['one', 'two', 'three'], ['one\r\n', 'two\r\n', 'three\r\n'],
+['one', 'two', 'three', ''], ['one\n', 'two\n', 'three\n', '\n'],
+['one', 'two', 'three', ''], ['one\r', 'two\r', 'three\r', '\r'],
+['one', 'two', 'three', ''], ['one\r\n', 'two\r\n', 'three\r\n', '\r\n']
+]
+ii = 0
+for ss in strs:
+    for sep in ('\n', '\r', '\r\n'):
+        ss_ = ss.replace('\n', sep)
+        for args in ((), (True,)):
+            ll = ss_.splitlines(*args)
+            if ll != good[ii]:
+                raise AssertionError('%s%s => %s != %s' % (
+                    repr(ss_), ' (keepends)' if args==(True,) else '', ll, good[ii]))
+            ii += 1
+
+# PEP 616
+s = "beforeremove"
+assert s.removeprefix("before") == "remove"
+assert s == "beforeremove"
+
+assert s.removeprefix("z") == s
+
+s = "removeafter"
+assert s.removesuffix("after") == "remove"
+assert s == "removeafter"
+
+assert s.removesuffix("z") == s
+
+class S(str):
+  pass
+
+s = S("beforeremove")
+assert s.removeprefix("before") == "remove"
+assert type(s.removeprefix("before")) is str
+assert s == "beforeremove"
+assert type(s)  is S
+
+assert s.removeprefix("z") == s
+assert s is not s.removeprefix("z")
+
+s = S("removeafter")
+assert s.removesuffix("after") == "remove"
+assert type(s.removesuffix("after")) is str
+assert s == "removeafter"
+assert type(s) is S
+
+assert s.removesuffix("z") == s
+assert s is not s.removesuffix("z")
+
+# issue 1440
+assert repr(chr(888)) == r"'\u0378'"
+
+# issue 1500
+s = 'abc'
+assert s.isprintable()
 
 print("passed all tests...")

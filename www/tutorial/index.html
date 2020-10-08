@@ -31,7 +31,12 @@
 from browser import document, highlight, html
 import header
 
-qs_lang, language = header.show()
+tutorial_languages = header.languages.extend(
+  [["br", "Brezhoneg"],
+   ["it", "Italiano"]
+  ])
+  
+qs_lang, language = header.show(tutorial_languages)
 
 # Highlight Python code
 for elt in document.get(selector='.python'):
@@ -55,11 +60,10 @@ for i, tag in enumerate(document.select("H1")):
 
 <body onload="brython(1)">
 
-<table id="banner" cellpadding=0 cellspacing=0>
-<tr id="banner_row">
-<td class="logo"><a href="/index.html" class="logo">Brython</a></td>
-</tr>
-</table>
+<div id="banner_row">
+<span class="logo"><a href="/index.html">brython</a></span>
+</div>
+
 
 <div id="content">
 {{content}}

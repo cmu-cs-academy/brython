@@ -23,14 +23,13 @@ var $module = (function($B){
     }
 
     function _info(chr){
-        var ord = _b_.ord(chr),
+        var ord = chr.codePointAt(0),
             hex = ord.toString(16).toUpperCase()
         while(hex.length < 4){hex = "0" + hex}
         var re = new RegExp("^" + hex +";(.+?);(.*?);(.*?);(.*?);(.*?);(.*);(.*);(.*)$",
                 "m"),
             search = re.exec($B.unicodedb)
         if(search === null){
-            console.log("null", re)
             return null
         }else{
             return {
@@ -58,9 +57,12 @@ var $module = (function($B){
     function category(chr){
         // Returns the general category assigned to the character chr as
         // string.
+        if($B.is_unicode_cn(chr.codePointAt(0))){ // in unicode_data.js
+            return "Cn"
+        }
         var search = _info(chr)
         if(search === null){
-            console.log("error", chr, hex)
+            console.log("error", chr)
             throw _b_.KeyError.$factory(chr)
         }
         return search.category

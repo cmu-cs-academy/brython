@@ -1,6 +1,6 @@
 Ce tutoriel vous explique comment développer une application qui s'exécute dans un navigateur en utilisant le langage Python. Nous prendrons comme exemple la construction d'une calculatrice.
 
-Vous aurez besoin d'un éditeur de texte, et naturellement d'un navigateur avec un accès à Internet. A noter que vous n'avez pas besoin d'installer l'interpréteur Python (celui qu'on peut télécharger sur le site du langage, python.org).
+Vous aurez besoin d'un éditeur de texte, et naturellement d'un navigateur avec un accès à Internet.
 
 Le contenu de ce tutoriel suppose que vous avez une connaissance basique de HTML (structure générale d'une page, principales balises), des feuilles de style (CSS), et du langage Python.
 
@@ -13,7 +13,7 @@ Dans l'éditeur de texte, créez une page html avec le contenu suivant :
 <head>
     <meta charset="utf-8">
     <script type="text/javascript"
-        src="https://cdn.jsdelivr.net/npm/brython@3.8.6/brython.min.js">
+        src="https://cdn.jsdelivr.net/npm/brython@{implementation}/brython.min.js">
     </script>
 </head>
 
@@ -31,17 +31,20 @@ document <= "Bonjour !"
 </html>
 ```
 
-Dans un répertoire vide, sauvegardez cette page sous le nom __`index.html`__. Pour lire cette page dans le navigateur, utilisez le menu Fichier/Ouvrir du navigateur : c'est la solution la plus rapide. Elle apporte quelques limitations pour un usage avancé, mais pour ce tutoriel elle est parfaitement adaptée.
+Dans un répertoire vide, sauvegardez cette page sous le nom __`index.html`__. Pour lire cette page dans le navigateur, vous avez deux options:
+
+- utiliser le menu Fichier/Ouvrir du navigateur : c'est la solution la plus rapide. Elle apporte [quelques limitations](/static_doc/fr/file_or_http.html) pour un usage avancé, mais pour ce tutoriel elle est parfaitement adaptée
+- lancer un serveur web local : par exemple, si votre poste est équipé de la version de Python disponible sur python.org, exécuter `python -m http.server` dans le répertoire du fichier, puis entrer _localhost:8000/index.html_ dans la barre d'adresse du navigateur
 
 En ouvrant la page, vous devriez voir le message "Bonjour !" s'afficher sur la page.
 
 Structure d'une page
 ====================
-Analysons le contenu de cette page. Dans la zone `<head>` nous chargeons le script __`brython.js`__ : c'est le moteur Brython, c'est-à-dire le programme qui va permettre d'exécuter les scripts Python qui se trouvent sur la page. Dans cet exemple nous allons le chercher sur un CDN, pour ne rien avoir à installer sur le PC. Notez le numéro de version (`brython@3.8.6`) : à chaque nouvelle version de Brython vous pourrez mettre à jour cette partie de l'adresse.
+Analysons le contenu de cette page. Dans la zone `<head>` nous chargeons le script __`brython.js`__ : c'est le moteur Brython, c'est-à-dire le programme qui va permettre d'exécuter les scripts Python qui se trouvent sur la page. Dans cet exemple nous allons le chercher sur un CDN, pour ne rien avoir à installer sur le PC. Notez le numéro de version (`brython@{implementation}`) : à chaque nouvelle version de Brython vous pourrez mettre à jour cette partie de l'adresse.
 
 La balise `<body>` possède un attribut `onload="brython()"`. Ceci indique au navigateur qu'une fois la page complètement chargée, il faut appeler la fonction `brython()`; celle-ci est définie par le moteur Brython chargé dans la page. Elle recherche dans la page tous les scripts qui ont le type `type="text/python"` et les exécute.
 
-Notre page __`index.hml`__ comporte ce script:
+Notre page __`index.html`__ comporte ce script:
 
 ```python
 from browser import document
@@ -58,6 +61,12 @@ document <= "Bonjour !"
 ```
 
 Il faut interpréter le signe `<=` comme une flèche vers la gauche : le document "reçoit" un nouvel élément, ici le texte "Bonjour !". Nous verrons plus loin qu'il est toujours possible d'utiliser la syntaxe normalisée pour interagir avec la page, mais Brython introduit quelques raccourcis pour rendre le code plus simple.
+
+Dans ce cas particulier, ceux qui ne sont pas à l'aise avec l'opérateur `<=` peuvent utiliser la méthode `attach()` des éléments DOM à la place:
+
+```python
+document.attach("Bonjour !")
+```
 
 Mise en forme avec les balises HTML
 ===================================
@@ -106,7 +115,7 @@ from browser import document, html
 
 calc = html.TABLE()
 calc <= html.TR(html.TH(html.DIV("0", id="result"), colspan=3) +
-                html.TH("C", id="clear"))
+                html.TD("C", id="clear"))
 lines = ["789/",
          "456*",
          "123-",
@@ -133,6 +142,7 @@ td{
     padding: 10px 30px 10px 30px;
     border-radius: 0.2em;
     text-align: center;
+    cursor: default;
 }
 #result{
     border-color: #000;
@@ -224,3 +234,6 @@ for button in document.select("td"):
     button.bind("click", action)
 ```
 
+Résultat
+========
+<iframe width="800", height="400" src="/gallery/calculator.html"></iframe>

@@ -9,6 +9,8 @@ served from subdirectory cgi-bin
 
 import io
 import os
+import sys
+import sysconfig
 import time
 from webbrowser import open_new_tab
 import argparse
@@ -17,9 +19,13 @@ import datetime
 import urllib.parse
 from http import HTTPStatus
 import socketserver
+
 from server_modular_send_head import CGIHTTPRequestHandler
 
 import http.cookiejar
+
+cpython_site_packages = sysconfig.get_path("purelib")
+
 # Python might be built without zlib
 try:
     import zlib
@@ -113,8 +119,10 @@ class CompressedHandler(CGIHTTPRequestHandler):
     def translate_path(self, path):
         """For paths starting with /cgi-bin/, serve from cgi_dir"""
         elts = path.split('/')
-        if len(elts) > 1 and elts[0] == '' and elts[1] == 'cgi-bin':
-            return os.path.join(cgi_dir,*elts[2:])
+        if len(elts) > 1 and elts[0] == '':
+            if elts[1] == 'cpython_site_packages':
+                elts[-1] = elts[-1].split("?")[0]
+                return os.path.join(cpython_site_packages, *elts[2:])
         return CGIHTTPRequestHandler.translate_path(self, path)
 
     def do_POST(self):
@@ -223,9 +231,11 @@ if not args.no_docs:
     if not os.path.exists(os.path.join(os.getcwd(),'www','static_doc')):
         save_dir = os.getcwd()
         os.chdir(os.path.join(os.getcwd(),'scripts'))
+        sys.path.append(os.getcwd())
         make_doc = open('make_doc.py', "rb").read()
         make_doc = make_doc.decode("utf-8")
         exec(make_doc)
+        sys.path.pop()
         os.chdir(save_dir)
 
 os.chdir(os.path.join(os.getcwd(), 'www'))
