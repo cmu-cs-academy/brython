@@ -262,7 +262,12 @@ $B.get_class = function(obj){
 }
 
 $B.class_name = function(obj){
-    return $B.get_class(obj).$infos.__name__
+    var klass = $B.get_class(obj)
+    if(klass === $B.JSObj){
+        return 'Javascript ' + obj.constructor.name
+    }else{
+        return klass.$infos.__name__
+    }
 }
 
 $B.$list_comp = function(items){
@@ -454,6 +459,11 @@ $B.$check_def = function(name, value){
         return value
     }else if(_b_[name] !== undefined){ // issue 1133
         return _b_[name]
+    }else{
+        var frame = $B.last($B.frames_stack)
+        if(frame[3][name] !== undefined){
+            return frame[3][name]
+        }
     }
     throw _b_.NameError.$factory("name '" + $B.from_alias(name) +
         "' is not defined")
@@ -599,6 +609,10 @@ $B.$getitem = function(obj, item){
             class_gi = $B.$getattr(obj.__class__, "__getitem__", _b_.None)
             if(class_gi !== _b_.None){
                 return class_gi(obj, item)
+            }else{
+                throw _b_.TypeError.$factory("'" +
+                    $B.class_name(obj.__class__) +
+                    "' object is not subscriptable")
             }
         }
     }
@@ -1307,7 +1321,15 @@ $B.add = function(x, y){
         if(typeof x == "number" && typeof y == "number"){
             // ints
             var z = x + y
-            if(z < max_int){return z}
+            if(z < $B.max_int && z > $B.min_int){
+                return z
+            }else if(z === Infinity){
+                return _b_.float.$factory("inf")
+            }else if(z === -Infinity){
+                return _b_.float.$factory("-inf")
+            }else if(isNaN(z)){
+                return _b_.float.$factory('nan')
+            }
             return $B.long_int.__add__($B.long_int.$factory(x),
                 $B.long_int.$factory(y))
         }else{
@@ -1388,17 +1410,21 @@ $B.sub = function(x, y){
     var z = (typeof x != "number" || typeof y != "number") ?
                 new Number(x - y) : x - y
     if(x > min_int && x < max_int && y > min_int && y < max_int
-        && z > min_int && z < max_int){return z}
-    else if((typeof x == "number" || x.__class__  === $B.long_int)
-        && (typeof y == "number" || y.__class__ === $B.long_int)){
+            && z > min_int && z < max_int){
+        return z
+    }else if((typeof x == "number" || x.__class__  === $B.long_int)
+            && (typeof y == "number" || y.__class__ === $B.long_int)){
         if((typeof x == "number" && isNaN(x)) ||
                 (typeof y == "number" && isNaN(y))){
             return _b_.float.$factory("nan")
         }
         return $B.long_int.__sub__($B.long_int.$factory(x),
             $B.long_int.$factory(y))
-    }else{return z}
+    }else{
+        return z
+    }
 }
+
 // greater or equal
 $B.ge = function(x, y){
     if(typeof x == "number" && typeof y == "number"){return x >= y}
@@ -1443,8 +1469,7 @@ $B.rich_comp = function(op, x, y){
         }
     }
     var res,
-        rev_op,
-        compared = false
+        rev_op
 
     if(x.$is_class || x.$factory) {
         if(op == "__eq__"){
@@ -1470,13 +1495,11 @@ $B.rich_comp = function(op, x, y){
             var rev_func = $B.$getattr(y, rev_op)
             res = $B.$call($B.$getattr(y, rev_op))(x)
             if(res !== _b_.NotImplemented){return res}
-            compared = true
         }
     }
 
     res = $B.$call($B.$getattr(x, op))(y)
     if(res !== _b_.NotImplemented){return res}
-    if(compared){return false}
     rev_op = reversed_op[op] || op
     res = $B.$call($B.$getattr(y, rev_op))(x)
     if(res !== _b_.NotImplemented ){return res}

@@ -2,10 +2,9 @@
 
 //eval($B.InjectBuiltins())
 
-var _b_ = $B.builtins;
-var object = _b_.object
-var JSObject = $B.JSObject
-var _window = self;
+var _b_ = $B.builtins,
+    object = _b_.object,
+    _window = self
 
 // cross-browser utility functions
 function $getMouseOffset(target, ev){
@@ -200,7 +199,7 @@ Attributes.__getitem__ = function(){
 Attributes.__iter__ = function(self){
     self.$counter = 0
     // Initialize list of key-value attribute pairs
-    var attrs = self.attributes,
+    var attrs = self.elt.attributes,
         items = []
     for(var i = 0; i < attrs.length; i++){
         items.push(attrs[i].name)
@@ -233,6 +232,16 @@ Attributes.__setitem__ = function(){
         return _b_.None
     }
     throw _b_.TypeError.$factory("Can't set attributes on element")
+}
+
+Attributes.__repr__ = Attributes.__str__ = function(self){
+    var attrs = self.elt.attributes,
+        items = []
+    for(var i = 0; i < attrs.length; i++){
+        items.push(attrs[i].name + ': "' +
+            self.elt.getAttributeNS(null, attrs[i].name) + '"')
+    }
+    return '{' + items.join(", ") + '}'
 }
 
 Attributes.get = function(){
@@ -758,7 +767,6 @@ DOMNode.__getattribute__ = function(self, attr){
             return DOMNode.select(self, selector)
         }
     }
-
     if(attr == "query" && self.nodeType == 9){
         // document.query is a instance of class Query, representing the
         // Query String
@@ -793,6 +801,25 @@ DOMNode.__getattribute__ = function(self, attr){
     }
 
     if(property === undefined){
+        // If custom element, search in the associated class
+        if(self.tagName){
+            var ce = customElements.get(self.tagName.toLowerCase())
+            if(ce !== undefined && ce.$cls !== undefined){
+                // Temporarily set self.__class_ to the WebComponent class
+                var save_class = self.__class__
+                self.__class__ = ce.$cls
+                try{
+                    var res = _b_.object.__getattribute__(self, attr)
+                    self.__class__ = save_class
+                    return res
+                }catch(err){
+                    self.__class__ = save_class
+                    if(! $B.is_exc(err, [_b_.AttributeError])){
+                        throw err
+                    }
+                }
+            }
+        }
         return object.__getattribute__(self, attr)
     }
 
@@ -978,6 +1005,16 @@ DOMNode.__radd__ = function(self, other){ // add to a string
 }
 
 DOMNode.__str__ = DOMNode.__repr__ = function(self){
+    var attrs = self.attributes,
+        attrs_str = ""
+    if(attrs !== undefined){
+        var items = []
+        for(var i = 0; i < attrs.length; i++){
+            items.push(attrs[i].name + '="' +
+                self.getAttributeNS(null, attrs[i].name) + '"')
+        }
+    }
+
     var proto = Object.getPrototypeOf(self)
     if(proto){
         var name = proto.constructor.name
@@ -985,11 +1022,12 @@ DOMNode.__str__ = DOMNode.__repr__ = function(self){
             var proto_str = proto.constructor.toString()
             name = proto_str.substring(8, proto_str.length - 1)
         }
-        return "<" + name + " object>"
+        items.splice(0, 0, name)
+        return "<" + items.join(" ") + ">"
     }
     var res = "<DOMNode object type '"
     return res + $NodeTypes[self.nodeType] + "' name '" +
-        self.nodeName + "'>"
+        self.nodeName + "'" + attrs_str + ">"
 }
 
 DOMNode.__setattr__ = function(self, attr, value){
@@ -1113,12 +1151,18 @@ DOMNode.bind = function(self, event){
     var $ = $B.args("bind", 4,
             {self: null, event: null, func: null, options: null},
             ["self", "event", "func", "options"], arguments,
-            {options: _b_.None}, null, null),
+            {func: _b_.None, options: _b_.None}, null, null),
             self = $.self,
             event = $.event,
             func = $.func,
             options = $.options
 
+    if(func === _b_.None){
+        // Returns a function to decorate the callback
+        return function(f){
+            return DOMNode.bind(self, event, f)
+        }
+    }
     var callback = (function(f){
         return function(ev){
             try{

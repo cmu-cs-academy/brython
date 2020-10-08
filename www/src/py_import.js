@@ -959,6 +959,7 @@ $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
 
        for(var i = 0, modsep = "", _mod_name = "", len = parsed_name.length - 1,
                 __path__ = _b_.None; i <= len; ++i){
+
             var _parent_name = _mod_name;
             _mod_name += modsep + parsed_name[i]
             modsep = "."
@@ -966,24 +967,27 @@ $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
             if(modobj == _b_.None){
                 // [Import spec] Stop loading loop right away
                 import_error(_mod_name)
-            }else if (modobj === undefined){
+            }else if(modobj === undefined){
                 try{
                     $B.import_hooks(_mod_name, __path__, from_stdlib)
                 }catch(err){
                     delete $B.imported[_mod_name]
                     throw err
                 }
-
                 if($B.is_none($B.imported[_mod_name])){
                     import_error(_mod_name)
                 }else{
                     // [Import spec] Preserve module invariant
-                    // FIXME : Better do this in import_hooks ?
                     if(_parent_name){
                         _b_.setattr($B.imported[_parent_name], parsed_name[i],
                                     $B.imported[_mod_name])
                     }
                 }
+            }else if($B.imported[_parent_name] &&
+                        $B.imported[_parent_name][parsed_name[i]] === undefined){
+                // issue 1494
+                _b_.setattr($B.imported[_parent_name], parsed_name[i],
+                    $B.imported[_mod_name])
             }
             // [Import spec] If __path__ can not be accessed an ImportError is raised
             if(i < len){
@@ -1018,8 +1022,10 @@ $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
         if($B.imported[parsed_name[0]] &&
                 parsed_name.length == 2){
             try{
-                $B.$setattr($B.imported[parsed_name[0]], parsed_name[1],
-                    modobj)
+                if($B.imported[parsed_name[0]][parsed_name[1]] === undefined){
+                    $B.$setattr($B.imported[parsed_name[0]], parsed_name[1],
+                        modobj)
+                }
             }catch(err){
                 console.log("error", parsed_name, modobj)
                 throw err

@@ -767,8 +767,8 @@ $AbstractExprCtx.prototype.transition = function(token, value){
         case ')':
         case ',':
             switch(context.parent.type) {
-                case 'slice':
                 case 'list_or_tuple':
+                case 'slice':
                 case 'call_arg':
                 case 'op':
                 case 'yield':
@@ -872,15 +872,21 @@ $AssertCtx.prototype.toString = function(){return '(assert) ' + this.tree}
 
 $AssertCtx.prototype.transition = function(token, value){
     var context = this
+    if(token == ","){
+        if(this.tree.length > 1){
+            $_SyntaxError(context, "too many commas after assert")
+        }
+        return new $AbstractExprCtx(this, false)
+    }
     if(token == 'eol'){return $transition(context.parent, token)}
     $_SyntaxError(context, token)
 }
 
 $AssertCtx.prototype.transform = function(node, rank){
-    if(this.tree[0].type == 'list_or_tuple'){
+    if(this.tree.length > 1){
         // form "assert condition,message"
-        var condition = this.tree[0].tree[0]
-        var message = this.tree[0].tree[1]
+        var condition = this.tree[0]
+        var message = this.tree[1]
     }else{
         var condition = this.tree[0]
         var message = null
@@ -1241,7 +1247,7 @@ $AssignCtx.prototype.to_js = function(){
 
     // assignment
     var left = this.tree[0]
-    while(left.type == 'expr'){left = left.tree[0]}
+    while(left.type == 'expr' && ! left.assign){left = left.tree[0]}
 
     var right = this.tree[1]
     if(left.type == 'attribute' || left.type == 'sub'){
@@ -1603,8 +1609,9 @@ $AugmentedAssignCtx.prototype.transform = function(node, rank){
         }
     }
 
-    if(left_bound_to_int && right_is_int){
-        parent.insert(rank + offset, $NodeJS(left + " "+ op + " " + right))
+    if(left_bound_to_int && right_is_int &&
+            op != "//="){ // issue 1482
+        parent.insert(rank + offset, $NodeJS(left + " " + op + " " + right))
         return offset++
     }
 
@@ -1676,7 +1683,7 @@ $AugmentedAssignCtx.prototype.transform = function(node, rank){
     var ctx1 = new $NodeCtx(aa1)
     var expr1 = new $ExprCtx(ctx1, 'clone', false)
     if(left_id_unbound){
-        new $RawJSCtx(expr1, left) //'$locals["' + left_id + '"]')
+        new $RawJSCtx(expr1, left)
     }else{
         expr1.tree = context.tree
         expr1.tree.forEach(function(elt){
@@ -2074,32 +2081,6 @@ $CallCtx.prototype.to_js = function(){
         switch(this.func.value) {
             case 'classmethod':
                 return '_b_.classmethod.$factory(' + $to_js(this.tree) + ')'
-            case '$$super':
-                if(this.tree.length == 0){
-                   // super() called with no argument : if inside a class,
-                   // add the class parent as first argument
-                   var scope = $get_scope(this)
-                   if(scope.ntype == 'def' || scope.ntype == 'generator'){
-                      var def_scope = $get_scope(scope.context.tree[0])
-                      if(def_scope.ntype == 'class'){
-                         new $IdCtx(this, def_scope.context.tree[0].name)
-                      }
-                   }
-                }
-                if(this.tree.length == 1){
-                   // second argument omitted : add the instance
-                   var scope = $get_scope(this)
-                   if(scope.ntype == 'def' || scope.ntype == 'generator'){
-                      var args = scope.context.tree[0].args
-                      if(args.length > 0){
-                         var missing_id = new $IdCtx(this, args[0])
-                         missing_id.to_js = function(){
-                             return "[$locals['" + args[0] + "']]"
-                         }
-                      }
-                   }
-                }
-                break
             default:
                 if(this.func.type == 'unary'){
                    // form " -(x + 2) "
@@ -2268,7 +2249,6 @@ var $ClassCtx = $B.parser.$ClassCtx = function(context){
     var scope = this.scope = $get_scope(this)
     this.parent.node.parent_block = scope
     this.parent.node.bound = {} // will store the names bound in the function
-
     // stores names bound in the class scope
     this.parent.node.binding = {
         __annotations__: true
@@ -2307,6 +2287,16 @@ $ClassCtx.prototype.set_name = function(name){
 
     var scope = this.scope,
         parent_block = scope
+
+    // Set attribute "qualname", which includes possible parent classes
+    var block = scope,
+        parent_classes = []
+    while(block.ntype == "class"){
+        parent_classes.splice(0, 0, block.context.tree[0].name)
+        block = block.parent
+    }
+    this.qualname = parent_classes.concat([name]).join(".")
+
     while(parent_block.context &&
             parent_block.context.tree[0].type == 'class'){
         parent_block = parent_block.parent
@@ -2354,6 +2344,8 @@ $ClassCtx.prototype.transform = function(node, rank){
 
     var js = ' '.repeat(node.indent + 4) +
              '$locals.$name = "' + this.name + '"' + indent +
+             '$locals.$qualname = "' + this.qualname + '"' + indent +
+             '$locals.$is_class = true; ' + indent +
              '$locals.$line_info = "' + node.line_num + ',' +
              this.module + '";' + indent +
              'var $top_frame = ["' + local_ns +'", $locals,' + '"' +
@@ -2377,8 +2369,7 @@ $ClassCtx.prototype.transform = function(node, rank){
     new $NodeJSCtx(run_func, ')();')
     node.parent.insert(rank + 1, run_func)
 
-    var module_name = '$locals_' +
-        this.module + '.__name__'
+    var module_name = '$locals_' + this.module + '.__name__'
 
     rank++
     node.parent.insert(rank + 1,
@@ -2712,7 +2703,7 @@ $DecoratorCtx.prototype.toString = function(){
 $DecoratorCtx.prototype.transition = function(token, value){
     var context = this
     if(token == 'id' && context.tree.length == 0){
-        return $transition(new $DecoratorExprCtx(context),
+        return $transition(new $AbstractExprCtx(context, false),
             token, value)
     }
     if(token == 'eol') {
@@ -2822,66 +2813,6 @@ $DecoratorCtx.prototype.to_js = function(){
             $to_js(decorator) + ';')
     }, this)
     return res.join('')
-}
-
-var $DecoratorExprCtx = $B.parser.$DecoratorExprCtx = function(context){
-    // Class for decorator expression. This can't be an arbitrary expression :
-    // it must be a dotted name, possibly called with arbitrary arguments
-    this.type = 'decorator_expression'
-    this.parent = context
-    context.tree[context.tree.length] = this
-    this.names = []
-    this.tree = []
-    this.is_call = false
-}
-
-$DecoratorExprCtx.prototype.toString = function(){
-    return '(decorator expression)'
-}
-
-$DecoratorExprCtx.prototype.transition = function(token, value){
-    var context = this
-    if(context.expects === undefined){
-        if(token == "id"){
-            context.names.push(value)
-            context.expects = "."
-            return context
-        }
-        $_SyntaxError(context, 'token ' + token + ' after ' + context)
-    }else if(context.is_call && token !== "eol"){
-        $_SyntaxError(context, 'token ' + token + ' after ' + context)
-    }else if(token == "id" && context.expects == "id"){
-        context.names.push(value)
-        context.expects = "."
-        return context
-    }else if(token == "." && context.expects == "."){
-        context.expects = "id"
-        return context
-    }else if(token == "(" && context.expects == "."){
-        if(! context.is_call){
-            context.is_call = true
-            return new $CallCtx(context)
-        }
-    }else if(token == 'eol') {
-        return $transition(context.parent, token)
-    }
-    $_SyntaxError(context, 'token ' + token + ' after ' + context)
-}
-
-$DecoratorExprCtx.prototype.to_js = function(){
-    this.js_processed = true
-
-    var func = new $IdCtx(this, this.names[0])
-    var obj = func.to_js()
-    this.names.slice(1).forEach(function(name){
-        obj = `$B.$getattr(${obj}, "${name}")`
-    })
-    if(this.tree.length > 1){
-        // decorator is a call
-        this.tree[0].func = {to_js: function(){return obj}}
-        return this.tree[0].to_js()
-    }
-    return obj
 }
 
 var $DefCtx = $B.parser.$DefCtx = function(context){
@@ -3275,10 +3206,8 @@ $DefCtx.prototype.transform = function(node, rank){
     // Handle name __class__ in methods (PEP 3135 and issue #1068)
     var is_method = scope.ntype == "class"
     if(is_method){
-        var class_name = scope.context.tree[0].name,
-            class_block = scope.parent_block,
-            class_ref = "$locals_" + class_block.id.replace(/\./g, '_') +
-                '["' + class_name + '"]'
+        class_ref = "$locals_" + scope.parent_block.id.replace(/\./g, '_') +
+            '.' + scope.context.tree[0].qualname
         // bind name __class__ in method
         this.parent.node.binding["__class__"] = true
         // set its value to the class where the method is defined
@@ -3428,7 +3357,7 @@ $DefCtx.prototype.transform = function(node, rank){
         var h1 = ',' + h + ' '.repeat(4)
         var module = $get_module(this).module
         js += h1 + 'co_filename:$locals_' + module.replace(/\./g,'_') +
-            '["__file__"]' +
+            '["__file__"] || "<string>"' +
             h1 + 'co_firstlineno:' + node.line_num +
             h1 + 'co_flags:' + flags +
             h1 + 'co_freevars: [' + free_vars + ']' +
@@ -4402,6 +4331,9 @@ $ExprCtx.prototype.transition = function(token, value){
              }else if(context.parent.type == "op"){
                   // issue 811
                   $_SyntaxError(context, ["cannot assign to operator"])
+             }else if(context.parent.type == "not"){
+                  // issue 1496
+                  $_SyntaxError(context, ["cannot assign to operator"])
              }else if(context.parent.type == "list_or_tuple"){
                  // issue 973
                  for(var i = 0; i < context.parent.tree.length; i++){
@@ -4410,6 +4342,9 @@ $ExprCtx.prototype.transition = function(token, value){
                          $_SyntaxError(context, ["cannot assign to operator"])
                      }
                  }
+             }else if(context.tree.length > 0 && context.tree[0].assign){
+                 // form (a := b) = ...
+                 $_SyntaxError(context, ["cannot assign to named expression"])
              }else if(context.parent.type == "expr" &&
                      context.parent.name == "target list"){
                  $_SyntaxError(context, 'token ' + token + ' after '
@@ -5826,7 +5761,7 @@ $IdCtx.prototype.to_js = function(arg){
 
     var val = this.value
 
-    var $test = false // val == "myvar"
+    var $test = false // val == "Bar"
 
     if($test){
         console.log("this", this)
@@ -6457,7 +6392,9 @@ $LambdaCtx.prototype.to_js = function(){
         // for the comprehension must be passed because it is used in the
         // code for the lambda function
         params += `, $locals_${module.id.replace(/\./g, '_')}`
-        args += ', {}'
+        // The locals object for the comprehension may be undefined
+        args += `, typeof $locals_${module.id.replace(/\./g, '_')} `+
+            ` === "undefined" ? {} : $locals_${module.id.replace(/\./g, '_')}`
     }
     js = `(function(${params}){\n` + js +
         `\nreturn $locals.${func_name}})(${args})`
@@ -6553,6 +6490,16 @@ $ListOrTupleCtx.prototype.transition = function(token, value){
                         }
                         if(context.parent.type == "packed"){
                             return context.parent.parent
+                        }
+                        if(context.parent.type == "abstract_expr" &&
+                                context.parent.assign){
+                            // issue 1501
+                            context.parent.parent.tree.pop()
+                            var expr = new $ExprCtx(context.parent.parent, "assign", false)
+                            expr.tree = context.parent.tree
+                            expr.tree[0].parent = expr
+                            expr.assign = context.parent.assign
+                            return expr
                         }
                         return context.parent
                     }
@@ -7041,7 +6988,7 @@ $NodeCtx.prototype.transition = function(token, value){
             return new $ExceptCtx(context)
         case 'assert':
             return new $AbstractExprCtx(
-                new $AssertCtx(context), 'assert', true)
+                new $AssertCtx(context), false, true)
         case 'from':
             return new $FromCtx(context)
         case 'import':
@@ -7367,10 +7314,23 @@ $NumberCtx.prototype.to_js = function(){
         value = this.value
     if(type == 'int'){
         var v = parseInt(value[1], value[0])
-        if(v > $B.min_int && v < $B.max_int){return v}
-        else{
-            return '$B.long_int.$factory("' + value[1] + '", ' + value[0]
-                + ')'
+        if(v > $B.min_int && v < $B.max_int){
+            if(this.unary_op){
+                v = eval(this.unary_op + v)
+            }
+            return v
+        }else{
+            var v = $B.long_int.$factory(value[1], value[0])
+            switch(this.unary_op){
+                case "-":
+                    v = $B.long_int.__neg__(v)
+                    break
+                case "~":
+                    v = $B.long_int.__invert__(v)
+                    break
+            }
+            return '{__class__: $B.long_int, value: "' + v.value +
+                '", pos: ' + v.pos + '}'
         }
     }else if(type == "float"){
         // number literal
@@ -7415,15 +7375,26 @@ $OpCtx.prototype.transition = function(token, value){
     if(context.op === undefined){
         $_SyntaxError(context,['context op undefined ' + context])
     }
-    if(context.op.substr(0,5) == 'unary' && token != 'eol'){
-        if(context.parent.type == 'assign' ||
-                context.parent.type == 'return'){
-            // create and return a tuple whose first element is context
+    if(context.op.substr(0,5) == 'unary'){
+        if(token != 'eol'){
+            if(context.parent.type == 'assign' ||
+                    context.parent.type == 'return'){
+                // create and return a tuple whose first element is context
+                context.parent.tree.pop()
+                var t = new $ListOrTupleCtx(context.parent, 'tuple')
+                t.tree.push(context)
+                context.parent = t
+                return t
+            }
+        }
+        if(context.tree.length == 2 && context.tree[1].type == "expr" &&
+                context.tree[1].tree[0].type == "int"){
+            // replace by the integer with the applied unary operator
             context.parent.tree.pop()
-            var t = new $ListOrTupleCtx(context.parent, 'tuple')
-            t.tree.push(context)
-            context.parent = t
-            return t
+            context.parent.tree.push(context.tree[1])
+            context.tree[1].parent = context.parent
+            // Set attribute "unary_op", used in $NumberCtx.prototype.to_js()
+            context.tree[1].tree[0].unary_op = context.tree[0].op
         }
     }
 
@@ -7740,13 +7711,16 @@ $OpCtx.prototype.to_js = function(){
 $OpCtx.prototype.simple_js = function(){
     var op = this.op
     function sjs(elt){
-        if(elt.type == 'op'){return elt.simple_js()}
-        else if(elt.type == 'expr' && elt.tree[0].type == 'list_or_tuple'
+        if(elt.type == 'op'){
+            return elt.simple_js()
+        }else if(elt.type == 'expr' && elt.tree[0].type == 'list_or_tuple'
                 && elt.tree[0].real == 'tuple'
                 && elt.tree[0].tree.length == 1
                 && elt.tree[0].tree[0].type == 'expr'){
             return '(' + elt.tree[0].tree[0].tree[0].simple_js() + ')'
-        }else{return elt.tree[0].to_js()}
+        }else{
+            return elt.tree[0].to_js()
+        }
     }
     if(op == '+'){
         return '$B.add(' + sjs(this.tree[0]) + ',' +

@@ -547,4 +547,62 @@ class CC(metaclass=CMeta):
 
 assert CC.__annotations__['xx'] == 'ANNOT'
 
+# similar to issue 600: == with subclassing
+class A_eqWithoutOverride:
+    pass
+
+class B_eqWithoutOverride(A_eqWithoutOverride):
+    pass
+
+a_eqWithoutOverride = A_eqWithoutOverride()
+b_eqWithoutOverride = B_eqWithoutOverride()
+assert (a_eqWithoutOverride == a_eqWithoutOverride)
+assert (b_eqWithoutOverride == b_eqWithoutOverride)
+assert (a_eqWithoutOverride != b_eqWithoutOverride)
+assert not (a_eqWithoutOverride == b_eqWithoutOverride)
+assert (b_eqWithoutOverride != a_eqWithoutOverride)
+assert not (b_eqWithoutOverride == a_eqWithoutOverride)
+
+# issue 1488
+class Foobar:
+
+    class Foo:
+
+        def __str__(self):
+            return "foo"
+
+    class Bar(Foo):
+
+        def __init__(self):
+            super().__init__()
+
+        def __str__(self):
+            return "bar"
+
+assert str(Foobar.Bar()) == "bar"
+
+# super() in a function outside of a class
+def f():
+    super()
+
+try:
+    f()
+    raise Exception("should have raised RuntimeError")
+except RuntimeError as exc:
+    assert exc.args[0] == "super(): no arguments"
+
+# super() with a single argument
+# found in https://www.artima.com/weblogs/viewpost.jsp?thread=236278
+class B:
+    a = 1
+
+class C(B):
+    pass
+
+class D(C):
+    sup = super(C)
+
+d = D()
+assert d.sup.a == 1
+
 print('passed all tests..')

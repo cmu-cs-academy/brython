@@ -5,7 +5,6 @@ var _b_ = $B.builtins
 // generic code for class constructor
 $B.$class_constructor = function(class_name, class_obj, bases,
         parents_names, kwargs){
-
     bases = bases || []
     var metaclass
 
@@ -224,7 +223,7 @@ $B.$class_constructor = function(class_name, class_obj, bases,
     kls.$infos = {
         __module__: module,
         __name__: $B.from_alias(class_name),
-        __qualname__: class_name
+        __qualname__: class_obj.$qualname
     }
     kls.$subclasses = []
 
@@ -599,6 +598,7 @@ type.__new__ = function(meta, name, bases, cl_dict){
                 console.log($B.frames_stack.slice())
             }
             v.$infos.$class = class_dict
+            v.$infos.__qualname__ = name + '.' + v.$infos.__name__
             if(v.$infos.$defaults){
                 // If the function was set an attribute __defaults__, it is
                 // stored in v.$infos.$defaults (cf. Function.__setattr__ in
@@ -617,7 +617,7 @@ type.__repr__ = type.__str__ = function(kls){
     if(kls.$infos === undefined){
         console.log("no $infos", kls)
     }
-    var qualname = kls.$infos.__name__
+    var qualname = kls.$infos.__qualname__
     if(kls.$infos.__module__    &&
             kls.$infos.__module__ != "builtins" &&
             !kls.$infos.__module__.startsWith("$")){
@@ -922,6 +922,66 @@ $B.set_func_names(method, "builtins")
 $B.method_descriptor = $B.make_class("method_descriptor")
 
 $B.classmethod_descriptor = $B.make_class("classmethod_descriptor")
+
+// PEP 585
+$B.GenericAlias = $B.make_class("GenericAlias",
+    function(origin_class, items){
+        return {
+            __class__: $B.GenericAlias,
+            origin_class,
+            items
+        }
+    }
+)
+
+$B.GenericAlias.__args__ = {
+    __get__: function(self){
+        return $B.fast_tuple(self.items)
+    }
+}
+
+$B.GenericAlias.__call__ = function(self, ...args){
+    return self.origin_class.$factory.apply(null, args)
+}
+
+$B.GenericAlias.__eq__ = function(self, other){
+    return $B.rich_comp("__eq__", self.origin_class, other.origin_class) &&
+        $B.rich_comp("__eq__", self.items, other.items)
+}
+
+$B.GenericAlias.__getitem__ = function(self, item){
+    throw _b_.TypeError.$factory("descriptor '__getitem__' for '" +
+        self.origin_class.$infos.__name__ +"' objects doesn't apply to a '" +
+        $B.class_name(item) +"' object")
+}
+
+$B.GenericAlias.__origin__ = {
+    __get__: function(self){
+        return self.origin_class
+    }
+}
+
+$B.GenericAlias.__parameters__ = {
+    __get__: function(self){
+        // In PEP 585 : "a lazily computed tuple (possibly empty) of unique
+        // type variables found in __args__", but what are "unique type
+        // variables" ?
+        return $B.fast_tuple([])
+    }
+}
+
+$B.GenericAlias.__repr__ = function(self){
+    var items = self.items
+    for(var i = 0, len = items.length; i < len; i++){
+        if(items[i] === _b_.Ellipsis){
+            items[i] = '...'
+        }else{
+            items[i] = items[i].$infos.__name__
+        }
+    }
+    return self.origin_class.$infos.__qualname__ + '[' +
+        items.join(", ") + ']'
+}
 
 // this could not be done before $type and $factory are defined
 _b_.object.__class__ = type

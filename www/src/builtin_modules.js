@@ -272,7 +272,8 @@
                         if(klass.$infos.__name__ == 'SVG'){
                             var res = $B.DOMNode.$factory(document.createElementNS("http://www.w3.org/2000/svg", "svg"), true)
                         }else{
-                            var res = $B.DOMNode.$factory(document.createElement(klass.$infos.__name__), true)
+                            var elt = document.createElement(klass.$infos.__name__),
+                                res = $B.DOMNode.$factory(elt, true)
                         }
                         res._wrapped = false  // not wrapped
                     }
@@ -369,24 +370,56 @@
             return $B.JSObj.$factory($B.js_this)
         },
         $$Date: self.Date && $B.JSObj.$factory(self.Date),
-        JSConstructor: {
-            __get__: function(){
-                console.warn('"javascript.JSConstructor" is deprecrated. ' +
-                    'Use window.<js constructor name>.new() instead.')
-                return $B.JSConstructor
-            },
-            __set__: function(){
-                throw _b_.AttributeError.$factory("read only")
-            }
-        },
-        JSObject: {
-            __get__: function(){
-                console.warn('"javascript.JSObject" is deprecrated. To use ' +
-                    'a Javascript object, use window.<object name> instead.')
-                return $B.JSObject
-            },
-            __set__: function(){
-                throw _b_.AttributeError.$factory("read only")
+        $$extends: function(js_constr){
+            return function(obj){
+                if(typeof obj == "function"){
+                    var res = function(){
+                        js_constr.call(this, ...arguments)
+                        obj.apply(this, arguments)
+                    }
+                    res.prototype = Object.create(js_constr.prototype)
+                    res.prototype.constructor = res
+                    res.$is_js_func = true
+                    return res
+                }else if(obj.$is_class){
+                    console.log("obj", obj)
+                    if(js_constr.$js_func.name == "Named"){
+                        console.log("-- Named")
+                    }
+                    var res = function(){
+                        console.log("call parent class", obj.$parent_class)
+                        obj.$parent_class.call(this, ...arguments)
+                        if(obj.$$constructor){
+                            var args = [this]
+                            for(var i = 0, len = arguments.length; i < len; i++){
+                                args.push(arguments[i])
+                            }
+                            obj.$$constructor.apply(this, args)
+                        }
+                    }
+                    res.prototype = Object.create(js_constr.prototype)
+                    res.prototype.constructor = res
+                    res.$is_js_func = true
+                    res.$class = obj
+                    obj.$parent_class = js_constr
+                    for(var attr in obj.__dict__.$string_dict){
+                        var value = obj.__dict__.$string_dict[attr][0]
+                        if(typeof value == "function"){
+                            res.prototype[attr] = (function(x){
+                                return function(){
+                                    var args = [this]
+                                    for(var i = 0, len = arguments.length; i < len; i++){
+                                        args.push($B.pyobj2jsobj(arguments[i]))
+                                    }
+                                    return x.apply(this, args)
+                                }
+                            })(value)
+                        }else{
+                            res.prototype[attr] = $B.pyobj2jsobj(value)
+                        }
+                    }
+                    return res
+                }
             }
         },
         JSON: {
@@ -486,6 +519,9 @@
         },
         excepthook: function(exc_class, exc_value, traceback){
             $B.handle_error(exc_value)
+        },
+        gettrace: function(){
+            return $B.tracefunc || _b_.None
         },
         modules: _b_.property.$factory(
             function(){

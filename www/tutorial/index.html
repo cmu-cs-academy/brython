@@ -31,7 +31,12 @@
 from browser import document, highlight, html
 import header
 
-qs_lang, language = header.show()
+tutorial_languages = header.languages.extend(
+  [["br", "Brezhoneg"],
+   ["it", "Italiano"]
+  ])
+  
+qs_lang, language = header.show(tutorial_languages)
 
 # Highlight Python code
 for elt in document.get(selector='.python'):

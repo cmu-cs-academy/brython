@@ -74,7 +74,7 @@ range.__getitem__ = function(self, rank){
             substop = compute_item(self, norm.stop)
         return range.$factory(substart, substop, substep)
     }
-    if(typeof rank != "number") {
+    if(typeof rank != "number"){
       rank = $B.$GetInt(rank)
     }
     if($B.gt(0, rank)){rank = $B.add(rank, range.__len__(self))}

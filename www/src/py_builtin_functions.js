@@ -299,11 +299,10 @@ $B.set_func_names(classmethod, "builtins")
 var code = $B.code = $B.make_class("code")
 
 code.__repr__ = code.__str__ = function(self){
-    return '<code object ' + self.name + ', file ' + self.filename + '>'
+    return '<code object ' + self.co_name + ', file ' + self.co_filename + '>'
 }
 
-code.__getattr__ = function(self, attr){
-    if(attr == "co_code"){return 'co_code'}
+code.__getattribute__ = function(self, attr){
     return self[attr]
 }
 
@@ -747,7 +746,7 @@ function $$eval(src, _globals, _locals){
                 }
             }
             js = root.to_js()
-            
+
             var locals_obj = eval("$locals_" + locals_id),
                 globals_obj = eval("$locals_" + globals_id)
             if(_globals === _b_.None){
@@ -1000,7 +999,7 @@ $B.$getattr = function(obj, attr, _default){
 
     var klass = obj.__class__
 
-    var $test = false // attr == "__eq__" // && obj === $B // "Point"
+    var $test = false // attr == "sup" // && obj === $B // "Point"
     if($test){console.log("$getattr", attr, obj, klass)}
 
     // Shortcut for classes without parents
@@ -1448,6 +1447,12 @@ function isinstance(obj, cls){
         }
         return false
     }
+
+    if(cls.__class__ === $B.GenericAlias){
+        // PEP 585
+        throw _b_.TypeError.$factory(
+            'isinstance() arg 2 cannot be a parameterized generic')
+    }
     if(!cls.__class__ ||
             !(cls.$factory !== undefined || cls.$is_class !== undefined)){
         throw _b_.TypeError.$factory("isinstance() arg 2 must be a type " +
@@ -1512,8 +1517,7 @@ function isinstance(obj, cls){
 function issubclass(klass, classinfo){
     check_no_kw('issubclass', klass, classinfo)
     check_nb_args('issubclass', 2, arguments)
-
-
+    
     if(!klass.__class__ ||
             !(klass.$factory !== undefined || klass.$is_class !== undefined)){
         throw _b_.TypeError.$factory("issubclass() arg 1 must be a class")
@@ -1523,6 +1527,10 @@ function issubclass(klass, classinfo){
            if(issubclass(klass, classinfo[i])){return true}
         }
         return false
+    }
+    if(classinfo.__class__ === $B.GenericAlias){
+        throw _b_.TypeError.$factory(
+            'issubclass() arg 2 cannot be a parameterized generic')
     }
 
     if(classinfo.$factory || classinfo.$is_class){
@@ -2433,20 +2441,36 @@ $B.missing_super2 = function(obj){
 }
 
 var $$super = $B.make_class("super",
-    function (_type1, _type2){
-        var missing2 = false
-        if(Array.isArray(_type2)){
-            _type2 = _type2[0]
-            missing2 = true
+    function (_type, object_or_type){
+        if(_type === undefined && object_or_type === undefined){
+            var frame = $B.last($B.frames_stack),
+                pyframe = $B.imported["_sys"].Getframe()
+            if(pyframe.f_code && pyframe.f_code.co_varnames){
+                _type = frame[1].__class__
+                if(_type === undefined){
+                    throw _b_.RuntimeError.$factory("super(): no arguments")
+                }
+                object_or_type = frame[1][pyframe.f_code.co_varnames[0]]
+            }else{
+                throw _b_.RuntimeError.$factory("super(): no arguments")
+            }
+        }
+        if(Array.isArray(object_or_type)){
+            object_or_type = object_or_type[0]
         }
 
-        return {__class__: $$super,
-            __thisclass__: _type1,
-            __self_class__: _type2,
-            $missing2: missing2
+        return {
+            __class__: $$super,
+            __thisclass__: _type,
+            __self_class__: object_or_type
         }
     }
 )
+
+$$super.__get__ = function(self, instance, klass){
+    // https://www.artima.com/weblogs/viewpost.jsp?thread=236278
+    return $$super.$factory(self.__thisclass__, instance)
+}
 
 $$super.__getattribute__ = function(self, attr){
     var mro = self.__thisclass__.__mro__,
@@ -2455,7 +2479,7 @@ $$super.__getattribute__ = function(self, attr){
     var sc = self.__self_class__
     if(sc !== undefined){
         if(!sc.$is_class){
-            sc = sc.__class__
+            sc = sc.__class__ || $B.get_class(sc)
         }
         // Go up its parent classes until self.__thisclass__ and use
         // the classes of its __mro__ above self.__thisclass__.
@@ -2468,7 +2492,7 @@ $$super.__getattribute__ = function(self, attr){
             }
         }
     }
-    var $test = false // attr == "__init_subclass__"
+    var $test = false // attr == "a"
 
     // search attr in parent classes; same as getattr() but skips __thisclass__
     var f
@@ -2479,6 +2503,17 @@ $$super.__getattribute__ = function(self, attr){
         }
     }
     if(f === undefined){
+        if($$super[attr] !== undefined){
+            return (function(x){
+                return function(){
+                    var args = [x]
+                    for(var i = 0, len = arguments.length; i < len; i++){
+                        args.push(arguments[i])
+                    }
+                    return $$super[attr].apply(null, args)
+                }
+            })(self)
+        }
         if($test){
             console.log("no attr", attr, self, "mro", mro)
         }
@@ -2488,8 +2523,11 @@ $$super.__getattribute__ = function(self, attr){
     if($test){console.log("super", attr, self, "mro", mro,
         "found in mro[0]", mro[0],
         f, f + '')}
-    if(f.$type == "staticmethod" || attr == "__new__"){return f}
-    else{
+    if(f.$type == "staticmethod" || attr == "__new__"){
+        return f
+    }else if(typeof f != "function"){
+        return f
+    }else{
         if(f.__class__ === $B.method){
             // If the function is a bound method, use the underlying function
             f = f.$infos.__func__

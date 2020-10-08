@@ -2732,6 +2732,43 @@ result.append(myvar)
 f()
 assert result == [1, 3, 3]
 
+# issue 1496
+try:
+    exec("not x = 1")
+    raise Exception("should have raised SyntaxError")
+except SyntaxError as exc:
+    assert exc.args[0] == "cannot assign to operator"
+    pass
+
+# issue 1501
+class B:
+  pass
+
+b = B()
+(a := b).c = 7
+assert a.c == 7
+
+try:
+    exec("(a := b) = 1")
+    raise Exception("should have raised SyntaxError")
+except SyntaxError:
+    pass
+
+# issue 1509
+funs = [(lambda i=i: i) for i in range(3)]
+
+t = []
+for f in funs:
+  t.append(f())
+assert t == [0, 1, 2]
+
+# issue 1515
+try:
+    range[0, 8]
+    raise Exception("should have raised TypeError")
+except TypeError as exc:
+    assert exc.args[0] == "'type' object is not subscriptable"
+    
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================
