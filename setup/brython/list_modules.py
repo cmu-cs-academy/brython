@@ -565,8 +565,9 @@ def load_user_modules(module_dir=os.getcwd()):
             name, ext = os.path.splitext(filename)
             if not ext == ".py" or filename == "list_modules.py":
                 continue
+            # Evan: What to do here??
             if dirname == os.getcwd():
-        if dirname == base_dir:
+            # if dirname == base_dir:
                 # modules in the same directory
                 path = os.path.join(dirname, filename)
                 with open(path, encoding="utf-8") as fobj:
