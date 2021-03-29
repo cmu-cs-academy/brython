@@ -13,7 +13,8 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--add_package',
-        help="Add a CPython package in Lib/site-packages")
+        help="Add an already-installed, pure-Python package from current CPython environment "
+            "into current Brython project's ./Lib/site-packages")
 
     parser.add_argument('--install', help='Install Brython in an empty directory',
         action="store_true")
@@ -117,19 +118,32 @@ def main():
         print('Create brython_modules.js for cmu_graphics_bry')
         from . import list_modules
 
-        finder = list_modules.ModulesFinder()
+        print('searching brython_stdlib.js...')
+        stdlib_dir, stdlib = list_modules.load_stdlib_sitepackages()
+
+        print('finding packages...')
+        user_modules = list_modules.load_user_modules()
+        finder = list_modules.ModulesFinder(stdlib=stdlib, user_modules=user_modules)
         # finder.inspect()
         finder.modules = {
             'cmu_graphics_bry', 'sys', 'traceback', 'hashlib', 'random', 'math', 'linecache',
         }
-        finder.make_brython_modules()
+        path = os.path.join(stdlib_dir, "brython_modules.js")
+        finder.make_brython_modules(path)
 
     if args.make_dist:
         print('Make a Python distribution for the application')
         from . import list_modules
-        finder = list_modules.ModulesFinder()
+
+        print('searching brython_stdlib.js...')
+        stdlib_dir, stdlib = list_modules.load_stdlib_sitepackages()
+
+        print('finding packages...')
+        user_modules = list_modules.load_user_modules()
+        finder = list_modules.ModulesFinder(stdlib=stdlib, user_modules=user_modules)
         finder.inspect()
-        finder.make_brython_modules()
+        path = os.path.join(stdlib_dir, "brython_modules.js")
+        finder.make_brython_modules(path)
         finder.make_setup()
         print('done')
 

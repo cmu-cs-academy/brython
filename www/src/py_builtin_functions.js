@@ -250,8 +250,13 @@ function chr(i) {
 
     if(i < 0 || i > 1114111){
         throw _b_.ValueError.$factory('Outside valid range')
+    }else if(i >= 0x10000 && i <= 0x10FFFF){
+        var code = (i - 0x10000)
+        return String.fromCodePoint(0xD800 | (code >> 10)) +
+            String.fromCodePoint(0xDC00 | (code & 0x3FF))
+    }else{
+        return String.fromCodePoint(i)
     }
-    return String.fromCodePoint(i)
 }
 
 //classmethod() (built in class)
@@ -336,7 +341,7 @@ function compile() {
     }
 
     // Run py2js to detect potential syntax errors
-    $B.py2js($.source, module_name, module_name)
+    $B.py2js({src: $.source, filename: $.filename}, module_name, module_name)
     return $
 }
 
@@ -590,10 +595,10 @@ function $$eval(src, _globals, _locals){
                 binding: {}
             }
             for(var attr in _globals.$string_dict){
-                grandparent_scope.binding[attr] = true
+                grandparent_scope.binding[$B.to_alias(attr)] = true
             }
             for(var attr in _locals.$string_dict){
-                parent_scope.binding[attr] = true
+                parent_scope.binding[$B.to_alias(attr)] = true
             }
         }
     }
@@ -628,7 +633,7 @@ function $$eval(src, _globals, _locals){
         for(var item in items){
             var item1 = $B.to_alias(item)
             try{
-                eval('$locals_' + globals_id + '["' + item + '"] = items.' + item)
+                eval('$locals_' + globals_id + '["' + item1 + '"] = items.' + item)
             }catch(err){
                 console.log(err)
                 console.log('error setting', item)
@@ -654,18 +659,19 @@ function $$eval(src, _globals, _locals){
             eval('$locals_' + locals_id + " = obj")
         }
     }else{
-        var locals_is_dict = false
+        var items
         if(_locals.$jsobj){
-            var items = _locals.$jsobj
+            items = _locals.$jsobj
+        }else if(_locals.__class__ !== _b_.dict){
+            items = _locals
         }else{
-            locals_id_dict = true
-            var items = _b_.dict.$to_obj(_locals)
+            items = _b_.dict.$to_obj(_locals)
             _locals.$jsobj = items
         }
         for(var item in items){
             var item1 = $B.to_alias(item)
             try{
-                eval('$locals_' + locals_id + '["' + item + '"] = items.' + item)
+                eval('$locals_' + locals_id + '["' + item1 + '"] = items.' + item)
             }catch(err){
                 console.log(err)
                 console.log('error setting', item)
@@ -675,6 +681,9 @@ function $$eval(src, _globals, _locals){
         // Attribute $exec_locals is used in py_utils.$search to raise
         // NameError instead of UnboundLocalError
         eval("$locals_" + locals_id + ".$exec_locals = true")
+        eval("$locals_" + locals_id + ".$is_not_dict = " +
+            (_locals.__class__ !== _b_.dict))
+
     }
     _locals.$is_namespace = true
 
@@ -686,7 +695,8 @@ function $$eval(src, _globals, _locals){
 
     var root = $B.py2js(src, globals_id, locals_id, parent_scope),
         js, gns, lns
-    if(_globals !== _b_.None && _locals == _b_.None){
+    if(_globals !== _b_.None &&
+            (_locals === _b_.None || _locals === _globals)){
         for(var attr in _globals.$string_dict){
             root.binding[attr] = true
         }
@@ -757,7 +767,6 @@ function $$eval(src, _globals, _locals){
             }else{
                 current_globals_obj = current_frame[3]
                 current_locals_obj = current_frame[1]
-
                 var res = new Function("$locals_" + globals_id,
                     "$locals_" + locals_id,
                     "$locals_" + current_globals_id,
@@ -775,6 +784,7 @@ function $$eval(src, _globals, _locals){
             js = root.to_js()
             var res = eval(js)
         }
+
 
         if($.src.filename == "<console>" && $.src.mode == "single" &&
                 res !== undefined && res !== _b_.None){
@@ -794,6 +804,8 @@ function $$eval(src, _globals, _locals){
                 if(attr1.charAt(0) != '$'){
                     if(_locals.$jsobj){
                         _locals.$jsobj[attr] = lns[attr]
+                    }else if(_locals.__class__ !== _b_.dict){
+                        $B.$setitem(_locals, attr1, lns[attr])
                     }else{
                         _b_.dict.$setitem(_locals, attr1, lns[attr])
                     }
@@ -846,6 +858,9 @@ function $$eval(src, _globals, _locals){
         err.module = globals_id
         if(err.$py_error === undefined){
             throw $B.exception(err)
+        }
+        if(globals_is_dict){
+            delete _globals.$jsobj
         }
         throw err
     }finally{
@@ -971,7 +986,6 @@ function in_mro(klass, attr){
 }
 
 $B.$getattr = function(obj, attr, _default){
-
     // Used internally to avoid having to parse the arguments
 
     attr = $B.to_alias(attr)
@@ -999,14 +1013,18 @@ $B.$getattr = function(obj, attr, _default){
 
     var klass = obj.__class__
 
-    var $test = false // attr == "sup" // && obj === $B // "Point"
+    var $test = false // attr == "__ceil__" // && obj === $B // "Point"
     if($test){console.log("$getattr", attr, obj, klass)}
 
     // Shortcut for classes without parents
     if(klass !== undefined && klass.__bases__ &&
+            klass.__getattribute__ === undefined &&
             (klass.__bases__.length == 0 ||
                 (klass.__bases__.length == 1 &&
                  klass.__bases__[0] === _b_.object))){
+        if($test){
+            console.log("class without parent")
+        }
         if(obj.hasOwnProperty(attr)){
             return obj[attr]
         }else if(obj.__dict__ &&
@@ -1218,7 +1236,7 @@ $B.$getattr = function(obj, attr, _default){
         console.log(attr + ' is not a function ' + attr_func, klass)
     }
     var odga = _b_.object.__getattribute__
-    if($test){console.log("attr_func is odga", attr_func,
+    if($test){console.log("attr_func is odga ?", attr_func,
         attr_func === odga, obj[attr])}
     if(attr_func === odga){
         var res = obj[attr]
@@ -1226,8 +1244,9 @@ $B.$getattr = function(obj, attr, _default){
             // Special case for list subclasses. Cf issue 1081.
             res = undefined
         }
-        if(res === null){return null}
-        else if(res === undefined && obj.hasOwnProperty(attr)){
+        if(res === null){
+            return null
+        }else if(res === undefined && obj.hasOwnProperty(attr)){
             return res
         }else if(res !== undefined){
             if($test){console.log(obj, attr, obj[attr],
@@ -1276,8 +1295,12 @@ function globals(){
 function hasattr(obj,attr){
     check_no_kw('hasattr', obj, attr)
     check_nb_args('hasattr', 2, arguments)
-    try{$B.$getattr(obj,attr); return true}
-    catch(err){return false}
+    try{
+        $B.$getattr(obj,attr)
+        return true
+    }catch(err){
+        return false
+    }
 }
 
 var hash_cache = {}
@@ -1517,7 +1540,7 @@ function isinstance(obj, cls){
 function issubclass(klass, classinfo){
     check_no_kw('issubclass', klass, classinfo)
     check_nb_args('issubclass', 2, arguments)
-    
+
     if(!klass.__class__ ||
             !(klass.$factory !== undefined || klass.$is_class !== undefined)){
         throw _b_.TypeError.$factory("issubclass() arg 1 must be a class")
@@ -1726,7 +1749,9 @@ function $extreme(args, op){ // used by min() and max()
             }
         }
     }
-    if(!func){func = function(x){return x}}
+    if((! func) || func === _b_.None){
+        func = function(x){return x}
+    }
     if(nb_args == 0){
         throw _b_.TypeError.$factory($op_name + " expected 1 argument, got 0")
     }else if(nb_args == 1){
@@ -1913,6 +1938,8 @@ var NotImplementedType = $B.make_class("NotImplementedType",
 NotImplementedType.__repr__ = NotImplementedType.__str__ = function(self){
     return "NotImplemented"
 }
+$B.set_func_names(NotImplementedType, "builtins")
+
 var NotImplemented = {
     __class__: NotImplementedType
 }
@@ -1934,23 +1961,28 @@ function ord(c) {
         if(c.length == 1){
             return c.charCodeAt(0)
         }
-        throw _b_.TypeError.$factory('ord() expected a character, but ' +
-            'string of length ' + c.length + ' found')
+        if((0xD800 <= c[0] && c[0] <= 0xDBFF) ||
+                (0xDC00 <= c[1] && c[1] <= 0xDFFF)){
+            throw _b_.TypeError.$factory('ord() expected a character, but ' +
+                'string of length ' + c.length + ' found')
+        }
+        var code = 0x10000
+        code += (c.charCodeAt(0) & 0x03FF) << 10
+        code += (c.charCodeAt(1) & 0x03FF)
+        return code
     }
     switch($B.get_class(c)){
       case _b_.str:
-        if(c.length == 1){return c.charCodeAt(0)} // <= strobj.charCodeAt(index)
-        throw _b_.TypeError.$factory('ord() expected a character, but ' +
-            'string of length ' + c.length + ' found')
-      case _b_.str.$surrogate:
-        if(c.items.length == 1){
-            return c.items[0].codePointAt(0)
+        if(c.length == 1){
+            return c.charCodeAt(0)
         }
         throw _b_.TypeError.$factory('ord() expected a character, but ' +
-            'string of length ' + c.items.length + ' found')
+            'string of length ' + c.length + ' found')
       case _b_.bytes:
       case _b_.bytearray:
-        if(c.source.length == 1){return c.source[0]} // <= strobj.charCodeAt(index)
+        if(c.source.length == 1){
+            return c.source[0]
+        }
         throw _b_.TypeError.$factory('ord() expected a character, but ' +
             'string of length ' + c.source.length + ' found')
       default:
@@ -1984,16 +2016,17 @@ function $print(){
     var end = (ks['end'] === undefined || ks['end'] === None) ? '\n' : ks['end'][0],
         sep = (ks['sep'] === undefined || ks['sep'] === None) ? ' ' : ks['sep'][0],
         file = ks['file'] === undefined ? $B.stdout : ks['file'][0],
-        args = $ns['args']
+        args = $ns['args'],
+        writer = $B.$getattr(file, 'write')
     var items = []
-    args.forEach(function(arg){
-        items.push(_b_.str.$factory(arg))
-    })
-    // Special handling of \a and \b
-    var res = items.join(sep) + end
-    res = res.replace(new RegExp("\u0007", "g"), "").
-              replace(new RegExp("(.)\b", "g"), "")
-    $B.$getattr(file, 'write')(res)
+    for(var i = 0, len = args.length; i < len; i++){
+        var arg = _b_.str.$factory(args[i])
+        writer(arg)
+        if(i < len - 1){
+            writer(sep)
+        }
+    }
+    writer(end)
     var flush = $B.$getattr(file, 'flush', None)
     if(flush !== None){
         flush()
@@ -2187,8 +2220,8 @@ $B.$setattr = function(obj, attr, value){
 
     // Used in the code generated by py2js. Avoids having to parse the
     // since we know we will get the 3 values
-    var $test = false // attr === "onkeydown" // && value == "my doc."
-
+    var $test = false // attr === "__module__" // && value == "my doc."
+    var unaliased = $B.from_alias(attr)
     if($B.aliased_names[attr]){
         attr = '$$' + attr
     }else if(attr == '__dict__'){
@@ -2237,6 +2270,15 @@ $B.$setattr = function(obj, attr, value){
                 metaclass[attr].__set__){
             metaclass[attr].__set__(obj, value)
             return None
+        }
+        if(attr == "__module__"){
+            obj.$infos.__module__ = value
+            return _b_.None
+        }
+        if(obj.$infos && obj.$infos.__module__ == "builtins"){
+            throw _b_.TypeError.$factory(
+                "can't set attributes of built-in/extension type '" +
+                    obj.$infos.__name__ + "'")
         }
         obj[attr] = value
         if(attr == "__init__" || attr == "__new__"){
@@ -2345,12 +2387,12 @@ $B.$setattr = function(obj, attr, value){
             return []
         }
         var has_slot = false
-        if(mangled_slots(klass).indexOf(attr) > -1){
+        if(mangled_slots(klass).indexOf(unaliased) > -1){
             has_slot = true
         }else{
             for(var i = 0; i < klass.__mro__.length; i++){
                 var kl = klass.__mro__[i]
-                if(mangled_slots(kl).indexOf(attr) > - 1){
+                if(mangled_slots(kl).indexOf(unaliased) > - 1){
                     has_slot = true
                     break
                 }
@@ -2358,7 +2400,7 @@ $B.$setattr = function(obj, attr, value){
         }
         if(! has_slot){
             throw _b_.AttributeError.$factory("'"  + klass.$infos.__name__ +
-            "' object has no attribute '" + attr + "'")
+            "' object has no attribute '" + unaliased + "'")
         }
     }
     if($test){console.log("attr", attr, "use _setattr", _setattr)}
@@ -2366,7 +2408,7 @@ $B.$setattr = function(obj, attr, value){
         if(obj.__dict__ === undefined){
             obj[attr] = value
         }else{
-            _b_.dict.$setitem(obj.__dict__, attr, value)
+            _b_.dict.$setitem(obj.__dict__, unaliased, value)
         }
         if($test){
             console.log("no setattr, obj", obj)
@@ -2476,6 +2518,14 @@ $$super.__getattribute__ = function(self, attr){
     var mro = self.__thisclass__.__mro__,
         res
 
+    if(self.__thisclass__.$is_js_class){
+        if(attr == "__init__"){
+            // use call on parent
+            return function(){
+                mro[0].$js_func.call(self.__self_class__, ...arguments)
+            }
+        }
+    }
     var sc = self.__self_class__
     if(sc !== undefined){
         if(!sc.$is_class){
@@ -2895,34 +2945,70 @@ var zip = $B.make_class("zip",
             __class__:zip,
             items:[]
         }
-        if(arguments.length == 0) return res
+        if(arguments.length == 0){
+            return res
+        }
         var $ns = $B.args('zip', 0, {}, [], arguments, {}, 'args', 'kw')
         var _args = $ns['args']
-        var args = []
-        for(var i = 0; i < _args.length; i++){args.push(iter(_args[i]))}
+        var args = [],
+            nexts = [],
+            only_lists = true,
+            min_len
+
+        for(var i = 0; i < _args.length; i++){
+            if(only_lists && Array.isArray(_args[i])){
+                if(min_len === undefined || _args[i].length < min_len){
+                    min_len = _args[i].length
+                }
+            }else{
+                only_lists = false
+            }
+            var _next = $B.$call($B.$getattr(iter(_args[i]), "__next__"))
+            args.push(_next)
+        }
+
         var rank = 0,
             items = []
-        while(1){
-            var line = [], flag = true
-            for(var i = 0; i < args.length; i++){
-                try{
-                    line.push(next(args[i]))
-                }catch(err){
-                    if(err.__class__ == _b_.StopIteration){
-                        flag = false
-                        break
-                    }else{throw err}
+        if(only_lists){
+            $B.nb_zip_list = $B.nb_zip_list === undefined ?
+                1 : $B.nb_zip_list + 1
+            for(var i = 0; i < min_len; i++){
+                var line = []
+                for(var j = 0; j < _args.length; j++){
+                    line.push(_args[j][i])
                 }
+                items.push($B.fast_tuple(line))
             }
-            if(!flag){break}
-            items[rank++] = _b_.tuple.$factory(line)
+            res.items = items
+            return zip_iterator.$factory(items)
         }
-        res.items = items
-        return res
+        function* iterator(args){
+            while(true){
+                var line = [],
+                    flag = true
+                for(var i = 0; i < args.length; i++){
+                    try{
+                        line.push($B.$call(args[i])())
+                    }catch(err){
+                        if(err.__class__ == _b_.StopIteration){
+                            flag = false
+                            break
+                        }else{
+                            throw err
+                        }
+                    }
+                }
+                if(! flag){
+                    return
+                }
+                yield $B.fast_tuple(line)
+            }
+        }
+        return $B.generator.$factory(iterator, 'zip')(args)
     }
 )
 
-var zip_iterator = $B.make_iterator_class('zip_iterator')
+var zip_iterator = $B.make_iterator_class('zip')
 
 zip.__iter__ = function(self){
     return zip_iterator.$factory(self.items)
@@ -3153,7 +3239,11 @@ $B.builtin_funcs = [
     "sorted", "sum", "vars"
 ]
 
-var builtin_function = $B.builtin_function = $B.make_class("builtin_function_or_method")
+var builtin_function = $B.builtin_function = $B.make_class(
+    "builtin_function_or_method", function(f){
+        f.__class__ = builtin_function
+        return f
+    })
 
 builtin_function.__getattribute__ = $B.Function.__getattribute__
 builtin_function.__reduce_ex__ = builtin_function.__reduce__ = function(self){

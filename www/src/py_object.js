@@ -112,7 +112,7 @@ object.__getattribute__ = function(obj, attr){
     var klass = obj.__class__ || $B.get_class(obj),
         is_own_class_instance_method = false
 
-    var $test = false // attr == "select"
+    var $test = false // attr == "__ceil__"
     if($test){console.log("attr", attr, "de", obj, "klass", klass)}
     if(attr === "__class__"){
         return klass
@@ -124,12 +124,13 @@ object.__getattribute__ = function(obj, attr){
     }
 
     if(res === undefined && obj.__dict__){
-        var dict = obj.__dict__
-        if(dict.$string_dict.hasOwnProperty(attr)){
+        var dict = obj.__dict__,
+            attr1 = $B.from_alias(attr)
+        if(dict.$string_dict.hasOwnProperty(attr1)){
             if($test){
-                console.log("__dict__ hasOwnProperty", attr, dict.$string_dict[attr])
+                console.log("__dict__ hasOwnProperty", attr1, dict.$string_dict[attr1])
             }
-            return dict.$string_dict[attr][0]
+            return dict.$string_dict[attr1][0]
         }
     }
 
@@ -197,9 +198,11 @@ object.__getattribute__ = function(obj, attr){
                 return __get__.apply(null, [obj, klass])
             }
             catch(err){
+                /*
                 console.log('error in get.apply', err)
                 console.log("get attr", attr, "of", obj)
                 console.log(__get__ + '')
+                */
                 throw err
             }
         }
@@ -218,7 +221,11 @@ object.__getattribute__ = function(obj, attr){
         if(__get__ !== null){ // descriptor
             res.__name__ = attr
             // __new__ is a static method
-            if(attr == "__new__"){res.$type = "staticmethod"}
+            // ... and so are builtin functions (is this documented ?)
+            if(attr == "__new__" ||
+                    res.__class__ === $B.builtin_function){
+                res.$type = "staticmethod"
+            }
             var res1 = __get__.apply(null, [res, obj, klass])
             if($test){console.log("res", res, "res1", res1)}
 

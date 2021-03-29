@@ -29,6 +29,8 @@ var long_int = {
     }
 }
 
+var max_safe_divider = $B.max_int / 9
+
 function add_pos(v1, v2){
     // Add two positive numbers
     // v1, v2 : strings
@@ -160,63 +162,39 @@ function divmod_by_safe_int(t, n){
 
     if(n == 1){return [t, 0]}
 
-    // Number of digits such that each intermediate result is a safe integer
-    var len = (Math.floor((Math.pow(2, 53) - 1) / n) + '').length - 1,
-        nb_chunks = Math.ceil(t.length / len), // number of items after split
-        chunks = [],
-        pos,
-        start,
-        nb,
-        in_base = []
+    // Manual division algorithm for Q = A / B
+    // L is the length of B
+    // First take the L first digits in A : gives number A0
+    // First quotient digit Q0 = A0 // B
+    // Rest R0 = A0 - B * Q0
+    // A1 is R0 + the next digit in A
+    // Continue until all digits in A are read
 
-    // Split string into chunks of at most len digits
-    for(var i = 0; i < nb_chunks; i++){
-        pos = t.length - (i + 1) * len
-        start = Math.max(0, pos)
-        nb = pos - start
-        chunks.push(t.substr(start, len + nb))
+    var T = t.toString(),
+        L = n.toString().length,
+        a = parseInt(T.substr(0, L)),
+        next_pos = L - 1,
+        quotient = '',
+        q,
+        rest
+
+    while(true){
+        q = Math.floor(a / n)
+        rest = a - q * n
+        quotient += q
+        next_pos++
+        if(next_pos >= T.length){
+            return [quotient, rest]
+        }
+        a = 10 * rest + parseInt(T[next_pos])
     }
-    chunks = chunks.reverse()
-
-    // Transform into (safe) integers
-    chunks.forEach(function(chunk, i){
-        chunks[i] = parseInt(chunk)
-    })
-
-    var rest,
-        carry = Math.pow(10, len),
-        x
-
-    chunks.forEach(function(chunk, i){
-        rest = chunk % n
-        chunks[i] = Math.floor(chunk / n)
-        if(i < chunks.length - 1){
-            // len is such that that this number is a safe integer
-            chunks[i + 1] += carry * rest
-        }
-    })
-    while(chunks[0] == 0){
-        chunks.shift()
-        if(chunks.length == 0){
-            return [0, rest]
-        }
-    }
-
-    // Build result string
-    x = chunks[0] + ''
-    chunks.forEach(function(chunk, i){
-        if(i > 0){ // Pad with 0 if required
-            x += "0".repeat(len - chunk.toString().length) + chunk
-        }
-    })
-    return [x, rest]
 }
 
 function divmod_pos(v1, v2){
     // v1, v2 : strings, represent 2 positive integers A and B
     // Return [a, b] where a and b are instances of long_int
     // a = A // B, b = A % B
-    if(window.BigInt){
+    if($B.BigInt){
         var a = {
             __class__: long_int,
             value: (BigInt(v1) / BigInt(v2)).toString(),
@@ -241,7 +219,7 @@ function divmod_pos(v1, v2){
             {__class__:long_int, value: rest.toString(), pos: true}
         ]
         return res1
-    }else if(iv2 < $B.max_int){
+    }else if(iv2 < max_safe_divider){
         var res_safe = divmod_by_safe_int(v1, iv2)
         return [long_int.$factory(res_safe[0]), long_int.$factory(res_safe[1])]
     }
@@ -324,11 +302,9 @@ function split_chunks(s, size){
 }
 
 function mul_pos(x, y){
-    if(window.BigInt){
-        return {__class__: long_int,
-                value: (BigInt(x) * BigInt(y)).toString(),
-                pos: true
-        }
+    if($B.BigInt){
+        // always return a long int
+        return long_int.$factory(from_BigInt(BigInt(x) * BigInt(y)))
     }
     var ix = parseInt(x),
         iy = parseInt(y),
@@ -454,6 +430,10 @@ function to_BigInt(x){
     return -res
 }
 
+function to_int(long_int){
+    return long_int.pos ? parseInt(long_int.value) : -parseInt(long_int.value)
+}
+
 function from_BigInt(y){
     var pos = y >= 0
     y = y.toString()
@@ -487,13 +467,76 @@ long_int.$from_float = function(value){
     return {__class__: long_int, value: v, pos: value >= 0}
 }
 
+function preformat(self, fmt){
+    if(fmt.empty){return _b_.str.$factory(self)}
+    if(fmt.type && 'bcdoxXn'.indexOf(fmt.type) == -1){
+        throw _b_.ValueError.$factory("Unknown format code '" + fmt.type +
+            "' for object of type 'int'")
+    }
+    var res
+    switch(fmt.type){
+        case undefined:
+        case "d":
+            res = self.toString()
+            break
+        case "b":
+            res = (fmt.alternate ? "0b" : "") + BigInt(self.value).toString(2)
+            break
+        case "c":
+            res = _b_.chr(self)
+            break
+        case "o":
+            res = (fmt.alternate ? "0o" : "") + BigInt(self.value).toString(8)
+            break
+        case "x":
+            res = (fmt.alternate ? "0x" : "") + BigInt(self.value).toString(16)
+            break
+        case "X":
+            res = (fmt.alternate ? "0X" : "") + BigInt(self.value).toString(16).toUpperCase()
+            break
+        case "n":
+            return self // fix me
+    }
+
+    if(fmt.sign !== undefined){
+        if((fmt.sign == " " || fmt.sign == "+" ) && self >= 0){
+            res = fmt.sign + res
+        }
+    }
+    return res
+}
+
+
+long_int.__format__ = function(self, format_spec){
+    var fmt = new $B.parse_format_spec(format_spec)
+    if(fmt.type && 'eEfFgG%'.indexOf(fmt.type) != -1){
+        // Call __format__ on float(self)
+        return _b_.float.__format__(self, format_spec)
+    }
+    fmt.align = fmt.align || ">"
+    var res = preformat(self, fmt)
+    if(fmt.comma){
+        var sign = res[0] == "-" ? "-" : "",
+            rest = res.substr(sign.length),
+            len = rest.length,
+            nb = Math.ceil(rest.length/3),
+            chunks = []
+        for(var i = 0; i < nb; i++){
+            chunks.push(rest.substring(len - 3 * i - 3, len - 3 * i))
+        }
+        chunks.reverse()
+        res = sign + chunks.join(",")
+    }
+    return $B.format_width(res, fmt)
+}
+
 long_int.__abs__ = function(self){
     return {__class__: long_int, value: self.value, pos: true}
 }
 
 long_int.__add__ = function(self, other){
     if(isinstance(other, _b_.float)){
-        return _b_.float.$factory(parseInt(self.value) + other.value)
+        return _b_.float.$factory(to_int(self) + other)
     }
     if(typeof other == "number"){
         other = long_int.$factory(_b_.str.$factory(other))
@@ -508,7 +551,7 @@ long_int.__add__ = function(self, other){
         }
     }
     if($B.BigInt){
-        //return from_BigInt(to_BigInt(self) + to_BigInt(other))
+        return from_BigInt(to_BigInt(self) + to_BigInt(other))
     }
 
     // Addition of "self" and "other"
@@ -639,14 +682,17 @@ long_int.__eq__ = function(self, other){
 }
 
 long_int.__float__ = function(self){
+    if(! isFinite(parseFloat(self.value))){
+        throw _b_.OverflowError.$factory("int too big to convert to float")
+    }
     return new Number(parseFloat(self.value))
 }
 
 long_int.__floordiv__ = function(self, other){
     if(isinstance(other, _b_.float)){
-        return _b_.float.$factory(parseInt(self.value) / other)
+        return _b_.float.$factory(to_int(self) / other)
     }
-    if(typeof other == "number"){
+    if(typeof other == "number" && Math.abs(other) < $B.max_safe_divider){
         var t = self.value,
             res = divmod_by_safe_int(t, other),
             pos = other > 0 ? self.pos : !self.pos
@@ -654,7 +700,8 @@ long_int.__floordiv__ = function(self, other){
                 value: res[0],
                 pos: pos}
     }
-    return intOrLong(long_int.__divmod__(self, other)[0])
+    var res = intOrLong(long_int.__divmod__(self, other)[0])
+    return res
 }
 
 long_int.__ge__ = function(self, other){
@@ -797,7 +844,7 @@ long_int.__mul__ = function(self, other){
             else{return -self}
     }
     if(isinstance(other, _b_.float)){
-        return _b_.float.$factory(parseInt(self.value) * other)
+        return _b_.float.$factory(to_int(self) * other)
     }
     if(typeof other == "number"){
         other = long_int.$factory(other)
@@ -984,7 +1031,7 @@ long_int.__str__ = long_int.__repr__ = function(self){
 long_int.__sub__ = function(self, other){
     if(isinstance(other, _b_.float)){
         other = other instanceof Number ? other : other.$brython_value
-        return _b_.float.$factory(parseInt(self.value) - other)
+        return _b_.float.$factory(to_int(self) - other)
     }
     if(typeof other == "number"){
         other = long_int.$factory(_b_.str.$factory(other))
@@ -1032,11 +1079,11 @@ long_int.__sub__ = function(self, other){
 
 long_int.__truediv__ = function(self, other){
     if(isinstance(other, long_int)){
-        return _b_.float.$factory(parseInt(self.value) / parseInt(other.value))
+        return _b_.float.$factory(to_int(self) / to_int(other))
     }else if(isinstance(other,_b_.int)){
-        return _b_.float.$factory(parseInt(self.value) / other)
+        return _b_.float.$factory(to_int(self) / other)
     }else if(isinstance(other,_b_.float)){
-        return _b_.float.$factory(parseInt(self.value)/other)
+        return _b_.float.$factory(to_int(self) / other)
     }else{throw TypeError.$factory(
         "unsupported operand type(s) for /: 'int' and '" +
         $B.class_name(other) + "'")}
@@ -1057,6 +1104,9 @@ long_int.__xor__ = function(self, other){
     return intOrLong(long_int.$factory(res, 2))
 }
 
+long_int.bit_length = function(self){
+    return binary(self).length
+}
 // descriptors
 long_int.numerator = function(self){return self}
 long_int.denominator = function(self){return _b_.int.$factory(1)}
@@ -1078,6 +1128,32 @@ long_int.to_base = function(self, base){
     }
     return res
 }
+
+long_int.to_bytes = function(self, len, byteorder, signed){
+    // The integer is represented using len bytes. An OverflowError is raised
+    // if the integer is not representable with the given number of bytes.
+    var res = [],
+        v = self.value
+    if(! $B.$bool(signed) && ! self.pos){
+        throw _b_.OverflowError.$factory("can't convert negative int to unsigned")
+    }
+    while(v > 0){
+        var dm = divmod_pos(v, 256)
+        v = parseInt(dm[0].value)
+        res.push(parseInt(dm[1].value))
+        if(res.length > len){
+            throw _b_.OverflowError.$factory("int too big to convert")
+        }
+    }
+    while(res.length < len){
+        res.push(0)
+    }
+    if(byteorder == 'big'){
+        res.reverse()
+    }
+    return _b_.bytes.$factory(res)
+}
+
 
 function digits(base){
     // Return an object where keys are all the digits valid in specified base
@@ -1139,7 +1215,7 @@ long_int.$factory = function(value, base){
             "long_int.$factory() base must be >= 2 and <= 36")
     }
     if(typeof value == "number"){
-        var pos = value > 0,
+        var pos = value >= 0,
             value = Math.abs(value),
             res
         if(isSafeInteger(value)){
@@ -1275,4 +1351,10 @@ $B.set_func_names(long_int, "builtins")
 
 $B.long_int = long_int
 
+$B.fast_long_int = function(value, pos){
+    return {__class__: $B.long_int,
+            value: value,
+            pos: pos
+           }
+}
 })(__BRYTHON__)

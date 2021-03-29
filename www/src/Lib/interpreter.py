@@ -1,4 +1,6 @@
 import sys
+import builtins
+
 import tb as traceback
 
 from browser import console, document, window, html, DOMNode
@@ -63,7 +65,11 @@ class Info:
 editor_ns = {
     'credits': Info(_credits),
     'copyright': Info(_copyright),
-    'license': Info(_license)
+    'license': Info(_license),
+    '__annotations__': {},
+    '__builtins__': builtins,
+    '__doc__': None,
+    '__name__': '__main__'
 }
 
 # default style for console textarea
@@ -100,7 +106,8 @@ class Interpreter:
 
     def __init__(self, elt_id=None, title="Interactive Interpreter",
                  globals=None, locals=None,
-                 rows=30, cols=84, default_css=True):
+                 rows=30, cols=84, default_css=True,
+                 clear_zone=True, banner=True):
         """
         Create the interpreter.
         - "elt_id" is the id of a textarea in the document. If not set, a new
@@ -141,8 +148,15 @@ class Interpreter:
                 raise ValueError("element should be a string or " +
                     f"a TEXTAREA, got '{elt_id.__class__.__name__}'")
         v = sys.implementation.version
-        self.zone.value = (f"Brython {v[0]}.{v[1]}.{v[2]} on " +
-            f"{window.navigator.appName} {window.navigator.appVersion}\n>>> ")
+        if clear_zone:
+            self.zone.value = ''
+        if banner:
+            self.zone.value += (
+                f"Brython {v[0]}.{v[1]}.{v[2]} on "
+                f"{window.navigator.appName} {window.navigator.appVersion}"
+                "\n"
+            )
+        self.zone.value += ">>> "
         self.cursor_to_end()
         self._status = "main"
         self.current = 0
@@ -190,12 +204,12 @@ class Interpreter:
                 return
             src = self.zone.value
             if self._status == "main":
-                currentLine = src[src.rfind('>>>') + 4:]
+                currentLine = src[src.rfind('\n>>>') + 5:]
             elif self._status == "3string":
-                currentLine = src[src.rfind('>>>') + 4:]
+                currentLine = src[src.rfind('\n>>>') + 5:]
                 currentLine = currentLine.replace('\n... ', '\n')
             else:
-                currentLine = src[src.rfind('...') + 4:]
+                currentLine = src[src.rfind('\n...') + 5:]
             if self._status == 'main' and not currentLine.strip():
                 self.zone.value += '\n>>> '
                 event.preventDefault()
@@ -205,7 +219,7 @@ class Interpreter:
             self.current = len(self.history)
             if self._status in ["main", "3string"]:
                 try:
-                    _ = editor_ns['_'] = eval(currentLine,
+                    _ = self.globals['_'] = eval(currentLine,
                                               self.globals,
                                               self.locals)
                     self.flush()
@@ -303,12 +317,6 @@ class Interpreter:
             if (lstart == -1 and len(src) < 5) or (len(src) - lstart < 6):
                 event.preventDefault()
                 event.stopPropagation()
-        elif event.ctrlKey and event.keyCode == 65: # ctrl+a
-            src = self.zone.value
-            pos = self.zone.selectionStart
-            col = get_col()
-            self.zone.setSelectionRange(pos - col + 4, len(src))
-            event.preventDefault()
         elif event.keyCode in [33, 34]: # page up, page down
             event.preventDefault()
 
@@ -332,7 +340,7 @@ class Interpreter:
         self.zone.value += trace.format()
 
     def syntax_error(self, args):
-        info, filename, lineno, offset, line = args
+        info, [filename, lineno, offset, line] = args
         print(f"  File {filename}, line {lineno}")
         print("    " + line)
         print("    " + offset * " " + "^")

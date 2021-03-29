@@ -605,4 +605,50 @@ class D(C):
 d = D()
 assert d.sup.a == 1
 
+# class attributes set to builtin functions became *static* methods for
+# instances (is this documented ?)
+def not_builtin(instance, x):
+    return x
+
+class WithBuiltinFuncs:
+
+    builtin_func = abs
+    not_builtin_func = not_builtin
+
+    def test(self):
+        # self.not_builtin_func(x) is self.__class__.not_builtin_func(self, x)
+        assert self.not_builtin_func(3) == 3
+        # self.builtin_func(x) is self.__class__.builtin_func(x)
+        assert self.builtin_func(-2) == 2
+
+WithBuiltinFuncs().test()
+
+# Set attributes with aliased names
+class A:
+
+    def __init__(self):
+        self.length = 0
+
+
+a = A()
+a.message = "test"
+assert a.__dict__["message"] == "test"
+assert a.length == 0
+
+# issue 1551
+class MyClass:
+
+    def __init__(self):
+       self.x = 1
+
+    def __getattribute__(self, name):
+        raise Exception("This will never happen")
+
+
+m = MyClass()
+try:
+    m.x
+except Exception as exc:
+    assert exc.args[0] == "This will never happen"
+
 print('passed all tests..')

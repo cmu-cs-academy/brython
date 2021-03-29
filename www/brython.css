@@ -129,7 +129,7 @@ a.glink {
   text-decoration:underline;
 }
 
-a.navig:link,a:link,a:hover,a:visited,a.navig:visited {
+a, a:link, a:visited, a.navig:link,a.navig:visited {
   color:var(--dark-1);
   text-decoration:none;
 }
@@ -210,13 +210,7 @@ select.language {
 }
 
 .pycode-in-html{
-    font-size: 0.9em;
     display: block;
-    background-color:var(--clear-2);
-    color: var(--dark-1);
-    width:auto;
-    padding:0px 8px 8px 8px;
-    font-family: "Consolas";
 }
 
 .xml{
@@ -274,6 +268,23 @@ span.python-builtin{
     color: #963;
 }
 
+/* colors for highlighted html */
+
+span.html-tag{
+  color: blue;
+}
+
+span.html-attrs{
+  color: green;
+}
+
+/* style for Python code inside HTML tag <script> */
+
+.python-in-html{
+  background-color: var(--clear-2)
+}
+
+
 code {
   color:var(--dark-3);
   font-family: Consolas;
@@ -308,5 +319,4 @@ strong {
   min-width:200px;
   padding:5px
 }
-
 

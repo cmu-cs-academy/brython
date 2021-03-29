@@ -314,4 +314,37 @@ L = [P(7), P(3), P(5), P(1), P(3)]
 L.sort()
 assert L == [P(1), P(3), P(3), P(5), P(7)]
 
+# issue 1593
+t = [1, 2, 3]
+try:
+    t[1.1]
+    raise Exception("should have raised TypeError")
+except TypeError:
+    pass
+
+# issue 1630
+t = (1, 2)
+try:
+    t.first = 1
+    raise AssertionError("should have raised AttributeError")
+except AttributeError:
+    pass
+
+# issue 1641
+tup = (1, 2, 3)
+
+try:
+    tup[0] = 0
+    raise AssertionError("should have raised TypeError")
+except TypeError as exc:
+    assert exc.args[0] == \
+      "'tuple' object does not support item assignment"
+
+try:
+    tuple.__setitem__ = 0
+    raise AssertionError("should have raised TypeError")
+except TypeError as exc:
+    assert exc.args[0] == \
+        "can't set attributes of built-in/extension type 'tuple'"
+        
 print("passed all tests..")

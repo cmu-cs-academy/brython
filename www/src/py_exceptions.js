@@ -56,8 +56,8 @@ $B.$syntax_err_line = function(exc, module, src, pos, line_num){
         module = module.charAt(0) == "$" ? "<string>" : module
     if(src === undefined){
         exc.$line_info = line_num + ',' + module
-        exc.args = _b_.tuple.$factory([$B.$getitem(exc.args, 0), module,
-            line_num, 0, 0])
+        exc.args = $B.fast_tuple([$B.$getitem(exc.args, 0),
+            $B.fast_tuple([module, line_num, 0, 0])])
     }else{
         var line_pos = {1:0}
         for(var i = 0, len = src.length; i < len; i++){
@@ -82,8 +82,8 @@ $B.$syntax_err_line = function(exc, module, src, pos, line_num){
             if(lpos > 0){lpos--}
         }
         exc.offset = lpos
-        exc.args = _b_.tuple.$factory([$B.$getitem(exc.args, 0), module,
-            line_num, lpos, line])
+        exc.args = $B.fast_tuple([$B.$getitem(exc.args, 0),
+            $B.fast_tuple([module, line_num, lpos, line])])
     }
     exc.lineno = line_num
     exc.msg = exc.args[0]
@@ -396,7 +396,7 @@ BaseException.__init__ = function(self){
 
 BaseException.__repr__ = function(self){
     var res =  self.__class__.$infos.__name__
-    if(self.args[0]){
+    if(self.args[0] !== undefined){
         res += '(' + repr(self.args[0])
     }
     if(self.args.length > 1){
@@ -495,8 +495,8 @@ var getExceptionTrace = function(exc, includeInternal) {
         }
     }
     if(exc.__class__ === _b_.SyntaxError){
-        info += "\n  File " + exc.args[1] + ", line " + exc.args[2] +
-            "\n    " + exc.args[4]
+        info += "\n  File " + exc.args[1][0] + ", line " +
+            exc.args[1][1] + "\n    " + exc.args[1][3]
 
     }
     return info
@@ -575,7 +575,6 @@ BaseException.$factory = function (){
     err.__class__ = _b_.BaseException
     err.$py_error = true
     $B.freeze(err)
-    //err.$traceback = traceback.$factory(err)
     eval("//placeholder//")
     err.__cause__ = _b_.None // XXX fix me
     err.__context__ = _b_.None // XXX fix me

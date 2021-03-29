@@ -562,9 +562,13 @@ var DOMNode = {
 }
 
 DOMNode.$factory = function(elt, fromtag){
-    if(elt.__class__ === DOMNode){return elt}
+    if(elt.__class__ === DOMNode){
+        return elt
+    }
     if(typeof elt == "number" || typeof elt == "boolean" ||
-        typeof elt == "string"){return elt}
+            typeof elt == "string"){
+        return elt
+    }
 
     // if none of the above, fromtag determines if the call is made by
     // the tag factory or by any other call to DOMNode
@@ -578,7 +582,7 @@ DOMNode.$factory = function(elt, fromtag){
     // it) and piggybacks on the tag factory by adding an "elt_wrap"
     // attribute to the class to let it know, that special behavior
     // is needed. i.e: don't create the element, use the one provided
-    if(fromtag === undefined) {
+    if(elt.__class__ === undefined && fromtag === undefined) {
         if(DOMNode.tags !== undefined) {  // tags is a python dictionary
             var tdict = DOMNode.tags.$string_dict
             if(tdict !== undefined && tdict.hasOwnProperty(elt.tagName)) {
@@ -690,9 +694,9 @@ DOMNode.__getattribute__ = function(self, attr){
     switch(attr) {
         case "attrs":
             return Attributes.$factory(self)
+        case "children":
         case "class_name":
         case "html":
-        case "id":
         case "parent":
         case "text":
             return DOMNode[attr](self)
@@ -713,9 +717,11 @@ DOMNode.__getattribute__ = function(self, attr){
             if(self.style[attr]){
                 return parseInt(self.style[attr])
             }else{
-                var computed = window.getComputedStyle(self)[attr]
+                var computed = window.getComputedStyle(self).
+                                      getPropertyValue(attr)
                 if(computed !== undefined){
-                    return Math.floor(parseFloat(computed) + 0.5)
+                    var prop = Math.floor(parseFloat(computed) + 0.5)
+                    return isNaN(prop) ? computed : prop
                 }
                 throw _b_.AttributeError.$factory("style." + attr +
                     " is not set for " + _b_.str.$factory(self))
@@ -729,7 +735,7 @@ DOMNode.__getattribute__ = function(self, attr){
         case "clear":
         case "closest":
             return function(){
-                return DOMNode[attr](self, arguments[0])
+                return DOMNode[attr].call(null, self, ...arguments)
             }
         case "headers":
           if(self.nodeType == 9){
@@ -796,8 +802,23 @@ DOMNode.__getattribute__ = function(self, attr){
     // Looking for property. If the attribute is in the forbidden
     // arena ... look for the aliased version
     var property = self[attr]
+
     if(property === undefined && $B.aliased_names[attr]){
         property = self["$$" + attr]
+    }
+    if(property !== undefined && self.__class__ &&
+            self.__class__.__module__ != "browser.html"){
+        // cf. issue #1543
+        var from_class = $B.$getattr(self.__class__, attr, _b_.None)
+        if(from_class !== _b_.None){
+            var frame = $B.last($B.frames_stack),
+                line_info = frame[1].$line_info,
+                line = line_info.split(',')[0]
+            console.info("Warning: line " + line + ", " + self.tagName +
+                " element has instance attribute '" + attr + "' set." +
+                " Attribute of class " + $B.class_name(self) +
+                " is ignored.")
+        }
     }
 
     if(property === undefined){
@@ -969,7 +990,7 @@ DOMNode.__le__ = function(self, other){
                 $B.class_name(other) + "' object to DOMNode instance")
         }
     }
-    return true // to allow chained appends
+    return self // to allow chained appends
 }
 
 DOMNode.__len__ = function(self){return self.length}
@@ -1006,7 +1027,8 @@ DOMNode.__radd__ = function(self, other){ // add to a string
 
 DOMNode.__str__ = DOMNode.__repr__ = function(self){
     var attrs = self.attributes,
-        attrs_str = ""
+        attrs_str = "",
+        items = []
     if(attrs !== undefined){
         var items = []
         for(var i = 0; i < attrs.length; i++){
@@ -1204,6 +1226,8 @@ DOMNode.children = function(self){
 
 DOMNode.clear = function(self){
     // remove all children elements
+    var $ = $B.args("clear", 1, {self: null}, ["self"], arguments, {},
+                null, null)
     if(self.nodeType == 9){self = self.body}
     while(self.firstChild){
        self.removeChild(self.firstChild)
@@ -1235,6 +1259,8 @@ DOMNode.clone = function(self){
 DOMNode.closest = function(self, selector){
     // Returns the first parent of self with specified CSS selector
     // Raises KeyError if not found
+    var $ = $B.args("closest", 2, {self: null, selector: null},
+                ["self", "selector"], arguments, {}, null, null)
     var res = self.closest(selector)
     if(res === null){
         throw _b_.KeyError.$factory("no parent with selector " + selector)
@@ -1250,15 +1276,6 @@ DOMNode.events = function(self, event){
         callbacks.push(evt[1])
     })
     return callbacks
-}
-
-DOMNode.focus = function(self){
-    return (function(obj){
-        return function(){
-            // focus() is not supported in IE
-            setTimeout(function(){obj.focus()}, 10)
-        }
-    })(self)
 }
 
 function make_list(node_list){
@@ -1346,11 +1363,6 @@ DOMNode.html = function(self){
     return res
 }
 
-DOMNode.id = function(self){
-    if(self.id !== undefined){return self.id}
-    return _b_.None
-}
-
 DOMNode.index = function(self, selector){
     var items
     if(selector === undefined){
@@ -1370,7 +1382,7 @@ DOMNode.inside = function(self, other){
     var elt = self
     while(true){
         if(other === elt){return true}
-        elt = elt.parentElement
+        elt = elt.parentNode
         if(! elt){return false}
     }
 }
@@ -1434,12 +1446,6 @@ DOMNode.select_one = function(self, selector){
     return DOMNode.$factory(res)
 }
 
-DOMNode.style = function(self){
-    // set attribute "float" for cross-browser compatibility
-    self.style.float = self.style.cssFloat || self.styleFloat
-    return $B.JSObj.$factory(self.style)
-}
-
 DOMNode.setSelectionRange = function(self){ // for TEXTAREA
     if(this["setSelectionRange"] !== undefined){
         return (function(obj){
@@ -1486,6 +1492,7 @@ DOMNode.set_style = function(self, style){ // style is a dict
                 case "top":
                 case "left":
                 case "width":
+                case "height":
                 case "borderWidth":
                     if(_b_.isinstance(value,_b_.int)){value = value + "px"}
             }

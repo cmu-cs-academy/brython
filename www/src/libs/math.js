@@ -9,7 +9,9 @@ eval($s.join(';'))
 //for(var $py_builtin in _b_){eval("var "+$py_builtin+"=_b_[$py_builtin]")}
 
 var float_check = function(x) {
-    if(x.__class__ === $B.long_int){return parseInt(x.value)}
+    if(x.__class__ === $B.long_int){
+        return parseInt(x.value)
+    }
     return _b_.float.$factory(x)
 }
 
@@ -29,174 +31,95 @@ var isWholeNumber = function(x){return (x * 10) % 10 == 0}
 
 var isOdd = function(x) {return isWholeNumber(x) && 2 * Math.floor(x / 2) != x}
 
-var isLargeNumber = function(x) {return x > Math.pow(2, 32)}
-
-// Big number Library from jsfromhell.com
-// This library helps with producing "correct" results from
-// mathematic operations
-
-//+ Jonas Raoni Soares Silva
-//@ http://jsfromhell.com/classes/bignumber [rev. #4]
-
-
-var BigNumber = function(n, p, r){
-    var o = this, i
-    if(n instanceof BigNumber){
-        for(i in {precision: 0, roundType: 0, _s: 0, _f: 0}){o[i] = n[i]}
-        o._d = n._d.slice()
-        return
-    }
-    o.precision = isNaN(p = Math.abs(p)) ? BigNumber.defaultPrecision : p
-    o.roundType = isNaN(r = Math.abs(r)) ? BigNumber.defaultRoundType : r
-    o._s = (n += "").charAt(0) == "-"
-    o._f = ((n = n.replace(/[^\d.]/g, "").split(".", 2))[0] =
-        n[0].replace(/^0+/, "") || "0").length
-    for(i = (n = o._d = (n.join("") || "0").split("")).length; i;
-        n[--i] = +n[i]){}
-    o.round()
-}
-with({$: BigNumber, o: BigNumber.prototype}){
-    $.ROUND_HALF_EVEN = ($.ROUND_HALF_DOWN = ($.ROUND_HALF_UP =
-        ($.ROUND_FLOOR = ($.ROUND_CEIL = ($.ROUND_DOWN = ($.ROUND_UP = 0) + 1) +
-            1) + 1) + 1) + 1) + 1
-    $.defaultPrecision = 40
-    $.defaultRoundType = $.ROUND_HALF_UP
-    o.add = function(n){
-        if(this._s != (n = new BigNumber(n))._s){
-            return n._s ^= 1, this.subtract(n)
-        }
-        var o = new BigNumber(this),
-            a = o._d,
-            b = n._d,
-            la = o._f,
-            lb = n._f,
-            n = Math.max(la, lb),
-            i,
-            r
-        la != lb && ((lb = la - lb) > 0 ? o._zeroes(b, lb, 1) :
-            o._zeroes(a, -lb, 1))
-        i = (la = a.length) == (lb = b.length) ? a.length :
-            ((lb = la - lb) > 0 ? o._zeroes(b, lb) : o._zeroes(a, -lb)).length
-        for(r = 0; i; r = (a[--i] = a[i] + b[i] + r) / 10 >>> 0, a[i] %= 10){}
-        return r && ++n && a.unshift(r), o._f = n, o.round()
-    };
-    o.subtract = function(n){
-        if(this._s != (n = new BigNumber(n))._s)
-            return n._s ^= 1, this.add(n);
-        var o = new BigNumber(this),
-            c = o.abs().compare(n.abs()) + 1,
-            a = c ? o : n,
-            b = c ? n : o,
-            la = a._f,
-            lb = b._f,
-            d = la,
-            i,
-            j;
-        a = a._d, b = b._d, la != lb && ((lb = la - lb) > 0 ? o._zeroes(b, lb, 1) : o._zeroes(a, -lb, 1));
-        for(i = (la = a.length) == (lb = b.length) ? a.length : ((lb = la - lb) > 0 ? o._zeroes(b, lb) : o._zeroes(a, -lb)).length; i;){
-            if(a[--i] < b[i]){
-                for(j = i; j && !a[--j]; a[j] = 9);
-                --a[j], a[i] += 10;
-            }
-            b[i] = a[i] - b[i];
-        }
-        return c || (o._s ^= 1), o._f = d, o._d = b, o.round();
-    };
-    o.multiply = function(n){
-        var o = new BigNumber(this), r = o._d.length >= (n = new BigNumber(n))._d.length, a = (r ? o : n)._d,
-        b = (r ? n : o)._d, la = a.length, lb = b.length, x = new BigNumber, i, j, s;
-        for(i = lb; i; r && s.unshift(r), x.set(x.add(new BigNumber(s.join("")))))
-            for(s = (new Array(lb - --i)).join("0").split(""), r = 0, j = la; j; r += a[--j] * b[i], s.unshift(r % 10), r = (r / 10) >>> 0);
-        return o._s = o._s != n._s, o._f = ((r = la + lb - o._f - n._f) >= (j = (o._d = x._d).length) ? this._zeroes(o._d, r - j + 1, 1).length : j) - r, o.round();
-    };
-    o.divide = function(n){
-        if((n = new BigNumber(n)) == "0")
-            throw new Error("Division by 0");
-        else if(this == "0")
-            return new BigNumber;
-        var o = new BigNumber(this), a = o._d, b = n._d, la = a.length - o._f,
-        lb = b.length - n._f, r = new BigNumber, i = 0, j, s, l, f = 1, c = 0, e = 0;
-        r._s = o._s != n._s, r.precision = Math.max(o.precision, n.precision),
-        r._f = +r._d.pop(), la != lb && o._zeroes(la > lb ? b : a, Math.abs(la - lb));
-        n._f = b.length, b = n, b._s = false, b = b.round();
-        for(n = new BigNumber; a[0] == "0"; a.shift());
-        out:
-        do{
-            for(l = c = 0, n == "0" && (n._d = [], n._f = 0); i < a.length && n.compare(b) == -1; ++i){
-                (l = i + 1 == a.length, (!f && ++c > 1 || (e = l && n == "0" && a[i] == "0")))
-                && (r._f == r._d.length && ++r._f, r._d.push(0));
-                (a[i] == "0" && n == "0") || (n._d.push(a[i]), ++n._f);
-                if(e)
-                    break out;
-                if((l && n.compare(b) == -1 && (r._f == r._d.length && ++r._f, 1)) || (l = 0))
-                    while(r._d.push(0), n._d.push(0), ++n._f, n.compare(b) == -1);
-            }
-            if(f = 0, n.compare(b) == -1 && !(l = 0))
-                while(l ? r._d.push(0) : l = 1, n._d.push(0), ++n._f, n.compare(b) == -1);
-            for(s = new BigNumber, j = 0; n.compare(y = s.add(b)) + 1 && ++j; s.set(y));
-            n.set(n.subtract(s)), !l && r._f == r._d.length && ++r._f, r._d.push(j);
-        }
-        while((i < a.length || n != "0") && (r._d.length - r._f) <= r.precision);
-        return r.round();
-    };
-    o.mod = function(n){
-        return this.subtract(this.divide(n).intPart().multiply(n));
-    };
-    o.pow = function(n){
-        var o = new BigNumber(this), i;
-        if((n = (new BigNumber(n)).intPart()) == 0) return o.set(1);
-        for(i = Math.abs(n); --i; o.set(o.multiply(this)));
-        return n < 0 ? o.set((new BigNumber(1)).divide(o)) : o;
-    };
-    o.set = function(n){
-        return this.constructor(n), this;
-    };
-    o.compare = function(n){
-        var a = this, la = this._f, b = new BigNumber(n), lb = b._f, r = [-1, 1], i, l;
-        if(a._s != b._s)
-            return a._s ? -1 : 1;
-        if(la != lb)
-            return r[(la > lb) ^ a._s];
-        for(la = (a = a._d).length, lb = (b = b._d).length, i = -1, l = Math.min(la, lb); ++i < l;)
-            if(a[i] != b[i])
-                return r[(a[i] > b[i]) ^ a._s];
-        return la != lb ? r[(la > lb) ^ a._s] : 0;
-    };
-    o.negate = function(){
-        var n = new BigNumber(this); return n._s ^= 1, n;
-    };
-    o.abs = function(){
-        var n = new BigNumber(this); return n._s = 0, n;
-    };
-    o.intPart = function(){
-        return new BigNumber((this._s ? "-" : "") + (this._d.slice(0, this._f).join("") || "0"));
-    };
-    o.valueOf = o.toString = function(){
-        var o = this;
-        return (o._s ? "-" : "") + (o._d.slice(0, o._f).join("") || "0") + (o._f != o._d.length ? "." + o._d.slice(o._f).join("") : "");
-    };
-    o._zeroes = function(n, l, t){
-        var s = ["push", "unshift"][t || 0];
-        for(++l; --l;  n[s](0));
-        return n;
-    };
-    o.round = function(){
-        if("_rounding" in this) return this;
-        var $ = BigNumber, r = this.roundType, b = this._d, d, p, n, x;
-        for(this._rounding = true; this._f > 1 && !b[0]; --this._f, b.shift());
-        for(d = this._f, p = this.precision + d, n = b[p]; b.length > d && !b[b.length -1]; b.pop());
-        x = (this._s ? "-" : "") + (p - d ? "0." + this._zeroes([], p - d - 1).join("") : "") + 1;
-        if(b.length > p){
-            n && (r == $.DOWN ? false : r == $.UP ? true : r == $.CEIL ? !this._s
-            : r == $.FLOOR ? this._s : r == $.HALF_UP ? n >= 5 : r == $.HALF_DOWN ? n > 5
-            : r == $.HALF_EVEN ? n >= 5 && b[p - 1] & 1 : false) && this.add(x);
-            b.splice(p, b.length - p);
-        }
-        return delete this._rounding, this;
-    };
-}
-
 var isNegZero = function(x) {return x === 0 && Math.atan2(x,x) < 0}
+
+var EPSILON = Math.pow(2, -52),
+    MAX_VALUE = (2 - EPSILON) * Math.pow(2, 1023);
+    MIN_VALUE = Math.pow(2, -1022);
+
+function nextUp(x){
+    if(x !== x){
+        return x
+    }
+    if(_b_.$isinf(x)){
+        if(_b_.$isninf(x)){
+            return -MAX_VALUE
+        }
+        return _mod.inf
+    }
+    /*
+    if(x == -1 / 0){
+        return -MAX_VALUE
+    }
+    if(x == +1 / 0){
+        return +1 / 0
+    }
+    */
+    if(x == +MAX_VALUE){
+        return +1 / 0
+    }
+    if(typeof x == "number" || x instanceof Number){
+        var y = x * (x < 0 ? 1 - EPSILON / 2 : 1 + EPSILON)
+        if(y == x){
+            y = MIN_VALUE * EPSILON > 0 ? x + MIN_VALUE * EPSILON : x + MIN_VALUE
+        }
+        if(y === +1 / 0){
+            y = +MAX_VALUE
+        }
+        var b = x + (y - x) / 2
+        if(x < b && b < y){
+            y = b;
+        }
+        var c = (y + x) / 2
+        if(x < c && c < y){
+            y = c;
+        }
+        return y === 0 ? -0 : y
+    }else{
+        var factor = $B.rich_comp('__lt__', x, 0) ? 1 - EPSILON / 2 :
+                                                   1 + EPSILON
+        var y = $B.rich_op("mul", x , factor)
+        if(y == x){
+            y = MIN_VALUE * EPSILON > 0 ?
+                    $B.rich_op('add', x, MIN_VALUE * EPSILON) :
+                    $B.rich_op('add', x, MIN_VALUE)
+        }
+        if(y === +1 / 0){
+            y = +MAX_VALUE
+        }
+        var y_minus_x = $B.rich_op('sub', y, x)
+        var z = $B.rich_op('truediv', y_minus_x, 2) // (y - x) / 2
+
+        var b = $B.rich_op('add', x, z)
+        if($B.rich_comp('__lt__', x, b) && $B.rich_comp('__lt__', b, y)){
+            y = b;
+        }
+        var c = $B.rich_op('truediv', $B.rich_op('add', y, x), 2)
+        if($B.rich_comp('__lt__', x, c) && $B.rich_comp('__lt__', c, y)){
+            y = c;
+        }
+        return y === 0 ? -0 : y
+    }
+}
+
+function gcd2(a, b){
+    // GCD of 2 factors
+    if($B.rich_comp("__gt__", b, a)){
+        var temp = a
+        a = b
+        b = temp
+    }
+    while(true){
+        if(b == 0){
+            return a
+        }
+        a = $B.rich_op("mod", a, b)
+        if(a == 0){
+            return b
+        }
+        b = $B.rich_op("mod", b, a)
+    }
+}
 
 var _mod = {
     __getattr__: function(attr){
@@ -213,20 +136,53 @@ var _mod = {
     acos: function(x){
         $B.check_nb_args('acos', 1, arguments)
         $B.check_no_kw('acos', x)
-        return float.$factory(Math.acos(float_check(x)))
+        if(_mod.isinf(x)){
+            throw _b_.ValueError.$factory("math domain error")
+        }else if(_mod.isnan(x)){
+            return _mod.nan
+        }else{
+            x = float_check(x)
+            if(x > 1 || x < -1){
+                throw _b_.ValueError.$factory("math domain error")
+            }
+            return float.$factory(Math.acos(x))
+        }
     },
     acosh: function(x){
         $B.check_nb_args('acosh', 1, arguments)
         $B.check_no_kw('acosh', x)
 
-        if(_b_.$isinf(x)){return float.$factory('inf')}
+        if(_b_.$isinf(x)){
+            if(_b_.$isninf(x)){
+                throw _b_.ValueError.$factory("math domain error")
+            }
+            return _mod.inf
+        }else if(_mod.isnan(x)){
+            return _mod.nan
+        }
         var y = float_check(x)
+        if(y <= 0){
+            throw _b_.ValueError.$factory("math domain error")
+        }
+        if(y > Math.pow(2, 28)){ // issue 1590
+            return float.$factory(_mod.log(y) + _mod.log(2))
+        }
         return float.$factory(Math.log(y + Math.sqrt(y * y - 1)))
     },
     asin: function(x){
         $B.check_nb_args('asin', 1, arguments)
         $B.check_no_kw('asin', x)
-        return float.$factory(Math.asin(float_check(x)))
+        if(_mod.isinf(x)){
+            throw _b_.ValueError.$factory("math domain error")
+        }else if(_mod.isnan(x)){
+            return _mod.nan
+        }else{
+            x = float_check(x)
+            if(x > 1 || x < -1){
+                throw _b_.ValueError.$factory("math domain error")
+            }
+            return float.$factory(Math.asin(x))
+        }
     },
     asinh: function(x){
         $B.check_nb_args('asinh', 1, arguments)
@@ -235,7 +191,10 @@ var _mod = {
         if(_b_.$isninf(x)){return float.$factory('-inf')}
         if(_b_.$isinf(x)){return float.$factory('inf')}
         var y = float_check(x)
-        return float.$factory(Math.log(y + Math.sqrt(y * y + 1)))
+        if(y == 0 && 1 / y === -Infinity){
+            return new Number(-0.0)
+        }
+        return float.$factory(Math.asinh(y))
     },
     atan: function(x){
         $B.check_nb_args('atan', 1, arguments)
@@ -254,28 +213,52 @@ var _mod = {
     atanh: function(x){
         $B.check_nb_args('atanh', 1, arguments)
         $B.check_no_kw('atanh', x)
-
-       var y = float_check(x)
-       if(y == 0){return 0}
-       return float.$factory(0.5 * Math.log((1 / y + 1)/(1 / y - 1)));
+        if(_b_.$isinf(x)){
+            throw _b_.ValueError.$factory("math domain error")
+        }
+        var y = float_check(x)
+        if(y == 0){
+            return 0
+        }else if(y <= -1 || y >= 1){
+            throw _b_.ValueError.$factory("math domain error")
+        }
+        return float.$factory(0.5 * Math.log((1 / y + 1)/(1 / y - 1)));
     },
     ceil: function(x){
         $B.check_nb_args('ceil', 1, arguments)
         $B.check_no_kw('ceil', x)
 
-       try{return getattr(x, '__ceil__')()}catch(err){}
+        var res
 
-       if(_b_.$isninf(x)){return float.$factory('-inf')}
-       if(_b_.$isinf(x)){return float.$factory('inf')}
-       if(isNaN(x)){return float.$factory('nan')}
+        if(x instanceof Number){
+            x = _b_.float.numerator(x)
+            if(_b_.$isinf(x) || _mod.isnan(x)){
+                return x
+            }
+            return _b_.int.$factory(Math.ceil(x))
+        }
 
-       var y = float_check(x)
-       if(! isNaN(parseFloat(y)) && isFinite(y)){
-           return int.$factory(Math.ceil(y))
-       }
+        try{
+            // Use attribute of the object's class, not of the object
+            // itself (special method)
+            return $B.$call($B.$getattr(x.__class__, '__ceil__'))(x)
+        }catch(err){
+            if(! $B.is_exc(err, [_b_.AttributeError])){
+                throw err
+            }
+        }
 
-       throw _b_.ValueError.$factory(
-           'object is not a number and does not contain __ceil__')
+        try{
+            x = $B.$call($B.$getattr(x.__class__, '__float__'))(x)
+        }catch(err){
+            if(! $B.is_exc(err, [_b_.AttributeError])){
+                throw err
+            }else{
+                throw _b_.TypeError.$factory("must be real number, not " +
+                   $B.class_name(x))
+            }
+        }
+        return _mod.ceil(x)
     },
     comb: function(n, k){
         $B.check_nb_args('comb', 2, arguments)
@@ -334,43 +317,111 @@ var _mod = {
     dist: function(p, q){
         $B.check_nb_args('dist', 2, arguments)
         $B.check_no_kw('dist', p, q)
-        var itp = _b_.iter(p),
-            itq = _b_.iter(q),
-            res = 0
-        while(true){
-            try{
-                var next_p = _b_.next(itp)
-            }catch(err){
-                if(err.__class__ === _b_.StopIteration){
-                    // check that the other iterator is also exhausted
-                    try{
-                        var next_q = _b_.next(itq)
+
+        function test(x){
+            if(typeof x === "number" || x instanceof Number){
+                return x
+            }
+            var y = $B.$getattr(x, '__float__', null)
+            if(y === null){
+                throw _b_.TypeError.$factory('not a float')
+            }
+            return $B.$call(y)()
+        }
+
+        // build list of differences (as floats) between coordinates of p and q
+        var diffs = [],
+            diff
+
+        if(Array.isArray(p) && Array.isArray(q)){
+            // simple case : p and q are lists of tuples
+            if(p.length != q.length){
+                throw _b_.ValueError.$factory("both points must have " +
+                    "the same number of dimensions")
+            }
+            for(var i = 0, len = p.length; i < len; i++){
+                var next_p = test(p[i]),
+                    next_q = test(q[i]),
+                    diff = Math.abs(next_p - next_q)
+                if(_b_.$isinf(diff)){
+                    return _mod.inf
+                }
+                diffs.push(diff)
+            }
+        }else{
+            var itp = _b_.iter(p),
+                itq = _b_.iter(q),
+                res = 0
+
+            while(true){
+                try{
+                    var next_p = _b_.next(itp)
+                }catch(err){
+                    if(err.__class__ === _b_.StopIteration){
+                        // check that the other iterator is also exhausted
+                        try{
+                            var next_q = _b_.next(itq)
+                            throw _b_.ValueError.$factory("both points must have " +
+                                "the same number of dimensions")
+                        }catch(err){
+                            if(err.__class__ === _b_.StopIteration){
+                                break
+                            }
+                            throw err
+                        }
+                    }
+                    throw err
+                }
+                next_p = test(next_p)
+                try{
+                    var next_q = _b_.next(itq)
+                }catch(err){
+                    if(err.__class__ === _b_.StopIteration){
                         throw _b_.ValueError.$factory("both points must have " +
                             "the same number of dimensions")
-                    }catch(err){
-                        if(err.__class__ === _b_.StopIteration){
-                            if(typeof res == "number" || res instanceof Number){
-                                return Math.sqrt(res)
-                            }else{
-                                return Math.sqrt(parseInt(res.value))
-                            }
-                        }
-                        throw err
                     }
+                    throw err
                 }
-                throw err
-            }
-            try{
-                var next_q = _b_.next(itq),
-                    diff = $B.sub(next_p, next_q)
-                res = $B.add(res, $B.mul(diff, diff))
-            }catch(err){
-                if(err.__class__ === _b_.StopIteration){
-                    throw _b_.ValueError.$factory("both points must have " +
-                        "the same number of dimensions")
+                next_q = test(next_q)
+                diff = Math.abs(next_p - next_q)
+                if(_b_.$isinf(diff)){
+                    return _mod.inf
                 }
-                throw err
+                diffs.push(diff)
             }
+        }
+
+        var res = 0,
+            scale = 1,
+            max_diff = Math.max(...diffs),
+            min_diff = Math.min(...diffs)
+            max_value = Math.sqrt(Number.MAX_VALUE) / p.length,
+            min_value = Math.sqrt(Number.MIN_VALUE) * p.length
+        if(max_diff > max_value){
+            while(max_diff > max_value){
+                scale *= 2
+                max_diff /= 2
+            }
+            for(var diff of diffs){
+                diff = diff / scale
+                res += diff * diff
+            }
+            return scale * _mod.sqrt(res)
+        }else if(min_diff < min_value){
+            while(min_diff < min_value){
+                scale *= 2
+                min_diff *= 2
+            }
+            for(var diff of diffs){
+                diff = diff * scale
+                res += diff * diff
+            }
+            return _mod.sqrt(res) / scale
+        }else{
+            for(var diff of diffs){
+                res += Math.pow(diff, 2)
+            }
+            return _mod.sqrt(res)
         }
     },
     e: float.$factory(Math.E),
@@ -424,7 +475,7 @@ var _mod = {
          if(_b_.$isninf(x)){return float.$factory(0)}
          if(_b_.$isinf(x)){return float.$factory('inf')}
          var _r = Math.exp(float_check(x))
-         if(_b_.$isinf(_r)){throw OverflowError("math range error")}
+         if(_b_.$isinf(_r)){throw _b_.OverflowError.$factory("math range error")}
          return float.$factory(_r)
     },
     expm1: function(x){
@@ -434,7 +485,7 @@ var _mod = {
          if(_b_.$isninf(x)){return float.$factory(0)}
          if(_b_.$isinf(x)){return float.$factory('inf')}
          var _r = Math.expm1(float_check(x))
-         if(_b_.$isinf(_r)){throw OverflowError("math range error")}
+         if(_b_.$isinf(_r)){throw _b_.OverflowError.$factory("math range error")}
          return float.$factory(_r)
     },
     //fabs: function(x){ return x>0?float.$factory(x):float.$factory(-x)},
@@ -447,22 +498,52 @@ var _mod = {
         $B.check_nb_args('factorial', 1, arguments)
         $B.check_no_kw('factorial', x)
 
-         //using code from http://stackoverflow.com/questions/3959211/fast-factorial-function-in-javascript
-         if(! check_int_or_round_float(x)){
-             throw _b_.ValueError.$factory("factorial() only accepts integral values")
-         }else if($B.rich_comp("__lt__", x, 0)){
-             throw _b_.ValueError.$factory("factorial() not defined for negative values")
+        if(x instanceof Number || _b_.isinstance(x, float)){
+            var warning = _b_.DeprecationWarning.$factory(
+                "Using factorial() with floats is deprecated")
+            // module _warning is in builtin_modules.js
+            $B.imported._warnings.warn(warning)
          }
-         var r = 1
-         for(var i = 2; i <= x; i++){
-             r = $B.mul(r, i)
-         }
-         return r
+
+        if(! _b_.isinstance(x, [_b_.float, _b_.int])){
+            throw _b_.TypeError.$factory(`'${$B.class_name(x)}' object ` +
+                "cannot be interpreted as an integer")
+        }
+
+        //using code from http://stackoverflow.com/questions/3959211/fast-factorial-function-in-javascript
+        if(! check_int_or_round_float(x)){
+            throw _b_.ValueError.$factory("factorial() only accepts integral values")
+        }else if($B.rich_comp("__lt__", x, 0)){
+            throw _b_.ValueError.$factory("factorial() not defined for negative values")
+        }
+        var r = 1
+        for(var i = 2; i <= x; i++){
+            r = $B.mul(r, i)
+        }
+        return r
     },
     floor: function(x){
         $B.check_nb_args('floor', 1, arguments)
         $B.check_no_kw('floor', x)
-        return Math.floor(float_check(x))
+        if(typeof x == "number" ||
+                x instanceof Number){
+            return Math.floor(float_check(x))
+        }
+        try{
+            return $B.$call($B.$getattr(x, "__floor__"))()
+        }catch(err){
+            if($B.is_exc(err, [_b_.AttributeError])){
+                try{
+                    var f = $B.$call($B.$getattr(x, "__float__"))()
+                    return _mod.floor(f)
+                }catch(err){
+                    if($B.is_exc(err, [_b_.AttributeError])){
+                        throw _b_.TypeError.$factory("no __float__")
+                    }
+                    throw err
+                }
+            }
+        }
     },
     fmod: function(x,y){
         $B.check_nb_args('fmod', 2, arguments)
@@ -522,8 +603,14 @@ var _mod = {
         $B.check_nb_args('gamma', 1, arguments)
         $B.check_no_kw('gamma', x)
 
-        if(_b_.isinstance(x, int)){
-            if(i < 1){
+        if(x === Number.POSITIVE_INFINITY){
+            return _mod.inf
+        }else if(x === Number.NEGATIVE_INFINITY){
+            throw _b_.ValueError.$factory("math domain error")
+        }
+        if(_b_.isinstance(x, _b_.int) ||
+                (_b_.isinstance(x, _b_.float) && x == _b_.int.$factory(x))){
+            if(x < 1){
                 throw _b_.ValueError.$factory("math domain error")
             }
             var res = 1
@@ -549,7 +636,16 @@ var _mod = {
             return z
         }
         var z = x
-        if(z < 0.5){
+        if(z < 0){
+            // Use formula Γ(z) = Γ(z + n + 1) / z (z + 1) ... (z + n)
+            // with n such that z + n + 1 > 0
+            var n = Math.ceil(-z - 1),
+                g = _mod.gamma(new Number(z + n + 1))
+            for(var i = 0; i <= n; i++){
+                g = g / (z + i)
+            }
+            return g
+        }else if(z < 0.5){
             var y = Math.PI / (Math.sin(Math.PI * z) * _mod.gamma(1-z)) // Reflection formula
         }else{
             z -= 1
@@ -566,70 +662,76 @@ var _mod = {
         return drop_imag(y)
     },
     gcd: function(){
-        var $ = $B.args("gcd", 2, {a: null, b: null}, ['a', 'b'],
-                arguments, {}, null, null),
-            a = $B.PyNumber_Index($.a),
-            b = $B.PyNumber_Index($.b)
-        if(a == 0 && b == 0){return 0}
+        var $ = $B.args("gcd", 0, {}, [], arguments, {}, 'args', null)
+        var args = $.args.map($B.PyNumber_Index)
+
+        if(args.length == 0){
+            return 0
+        }else if(args.length == 1){
+            return _b_.abs(args[0])
+        }
         // https://stackoverflow.com/questions/17445231/js-how-to-find-the-greatest-common-divisor
-        a = _b_.abs(a)
-        b = _b_.abs(b)
-        if($B.rich_comp("__gt__", b, a)){
-            var temp = a
-            a = b
-            b = temp
+        var a = _b_.abs(args[0]),
+            b
+        for(var i = 1, len = args.length; i < len; i++){
+            a = gcd2(a, _b_.abs(args[i]))
         }
-        while(true){
-            if(b == 0){
-                return a
-            }
-            a = $B.rich_op("mod", a, b)
-            if(a == 0){
-                return b
-            }
-            b = $B.rich_op("mod", b, a)
-        }
+        return a
     },
     hypot: function(x, y){
         var $ = $B.args("hypot", 2, {x: null, y:null}, ['x', 'y'],
                     arguments, {}, "args", null),
             args = [x, y].concat($.args),
             res = 0
-        for (var i = 0, len = args.length; i < len; i++){
-            if(_b_.$isinf(args[i])){
-                return float.$factory('inf')
-            }
-            float_check(args[i])
-            res += args[i] * args[i]
-        }
-        return float.$factory(Math.sqrt(res))
+        return float.$factory(Math.hypot(...args))
     },
     inf: float.$factory('inf'),
     isclose: function(){
-        var $ns = $B.args("isclose",
+        var $ = $B.args("isclose",
                           4,
                           {a: null, b: null, rel_tol: null, abs_tol: null},
                           ['a', 'b', 'rel_tol', 'abs_tol'],
                           arguments,
                           {rel_tol: 1e-09, abs_tol: 0.0},
-                          null,
+                          '*',
                           null)
-        var a = $ns['a'],
-            b = $ns['b'],
-            rel_tol = $ns['rel_tol'],
-            abs_tol = $ns['abs_tol']
+        var a = $.a,
+            b = $.b,
+            rel_tol = $.rel_tol,
+            abs_tol = $.abs_tol
         if(rel_tol < 0.0 || abs_tol < 0.0){
-            throw ValueError('tolerances must be non-negative')
+            throw ValueError.$factory('tolerances must be non-negative')
         }
-        if(a == b){return True}
-        if(_b_.$isinf(a) || _b_.$isinf(b)){return false}
-        var diff = _b_.$fabs(b - a)
-        var result = (
-            (diff <= _b_.$fabs(rel_tol * b)) ||
-                (diff <= _b_.$fabs(rel_tol * a))
-            ) || (diff <= _b_.$fabs(abs_tol)
-        )
-        return result
+
+        if(a == b){
+            return True
+        }
+        if(_b_.$isinf(a) || _b_.$isinf(b)){
+            return a === b
+        }
+        // isclose(a, b, rel_tol, abs_tol) is the same as
+        // abs_diff = abs(a - b)
+        // max_ab = max(abs(a), abs(b))
+        // abs_diff <= abs_tol or abs_diff / max_ab <= rel_tol
+        // This is more correct than in Python docs:
+        // "abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)"
+        // because this fails for Decimal instances, which do not support
+        // multiplication by floats
+
+        var diff = $B.$call($B.$getattr(b, '__sub__'))(a),
+            abs_diff = $B.$call($B.$getattr(diff, "__abs__"))()
+        if($B.rich_comp("__le__", abs_diff, abs_tol)){
+            return true
+        }
+        var abs_a = $B.$call($B.$getattr(a, '__abs__'))(),
+            abs_b = $B.$call($B.$getattr(b, '__abs__'))(),
+            max_ab = abs_a
+        if($B.rich_comp("__gt__", abs_b, abs_a)){
+            max_ab = abs_b
+        }
+        return $B.rich_comp("__le__",
+            $B.$call($B.$getattr(abs_diff, "__truediv__"))(max_ab),
+            rel_tol)
     },
     isfinite: function(x){
         $B.check_nb_args('isfinite', 1, arguments)
@@ -678,6 +780,30 @@ var _mod = {
             return candidate
         }
     },
+    lcm: function(){
+        var $ = $B.args("lcm", 0, {}, [], arguments, {}, 'args', null),
+            product = 1
+
+        var args = $.args.map($B.PyNumber_Index)
+        if(args.length == 0){
+            return 1
+        }else if(args.length == 1){
+            return _b_.abs(args[0])
+        }
+        var a = _b_.abs(args[0]),
+            b,
+            product, gcd
+        for(var i = 0, len = args.length; i < len; i++){
+            b = _b_.abs(args[i])
+            if(b == 0){
+                return 0
+            }
+            gcd = gcd2(a, b)
+            product = $B.mul(a, b)
+            a = $B.$getattr(product, "__floordiv__")(gcd)
+        }
+        return a
+    },
     ldexp: function(x, i){
         $B.check_nb_args('ldexp', 2, arguments)
         $B.check_no_kw('ldexp', x, i)
@@ -687,7 +813,218 @@ var _mod = {
         $B.check_nb_args('lgamma', 1, arguments)
         $B.check_no_kw('lgamma', x)
 
-        return new Number(Math.log(Math.abs(_mod.gamma(x))))
+        // copied from
+        // https://github.com/czurnieden/ieee745gamma/blob/master/ieee745gamma.js
+        // by Christoph Zurnieden
+        // see "LICENCE math lgamma.txt"
+        var double_int = new DataView(new ArrayBuffer(8))
+        var half = 5.00000000000000000000e-01 /* 0x3FE00000, 0x00000000 */
+        var one = 1.00000000000000000000e+00 /* 0x3FF00000, 0x00000000 */
+        var pi = 3.14159265358979311600e+00 /* 0x400921FB, 0x54442D18 */
+        var a0 = 7.72156649015328655494e-02 /* 0x3FB3C467, 0xE37DB0C8 */
+        var a1 = 3.22467033424113591611e-01 /* 0x3FD4A34C, 0xC4A60FAD */
+        var a2 = 6.73523010531292681824e-02 /* 0x3FB13E00, 0x1A5562A7 */
+        var a3 = 2.05808084325167332806e-02 /* 0x3F951322, 0xAC92547B */
+        var a4 = 7.38555086081402883957e-03 /* 0x3F7E404F, 0xB68FEFE8 */
+        var a5 = 2.89051383673415629091e-03 /* 0x3F67ADD8, 0xCCB7926B */
+        var a6 = 1.19270763183362067845e-03 /* 0x3F538A94, 0x116F3F5D */
+        var a7 = 5.10069792153511336608e-04 /* 0x3F40B6C6, 0x89B99C00 */
+        var a8 = 2.20862790713908385557e-04 /* 0x3F2CF2EC, 0xED10E54D */
+        var a9 = 1.08011567247583939954e-04 /* 0x3F1C5088, 0x987DFB07 */
+        var a10 = 2.52144565451257326939e-05 /* 0x3EFA7074, 0x428CFA52 */
+        var a11 = 4.48640949618915160150e-05 /* 0x3F07858E, 0x90A45837 */
+        var tc = 1.46163214496836224576e+00 /* 0x3FF762D8, 0x6356BE3F */
+        var tf = -1.21486290535849611461e-01 /* 0xBFBF19B9, 0xBCC38A42 */
+        /* tt = -(tail of tf) */
+        var tt = -3.63867699703950536541e-18 /* 0xBC50C7CA, 0xA48A971F */
+        var t0 = 4.83836122723810047042e-01 /* 0x3FDEF72B, 0xC8EE38A2 */
+        var t1 = -1.47587722994593911752e-01 /* 0xBFC2E427, 0x8DC6C509 */
+        var t2 = 6.46249402391333854778e-02 /* 0x3FB08B42, 0x94D5419B */
+        var t3 = -3.27885410759859649565e-02 /* 0xBFA0C9A8, 0xDF35B713 */
+        var t4 = 1.79706750811820387126e-02 /* 0x3F9266E7, 0x970AF9EC */
+        var t5 = -1.03142241298341437450e-02 /* 0xBF851F9F, 0xBA91EC6A */
+        var t6 = 6.10053870246291332635e-03 /* 0x3F78FCE0, 0xE370E344 */
+        var t7 = -3.68452016781138256760e-03 /* 0xBF6E2EFF, 0xB3E914D7 */
+        var t8 = 2.25964780900612472250e-03 /* 0x3F6282D3, 0x2E15C915 */
+        var t9 = -1.40346469989232843813e-03 /* 0xBF56FE8E, 0xBF2D1AF1 */
+        var t10 = 8.81081882437654011382e-04 /* 0x3F4CDF0C, 0xEF61A8E9 */
+        var t11 = -5.38595305356740546715e-04 /* 0xBF41A610, 0x9C73E0EC */
+        var t12 = 3.15632070903625950361e-04 /* 0x3F34AF6D, 0x6C0EBBF7 */
+        var t13 = -3.12754168375120860518e-04 /* 0xBF347F24, 0xECC38C38 */
+        var t14 = 3.35529192635519073543e-04 /* 0x3F35FD3E, 0xE8C2D3F4 */
+        var u0 = -7.72156649015328655494e-02 /* 0xBFB3C467, 0xE37DB0C8 */
+        var u1 = 6.32827064025093366517e-01 /* 0x3FE4401E, 0x8B005DFF */
+        var u2 = 1.45492250137234768737e+00 /* 0x3FF7475C, 0xD119BD6F */
+        var u3 = 9.77717527963372745603e-01 /* 0x3FEF4976, 0x44EA8450 */
+        var u4 = 2.28963728064692451092e-01 /* 0x3FCD4EAE, 0xF6010924 */
+        var u5 = 1.33810918536787660377e-02 /* 0x3F8B678B, 0xBF2BAB09 */
+        var v1 = 2.45597793713041134822e+00 /* 0x4003A5D7, 0xC2BD619C */
+        var v2 = 2.12848976379893395361e+00 /* 0x40010725, 0xA42B18F5 */
+        var v3 = 7.69285150456672783825e-01 /* 0x3FE89DFB, 0xE45050AF */
+        var v4 = 1.04222645593369134254e-01 /* 0x3FBAAE55, 0xD6537C88 */
+        var v5 = 3.21709242282423911810e-03 /* 0x3F6A5ABB, 0x57D0CF61 */
+        var s0 = -7.72156649015328655494e-02 /* 0xBFB3C467, 0xE37DB0C8 */
+        var s1 = 2.14982415960608852501e-01 /* 0x3FCB848B, 0x36E20878 */
+        var s2 = 3.25778796408930981787e-01 /* 0x3FD4D98F, 0x4F139F59 */
+        var s3 = 1.46350472652464452805e-01 /* 0x3FC2BB9C, 0xBEE5F2F7 */
+        var s4 = 2.66422703033638609560e-02 /* 0x3F9B481C, 0x7E939961 */
+        var s5 = 1.84028451407337715652e-03 /* 0x3F5E26B6, 0x7368F239 */
+        var s6 = 3.19475326584100867617e-05 /* 0x3F00BFEC, 0xDD17E945 */
+        var r1 = 1.39200533467621045958e+00 /* 0x3FF645A7, 0x62C4AB74 */
+        var r2 = 7.21935547567138069525e-01 /* 0x3FE71A18, 0x93D3DCDC */
+        var r3 = 1.71933865632803078993e-01 /* 0x3FC601ED, 0xCCFBDF27 */
+        var r4 = 1.86459191715652901344e-02 /* 0x3F9317EA, 0x742ED475 */
+        var r5 = 7.77942496381893596434e-04 /* 0x3F497DDA, 0xCA41A95B */
+        var r6 = 7.32668430744625636189e-06 /* 0x3EDEBAF7, 0xA5B38140 */
+        var w0 = 4.18938533204672725052e-01 /* 0x3FDACFE3, 0x90C97D69 */
+        var w1 = 8.33333333333329678849e-02 /* 0x3FB55555, 0x5555553B */
+        var w2 = -2.77777777728775536470e-03 /* 0xBF66C16C, 0x16B02E5C */
+        var w3 = 7.93650558643019558500e-04 /* 0x3F4A019F, 0x98CF38B6 */
+        var w4 = -5.95187557450339963135e-04 /* 0xBF4380CB, 0x8C0FE741 */
+        var w5 = 8.36339918996282139126e-04 /* 0x3F4B67BA, 0x4CDAD5D1 */
+        var w6 = -1.63092934096575273989e-03 /* 0xBF5AB89D, 0x0B9E43E4 */
+        var zero = 0.00000000000000000000e+00
+
+        var t, y, z, nadj = 0,
+          p, p1, p2, p3, q, r, w
+
+        var i = 0 | 0,
+          hx = 0 | 0,
+          lx = 0 | 0,
+          ix = 0 | 0
+
+        double_int.setFloat64(0, x)
+
+        hx = double_int.getInt32(0) /* high word */
+        lx = double_int.getInt32(4) /* low word */
+
+        /* purge off +-inf, NaN, +-0, and negative arguments */
+        lgamma_sign = 1
+        ix = hx & 0x7fffffff
+        if(ix >= 0x7ff00000){
+          return new Number(x * x)
+        }
+        if((ix | lx) == 0){
+          if(hx & 0x80000000){
+            lgamma_sign = -1
+          }
+          return new Number(one / zero)
+        }
+        if(ix < 0x3b900000){ /* |x|<2**-70, return -log(|x|) */
+          if(hx < 0){
+            lgamma_sign = -1
+            return new Number(-Math.log(-x))
+          } else {
+            return new Number(-Math.log(x))
+          }
+        }
+        if(hx < 0){
+          if(ix >= 0x43300000){ /* |x|>=2**52, must be -integer */
+            return new Number(one / zero)
+          }
+          t = sin_pi(x)
+          if(t == zero){
+            return new Number(one / zero)
+          } /* -integer */
+          nadj = Math.log(pi / Math.abs(t * x))
+          if(t < zero){
+            lgamma_sign = -1
+          }
+          x = -x
+        }
+        /* purge off 1 and 2 */
+        if((((ix - 0x3ff00000) | lx) == 0) || (((ix - 0x40000000) | lx) == 0)){
+          r = 0
+        }
+        /* for x < 2.0 */
+        else if(ix < 0x40000000){
+          if(ix <= 0x3feccccc){ /* lgamma(x) = lgamma(x+1)-log(x) */
+            r = -Math.log(x)
+            if(ix >= 0x3FE76944){
+              y = one - x
+              i = 0
+            }else if(ix >= 0x3FCDA661){
+              y = x - (tc - one)
+              i = 1
+            }else{
+              y = x
+              i = 2
+            }
+          }else{
+            r = zero
+            if(ix >= 0x3FFBB4C3){
+              y = 2.0 - x
+              i = 0
+            } /* [1.7316,2] */
+            else if(ix >= 0x3FF3B4C4){
+              y = x - tc
+              i = 1
+            } /* [1.23,1.73] */
+            else{
+              y = x - one
+              i = 2
+            }
+          }
+          switch(i){
+            case 0:
+              z = y * y
+              p1 = a0 + z * (a2 + z * (a4 + z * (a6 + z * (a8 + z * a10))))
+              p2 = z * (a1 + z * (a3 + z * (a5 + z * (a7 + z * (a9 + z * a11)))))
+              p = y * p1 + p2
+              r += (p - 0.5 * y)
+              break
+            case 1:
+              z = y * y
+              w = z * y
+              p1 = t0 + w * (t3 + w * (t6 + w * (t9 + w * t12))) /* parallel comp */
+              p2 = t1 + w * (t4 + w * (t7 + w * (t10 + w * t13)))
+              p3 = t2 + w * (t5 + w * (t8 + w * (t11 + w * t14)))
+              p = z * p1 - (tt - w * (p2 + y * p3))
+              r += (tf + p)
+              break
+            case 2:
+              p1 = y * (u0 + y * (u1 + y * (u2 + y * (u3 + y * (u4 + y * u5)))))
+              p2 = one + y * (v1 + y * (v2 + y * (v3 + y * (v4 + y * v5))))
+              r += (-0.5 * y + p1 / p2)
+          }
+        }else if(ix < 0x40200000){ /* x < 8.0 */
+          i = x | 0
+          t = zero
+          y = x - i
+          p = y * (s0 + y * (s1 + y * (s2 + y * (s3 + y * (s4 + y * (s5 + y *
+            s6))))))
+          q = one + y * (r1 + y * (r2 + y * (r3 + y * (r4 + y * (r5 + y * r6)))))
+          r = half * y + p / q
+          z = one /* lgamma(1+s) = log(s) + lgamma(s) */
+          switch(i){
+            case 7:
+              z *= (y + 6.0) /* FALLTHRU */
+            case 6:
+              z *= (y + 5.0) /* FALLTHRU */
+            case 5:
+              z *= (y + 4.0) /* FALLTHRU */
+            case 4:
+              z *= (y + 3.0) /* FALLTHRU */
+            case 3:
+              z *= (y + 2.0) /* FALLTHRU */
+              r += Math.log(z)
+              break
+          }
+          /* 8.0 <= x < 2**58 */
+        }else if(ix < 0x43900000){
+          t = Math.log(x)
+          z = one / x
+          y = z * z
+          w = w0 + z * (w1 + y * (w2 + y * (w3 + y * (w4 + y * (w5 + y * w6)))))
+          r = (x - half) * (t - one) + w
+        }else{
+          /* 2**58 <= x <= inf */
+          r = x * (Math.log(x) - one)
+        }
+        if(hx < 0){
+          r = nadj - r
+        }
+        return new Number(r)
     },
     log: function(x, base){
         var $ = $B.args("log", 2, {x: null, base: null}, ['x', 'base'],
@@ -709,9 +1046,9 @@ var _mod = {
         $B.check_no_kw('log2', x)
 
         if(isNaN(x)){return float.$factory('nan')}
-        if(_b_.$isninf(x)) {throw ValueError('')}
+        if(_b_.$isninf(x)) {throw ValueError.$factory('')}
         var x1 = float_check(x)
-        if(x1 < 0.0){throw ValueError('')}
+        if(x1 < 0.0){throw ValueError.$factory('')}
         return float.$factory(Math.log(x1) / Math.LN2)
     },
     log10: function(x){
@@ -746,6 +1083,13 @@ var _mod = {
        return _b_.tuple.$factory([i, float.$factory(x2)])
     },
     nan: float.$factory('nan'),
+    nextafter: function(){
+        var $ = $B.args("nextafter", 2, {x: null, y: null}, ['x', 'y'],
+                    arguments, {}, null, null),
+            x = $.x,
+            y = $.y
+        return y < x ? -nextUp(-x) : (y > x ? nextUp(x) : (x !== x ? x : y))
+    },
     perm: function(n, k){
         var $ = $B.args("perm", 2, {n: null, k: null}, ['n', 'k'],
                         arguments, {k: _b_.None}, null, null),
@@ -776,14 +1120,16 @@ var _mod = {
         return $B.floordiv(fn, fn_k)
     },
     pi : float.$factory(Math.PI),
-    pow: function(x, y){
-        $B.check_nb_args('pow', 2, arguments)
-        $B.check_no_kw('pow', x,y)
+    pow: function(){
+        var $ = $B.args("pow", 2, {base: null, exp: null}, ['base', 'exp'],
+                    arguments, {}, null, null),
+            x = $.base,
+            y = $.exp
 
         var x1 = float_check(x)
         var y1 = float_check(y)
         if(y1 == 0){return float.$factory(1)}
-        if(x1 == 0 && y1 < 0){throw _b_.ValueError('')}
+        if(x1 == 0 && y1 < 0){throw _b_.ValueError.$factory('')}
 
         if(isNaN(y1)){
             if(x1 == 1){return float.$factory(1)}
@@ -816,15 +1162,7 @@ var _mod = {
             return float.$factory(1)
         }
 
-        var r
-        if(isLargeNumber(x1) || isLargeNumber(y1)){
-           var x = new BigNumber(x1),
-               y = new BigNumber(y1)
-           r = x.pow(y)
-        }else{
-           r = Math.pow(x1,y1)
-        }
-
+        var r = Math.pow(x1, y1)
         if(isNaN(r)){return float.$factory('nan')}
         if(_b_.$isninf(r)){return float.$factory('-inf')}
         if(_b_.$isinf(r)){return float.$factory('inf')}
@@ -861,6 +1199,29 @@ var _mod = {
 
         return float.$factory(float_check(x) * Math.PI / 180)
     },
+    remainder: function(x, y){
+        $B.check_nb_args('remainder', 2, arguments)
+        $B.check_no_kw('remainder', x, y)
+        if(_mod.isnan(x) || _mod.isnan(y)){
+            return _mod.nan
+        }
+        if(_b_.$isinf(x) || y == 0){
+            throw _b_.ValueError.$factory("math domain error")
+        }
+        x = float_check(x)
+        y = float_check(y)
+        var quotient = x / y,
+            rounded = _b_.round(quotient)
+        if(rounded == 0){
+            return _b_.float.$factory(x)
+        }
+        var res = _b_.float.$factory(x - rounded * y)
+        if(_b_.$isinf(res)){
+            // happens if rounded * y is infinite
+            res = _b_.float.$factory(rounded * (x / rounded - y))
+        }
+        return res
+    },
     sin : function(x){
         $B.check_nb_args('sin ', 1, arguments)
         $B.check_no_kw('sin ', x)
@@ -879,10 +1240,10 @@ var _mod = {
         $B.check_no_kw('sqrt ', x)
 
       var y = float_check(x)
-      if(y < 0){throw ValueError("math range error")}
+      if(y < 0){throw ValueError.$factory("math range error")}
       if(_b_.$isinf(y)){return float.$factory('inf')}
       var _r = Math.sqrt(y)
-      if(_b_.$isinf(_r)){throw OverflowError("math range error")}
+      if(_b_.$isinf(_r)){throw _b_.OverflowError.$factory("math range error")}
       return float.$factory(_r)
     },
     tan: function(x) {
@@ -901,6 +1262,7 @@ var _mod = {
         return float.$factory((Math.pow(Math.E, y) - Math.pow(Math.E, -y))/
              (Math.pow(Math.E, y) + Math.pow(Math.E, -y)))
     },
+    tau: 6.283185307179586,
     trunc: function(x) {
         $B.check_nb_args('trunc', 1, arguments)
         $B.check_no_kw('trunc', x)
@@ -914,17 +1276,32 @@ var _mod = {
        }
        throw _b_.ValueError.$factory(
            'object is not a number and does not contain __trunc__')
+    },
+    ulp: function(){
+        var $ = $B.args("ulp", 1, {x: null}, ['x'], arguments, {}, null, null),
+            x = $.x
+        if(x == MAX_VALUE){
+            return MAX_VALUE - _mod.nextafter(MAX_VALUE, 0)
+        }else if(_b_.$isinf(x)){
+            return _mod.inf
+        }
+        if(typeof x == "number" || x instanceof Number){
+            return x > 0 ? nextUp(x) - x : x - (-nextUp(-x))
+        }else{
+            if($B.rich_comp('__gt__', x, 0)){
+                return $B.rich_op('sub', nextUp(x), x)
+            }else{
+                var neg_x = $B.$call($B.$getattr(x, "__neg__"))()
+                return $B.rich_op('sub', x,
+                    $B.$call($B.$getattr(nextUp(neg_x), '__neg__'))())
+            }
+        }
     }
 }
 
 for(var $attr in _mod){
     if(typeof _mod[$attr] === 'function'){
-        _mod[$attr].__repr__ = (function(func){
-            return function(){return '<built-in function ' + func + '>'}
-        })($attr)
-        _mod[$attr].__str__ = (function(func){
-            return function(){return '<built-in function ' + func + '>'}
-        })($attr)
+        _mod[$attr].__class__ = $B.builtin_function
     }
 }
 

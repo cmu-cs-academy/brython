@@ -141,6 +141,11 @@ bytearray.append = function(self, b){
 }
 
 bytearray.extend = function(self, b){
+    if(self.in_iteration){
+        // happens in re.finditer()
+        throw _b_.BufferError.$factory("Existing exports of data: object " +
+            "cannot be re-sized")
+    }
     if(b.__class__ === bytearray || b.__class__ === bytes){
         b.source.forEach(function(item){
             self.source.push(item)
@@ -1032,7 +1037,7 @@ bytes.rstrip = function(self, cars){return _strip(self, cars, 'r')}
 
 bytes.split = function(){
     var $ = $B.args('split', 2, {self:null, sep:null}, ['self', 'sep'],
-        arguments, {}, null, null),
+        arguments, {sep: bytes.$factory([32])}, null, null),
         res = [],
         start = 0,
         stop = 0
@@ -1278,8 +1283,7 @@ function load_encoder(enc){
 var decode = $B.decode = function(obj, encoding, errors){
     var s = "",
         b = obj.source,
-        enc = normalise(encoding),
-        has_surrogate = false
+        enc = normalise(encoding)
     switch(enc) {
       case "utf_8":
       case "utf-8":
@@ -1358,7 +1362,6 @@ var decode = $B.decode = function(obj, encoding, errors){
                   }
               }else if((byte >> 3) == 30){
                   // 4 bytes, 1st of the form 11110xxx and 3 next 10xxxxxx
-                  has_surrogate = true
                   if(b[pos + 1] === undefined){
                       err_info = [byte, pos, "end", pos + 1]
                   }else if((b[pos + 1] & 0xc0) != 0x80){
@@ -1413,9 +1416,6 @@ var decode = $B.decode = function(obj, encoding, errors){
                           ": invalid start byte")
                   }
               }
-          }
-          if(has_surrogate){
-              return _b_.str.$surrogate.$factory(s)
           }
           return s
       case "latin_1":

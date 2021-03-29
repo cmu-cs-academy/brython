@@ -39,7 +39,7 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
 
     // If the function call had keywords arguments, they are in the last
     // element of $args
-    if(nb_pos > 0 && args[nb_pos - 1].$nat){
+    if(nb_pos > 0 && args[nb_pos - 1] && args[nb_pos - 1].$nat){
         nb_pos--
         if(Object.keys(args[nb_pos].kw).length > 0){
             has_kw_args = true
@@ -277,7 +277,8 @@ $B.$list_comp = function(items){
     // For instance in [ x * 2 for x in A if x > 2 ],
     // items is ["x * 2", "for x in A", "if x > 2"]
     var ix = $B.UUID(),
-        py = "x" + ix + " = []\n",
+        res = "comp_result_" + $B.lambda_magic + ix,
+        py = res + " = []\n",
         indent = 0
     for(var i = 1, len = items.length; i < len; i++){
         var item = items[i].replace(/\s+$/, "").replace(/\n/g, "")
@@ -285,7 +286,7 @@ $B.$list_comp = function(items){
         indent += 4
     }
     py += " ".repeat(indent)
-    py += "x" + ix + ".append(" + items[0] + ")\n"
+    py += res + ".append(" + items[0] + ")\n"
 
     return [py, ix]
 }
@@ -421,16 +422,27 @@ $B.$search = function(name, global_ns){
 $B.$global_search = function(name, search_ids){
     // search in all namespaces above current stack frame
     var ns = {}
-
-    for(var i = 0; i< $B.frames_stack.length; i++){
+    for(var i = 0; i < $B.frames_stack.length; i++){
         var frame = $B.frames_stack[i]
-        if(search_ids.indexOf(frame[0]) > -1 &&
-                frame[1][name] !== undefined){
-            return frame[1][name]
+        if(search_ids.indexOf(frame[0]) > -1){
+            if(frame[1].$is_not_dict){
+                // locals is not a dictionary (might be the case with exec(),
+                // cf. issue #1597
+                try{
+                    return $B.$getitem(frame[1], name)
+                }catch(err){
+                    if(! $B.is_exc(err, [_b_.KeyError])){
+                        throw err
+                    }
+                }
+            }else if(frame[1][name] !== undefined){
+                return frame[1][name]
+            }
         }
-        if(search_ids.indexOf(frame[2]) > -1 &&
-                frame[3][name] !== undefined){
-            return frame[3][name]
+        if(search_ids.indexOf(frame[2]) > -1){
+            if(frame[3][name] !== undefined){
+                return frame[3][name]
+            }
         }
     }
     for(var i = 0; i < search_ids.length; i++){
@@ -461,6 +473,18 @@ $B.$check_def = function(name, value){
         return _b_[name]
     }else{
         var frame = $B.last($B.frames_stack)
+        if(frame[1].$is_not_dict){
+            // Cf. issue #1597
+            try{
+                return $B.$getitem(frame[1], name)
+            }catch(err){
+                if(! $B.is_exc(err, [_b_.KeyError])){
+                    throw err
+                }
+            }
+        }else if(frame[1][name] !== undefined){
+            return frame[1][name]
+        }
         if(frame[3][name] !== undefined){
             return frame[3][name]
         }
@@ -583,21 +607,26 @@ function index_error(obj){
 }
 
 $B.$getitem = function(obj, item){
-    var is_list = Array.isArray(obj) && obj.__class__ === _b_.list
+    var is_list = Array.isArray(obj) && obj.__class__ === _b_.list,
+        is_dict = obj.__class__ === _b_.dict && ! obj.$jsobj
     if(typeof item == "number"){
-        if(is_list || typeof obj == "string"){
+        if(is_list ||
+                (typeof obj == "string" &&
+                 ! $B.has_surrogate(obj))){
             item = item >=0 ? item : obj.length + item
             if(obj[item] !== undefined){return obj[item]}
             else{index_error(obj)}
+        }else if(is_dict){
+            if(obj.$numeric_dict[item] !== undefined){
+                return obj.$numeric_dict[item][0]
+            }
         }
-    }
-
-    try{item = $B.$GetInt(item)}catch(err){}
-    if((is_list || typeof obj == "string")
-        && typeof item == "number"){
-        item = item >=0 ? item : obj.length + item
-        if(obj[item] !== undefined){return obj[item]}
-        else{index_error(obj)}
+    }else if(typeof item == "string" && is_dict){
+        var res = obj.$string_dict[item]
+        if(res !== undefined){
+            return res[0]
+        }
+        throw _b_.KeyError.$factory(item)
     }
 
     // PEP 560
@@ -620,10 +649,14 @@ $B.$getitem = function(obj, item){
     if(is_list){
         return _b_.list.$getitem(obj, item)
     }
+    if(is_dict){
+        return _b_.dict.$getitem(obj, item)
+    }
 
-    var gi = $B.$getattr(obj, "__getitem__", _b_.None)
+    var gi = $B.$getattr(obj.__class__ || $B.get_class(obj),
+        "__getitem__", _b_.None)
     if(gi !== _b_.None){
-        return gi(item)
+        return gi(obj, item)
     }
 
     throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
@@ -748,18 +781,84 @@ $B.$setitem = function(obj, item, value){
     }else if(obj.__class__ === _b_.list){
         return _b_.list.$setitem(obj, item, value)
     }
-    $B.$getattr(obj, "__setitem__")(item, value)
+    var si = $B.$getattr(obj.__class__ || $B.get_class(obj), "__setitem__",
+        null)
+    if(si === null){
+        throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
+            "' object does not support item assignment")
+    }
+    return si(obj, item, value)
 }
+
+// item deletion
+$B.$delitem = function(obj, item){
+    if(Array.isArray(obj) && obj.__class__ === undefined &&
+            typeof item == "number" &&
+            !_b_.isinstance(obj, _b_.tuple)){
+        if(item < 0){item += obj.length}
+        if(obj[item] === undefined){
+            throw _b_.IndexError.$factory("list deletion index out of range")
+        }
+        obj.splice(item, 1)
+        return
+    }else if(obj.__class__ === _b_.dict){
+        _b_.dict.__delitem__(obj, item)
+        return
+    }else if(obj.__class__ === _b_.list){
+        return _b_.list.__delitem__(obj, item)
+    }
+    var di = $B.$getattr(obj.__class__ || $B.get_class(obj), "__delitem__",
+        null)
+    if(di === null){
+        throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
+            "' object doesn't support item deletion")
+    }
+    return di(obj, item)
+}
+
+$B.delitem_slice = function(obj, slice){
+    if(Array.isArray(obj)){
+        if(slice.start === _b_.None && slice.stop === _b_.None){
+            if(slice.step === _b_.None || slice.step == 1 ||
+                    slice.step == -1){
+                while(obj.length > 0){
+                    obj.pop()
+                }
+            }
+        }else if(slice.step === _b_.None){
+            if(slice.start === _b_.None){slice.start = 0}
+            if(slice.stop === _b_.None){slice.stop = obj.length}
+            if(typeof slice.start == "number" &&
+                    typeof slice.stop == "number"){
+                if(slice.start < 0){slice.start += obj.length}
+                if(slice.stop < 0){slice.stop += obj.length}
+                obj.splice(slice.start, slice.stop - slice.start)
+            }
+        }
+    }
+    var di = $B.$getattr(obj.__class__ || $B.get_class(obj), "__delitem__",
+        null)
+
+    if(di === null){
+        throw _b_.TypeError.$factory("'" + $B.class_name(obj) +
+            "' object doesn't support item deletion")
+    }
+    return di(obj, slice)
+}
+
 // augmented item
 $B.augm_item_add = function(obj, item, incr){
     if(Array.isArray(obj) && typeof item == "number" &&
             obj[item] !== undefined){
         if(Array.isArray(obj[item]) && Array.isArray(incr)){
-            for(var i  =0, len = incr.length; i < len; i++){
+            for(var i = 0, len = incr.length; i < len; i++){
                 obj[item].push(incr[i])
             }
             return
         }else if(typeof obj[item] == "string" && typeof incr == "string"){
+            obj[item] += incr
+            return
+        }else if(typeof obj[item] == "number" && typeof incr == "number"){
             obj[item] += incr
             return
         }
@@ -774,6 +873,7 @@ $B.augm_item_add = function(obj, item, incr){
     }
     augm_func(incr)
 }
+
 var augm_item_src = "" + $B.augm_item_add
 var augm_ops = [["-=", "sub"], ["*=", "mul"]]
 for(var i  =0, len = augm_ops.length; i < len; i++){
@@ -861,6 +961,16 @@ $B.$is = function(a, b){
     return a === b
 }
 
+$B.conv_undef = function(obj){
+    // Used inside functions to convert Javascript undefined to $B.Undefined
+    // defined in builtin_modules.js
+    var res = {}
+    for(var key in obj){
+        res[key] = obj[key] === undefined ? $B.Undefined : obj[key]
+    }
+    return res
+}
+
 $B.$is_member = function(item, _set){
     // used for "item in _set"
     var f, _iter, method
@@ -916,14 +1026,18 @@ $B.$is_member = function(item, _set){
 $B.$call = function(callable){
     if(callable.__class__ === $B.method){
         return callable
-    }
-    else if(callable.$is_func || typeof callable == "function"){
-        return callable
     }else if(callable.$factory){
         return callable.$factory
     }else if(callable.$is_class){
         // Use metaclass __call__, cache result in callable.$factory
         return callable.$factory = $B.$instance_creator(callable)
+    }else if(callable.$is_js_class){
+        // JS class uses "new"
+        return callable.$factory = function(){
+            return new callable(...arguments)
+        }
+    }else if(callable.$is_func || typeof callable == "function"){
+        return callable
     }
     try{
         return $B.$getattr(callable, "__call__")
@@ -944,13 +1058,21 @@ var $io = $B.make_class("io",
     }
 )
 
-$io.flush = function(){
-    // do nothing
+$io.flush = function(self){
+    console[self.out].apply(null, self.buf)
+    self.buf = []
 }
 
 $io.write = function(self, msg){
     // Default to printing to browser console
-    console[self.out](msg)
+    if(self.buf === undefined){
+        self.buf = []
+    }
+    if(typeof msg != "string"){
+        throw _b_.TypeError.$factory("write() argument must be str, not " +
+            $B.class_name(msg))
+    }
+    self.buf.push(msg)
     return _b_.None
 }
 
@@ -1006,11 +1128,15 @@ $B.make_iterator_class = function(name){
         },
 
         __next__: function(self){
-            if(typeof self.len_func == "function" &&
-                    self.len_func() != self.len){
+            if(typeof self.test_change == "function" && self.test_change()){
+                // Used in dictionaries : test if the current dictionary
+                // attribute "$version" is the same as when the iterator was
+                // created. If not, items have been added to or removed from
+                // the dictionary
                 throw _b_.RuntimeError.$factory(
                     "dictionary changed size during iteration")
             }
+
             self.counter++
             if(self.counter < self.items.length){
                 var item = self.items[self.counter]
@@ -1135,6 +1261,9 @@ $B.PyNumber_Index = function(item){
                 method = typeof method == "function" ?
                             method : $B.$getattr(method, "__call__")
                 return $B.int_or_bool(method())
+            }else{
+                throw _b_.TypeError.$factory("'" + $B.class_name(item) +
+                    "' object cannot be interpreted as an integer")
             }
         default:
             throw _b_.TypeError.$factory("'" + $B.class_name(item) +
@@ -1407,6 +1536,9 @@ $B.mul = function(x, y){
 }
 
 $B.sub = function(x, y){
+    if(x instanceof Number && y instanceof Number){
+        return x - y
+    }
     var z = (typeof x != "number" || typeof y != "number") ?
                 new Number(x - y) : x - y
     if(x > min_int && x < max_int && y > min_int && y < max_int
@@ -1414,6 +1546,23 @@ $B.sub = function(x, y){
         return z
     }else if((typeof x == "number" || x.__class__  === $B.long_int)
             && (typeof y == "number" || y.__class__ === $B.long_int)){
+        if(typeof x == "number" && typeof y == "number"){
+            if(isNaN(x) || isNaN(y)){
+                return _b_.float.$factory("nan")
+            }else if(x === Infinity || x === -Infinity){
+                if(y === x){
+                    return _b_.float.$factory("nan")
+                }else{
+                    return x
+                }
+            }else if(y === Infinity || y === -Infinity){
+                if(y === x){
+                    return _b_.float.$factory("nan")
+                }else{
+                    return -y
+                }
+            }
+        }
         if((typeof x == "number" && isNaN(x)) ||
                 (typeof y == "number" && isNaN(y))){
             return _b_.float.$factory("nan")

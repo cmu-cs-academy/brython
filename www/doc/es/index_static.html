@@ -8,13 +8,15 @@
 
 <script src="/src/brython.js"></script>
 <script type="text/javascript" src="/src/brython_stdlib.js"></script>
+
 <script src="/assets/header.brython.js"></script>
 
 <script type="text/python3">
 from browser import window, document, html, highlight
+import html_parser
 
 import header
-header.show('es')
+header.show('en')
 
 def run(ev):
     # run the code in the element after the button
@@ -24,7 +26,7 @@ def run(ev):
     exec(tg.elt.text.strip(), {})
 
 target = 'content'
-for elt in document[target].get(selector='.exec'):
+for elt in document[target].select('.exec'):
     # Python code executed when user clicks on a button
     elt.contentEditable = True
     src = elt.text.strip()
@@ -38,7 +40,7 @@ for elt in document[target].get(selector='.exec'):
     # set attribute python_code, used when button is hit
     btn.elt = elt
     elt.parent.insertBefore(btn, elt)
-for elt in document[target].get(selector='.exec_on_load'):
+for elt in document[target].select('.exec_on_load'):
     # Python code executed on page load
     src = elt.text.strip()
     h = highlight.highlight(src)
@@ -46,12 +48,39 @@ for elt in document[target].get(selector='.exec_on_load'):
     elt.clear()
     elt <= h
     exec(src)
-for elt in document[target].get(selector='.python'):
+for elt in document[target].select('.python'):
     src = elt.text.strip()
     h = highlight.highlight(src)
     h.className = "pycode"
     elt.clear()
     elt <= h
+for elt in document[target].select('.xml'):
+    text = elt.text
+    elt.text = ""
+    script = False
+    for item in html_parser.tokenize(text):
+        if item.nodeType == html_parser.TEXT_NODE and item.text:
+            if script and item.text.strip():
+                h = highlight.highlight(item.text.strip())
+                h.style.margin = 0
+                h.classList.add("pycode")
+                h.style.display = "block"
+                elt <= h
+            else:
+                elt <= item.text
+        elif item.nodeType == html_parser.ELEMENT_NODE:
+            script = item.tagName == "SCRIPT" and not item.closing
+            if item.closing:
+                tag = item.text[1:len(item.tagName) + 2]
+                attrs = item.text[len(item.tagName) + 2:-1]
+            else:
+                tag = item.text[1:len(item.tagName) + 1]
+                attrs = item.text[len(item.tagName) + 1:-1]
+
+            elt <= (html.SPAN("&lt;" + tag, Class="html-tag") +
+                    html.SPAN(attrs, Class="html-attrs") +
+                    html.SPAN("&gt;", Class="html-tag"))
+
 </script>
 
 </head>

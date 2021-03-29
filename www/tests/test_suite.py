@@ -668,4 +668,40 @@ assert not (list is list[str])
 assert list != list[str]
 assert list[str] == list[str]
 
+# issue 1535
+assert [x for x in "abc" if "xyz"[0 if 1 else 2] < "z"] == ['a', 'b', 'c']
+
+# issue 1545
+assert (lambda:
+    # A greeting.
+    'hi')() == 'hi'
+assert (lambda: (
+    # A greeting.
+    "hi"
+))() == 'hi'
+
+assert (lambda: (
+    '''
+    # not a comment
+    hi
+    '''
+))() == "\n    # not a comment\n    hi\n    "
+
+assert lambda:(  # A greeter.
+    print('hi')  # Short for "Hello".
+)() == 'hi'
+
+# issue 1557
+assertRaises(SyntaxError, exec, "a, b += 1")
+assertRaises(SyntaxError, exec, "(a, b) += 1")
+assertRaises(SyntaxError, exec, "[a, b] += 1")
+assertRaises(SyntaxError, exec, "{a, b} += 1")
+assertRaises(SyntaxError, exec, "{a: 0, b: 1} += 1")
+assertRaises(SyntaxError, exec, "{} += 1")
+
+# issue 1642
+assertRaises(SyntaxError, exec, "(=)")
+assertRaises(SyntaxError, exec, "(=0)")
+assertRaises(SyntaxError, exec, '(=")')
+
 print('passed all tests...')

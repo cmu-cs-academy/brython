@@ -159,23 +159,27 @@ class _version_info:
 #eventually this needs to be the real python version such as 3.0, 3.1, etc
 version_info = _version_info(__BRYTHON__.version_info)
 
-class _implementation:
+class SimpleNamespace:
 
-  def __init__(self):
-      self.name = 'brython'
-      self.version = _version_info(__BRYTHON__.implementation)
-      self.hexversion = self.version.hexversion()
-      self.cache_tag = None
+    def __init__(self, /, **kwargs):
+        self.__dict__.update(kwargs)
 
-  def __repr__(self):
-      return "namespace(name='%s' version=%s hexversion='%s')" % (self.name,
-          self.version, self.hexversion)
+    def __repr__(self):
+        items = (f"{k}={v!r}" for k, v in self.__dict__.items())
+        return "{}({})".format("namespace", ", ".join(items))
 
-  def __str__(self):
-      return "namespace(name='%s' version=%s hexversion='%s')" % (self.name,
-          self.version, self.hexversion)
+    def __eq__(self, other):
+        if isinstance(self, SimpleNamespace) and isinstance(other, SimpleNamespace):
+           return self.__dict__ == other.__dict__
+        return NotImplemented
 
-implementation = _implementation()
+SimpleNamespace.__module__ = "types"
+
+vi = _version_info(__BRYTHON__.implementation)
+implementation = SimpleNamespace(name = "brython",
+    version=vi,
+    hexversion = vi.hexversion(),
+    cache_tag = None)
 
 class _hash_info:
 
@@ -251,7 +255,7 @@ class _float_info:
         self.dig = 15
         self.epsilon = 2 ** -52
         self.mant_dig = 53
-        self.max = javascript.Number.MAX_VALUE
+        self.max = __BRYTHON__.max_float
         self.max_exp = 2 ** 10
         self.max_10_exp = 308
         self.min = 2 ** (-1022)
