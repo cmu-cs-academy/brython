@@ -79,10 +79,10 @@ def main():
 
     if args.install:
         print('Installing Brython {}'.format(implementation))
-    
+
         data_path = os.path.join(os.path.dirname(__file__), 'data')
         current_path_files = os.listdir(os.getcwd())
-    
+
         if current_path_files and 'brython.js' in current_path_files:
             override = input(
                 'brython.js is already present in this directory.'
@@ -92,13 +92,13 @@ def main():
                 import sys
                 print('exiting')
                 sys.exit()
-    
+
         for path in os.listdir(data_path):
             try:
                 shutil.copyfile(os.path.join(data_path, path), path)
             except shutil.SameFileError:
                 print(f'{path} has not been moved. Are the same file.')
-    
+
         print('done')
 
     if args.update:
@@ -122,7 +122,7 @@ def main():
         stdlib_dir, stdlib = list_modules.load_stdlib_sitepackages()
 
         print('finding packages...')
-        user_modules = list_modules.load_user_modules()
+        user_modules = list_modules.load_user_modules('../..')
         finder = list_modules.ModulesFinder(stdlib=stdlib, user_modules=user_modules)
         # finder.inspect()
         finder.modules = {
@@ -182,7 +182,7 @@ def main():
                 return ctype
 
             def translate_path(self, path):
-                """Map /cpython_site_packages to local CPython site-packages 
+                """Map /cpython_site_packages to local CPython site-packages
                 directory."""
                 elts = path.split('/')
                 if len(elts) > 1 and elts[0] == '':

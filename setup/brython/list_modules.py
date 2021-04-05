@@ -17,7 +17,7 @@ import tokenize
 import token
 import logging
 
-logger = logging.getLoger(__name__)
+logger = logging.getLogger(__name__)
 
 # Template for application setup.py script
 setup = """from setuptools import setup, find_packages
@@ -495,7 +495,7 @@ def load_stdlib_sitepackages():
 
     """
     stdlib_dir = None
-    for dirname, dirnames, filenames in os.walk(os.getcwd()):
+    for dirname, dirnames, filenames in os.walk('..'):
         for filename in filenames:
             if filename == "brython_stdlib.js":
                 stdlib_dir = dirname
@@ -565,9 +565,7 @@ def load_user_modules(module_dir=os.getcwd()):
             name, ext = os.path.splitext(filename)
             if not ext == ".py" or filename == "list_modules.py":
                 continue
-            # Evan: What to do here??
-            if dirname == os.getcwd():
-            # if dirname == base_dir:
+            if dirname == module_dir:
                 # modules in the same directory
                 path = os.path.join(dirname, filename)
                 with open(path, encoding="utf-8") as fobj:
