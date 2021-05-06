@@ -38,7 +38,7 @@ list.__add__ = function(self, other){
         if(radd !== _b_.NotImplemented){return radd(self)}
         var this_name = $B.class_name(self) // can be tuple
         throw _b_.TypeError.$factory('can only concatenate ' +
-            this_name + ' (not "' + $B.class_name(other) + 
+            this_name + ' (not "' + $B.class_name(other) +
             '") to ' + this_name)
     }
     var res = self.slice(),
@@ -158,9 +158,14 @@ list.__getitem__ = function(self, key){
 list.$getitem = function(self, key){
     var factory = (self.__class__ || $B.get_class(self)).$factory
 
-    try{
-        var int_key = $B.PyNumber_Index(key)
+    var int_key
+    try {
+      int_key = $B.PyNumber_Index(key)
+    } catch(err) {
 
+    }
+
+    if (int_key !== undefined) {
         var items = self.valueOf(),
             pos = int_key
         if(int_key < 0){pos = items.length + pos}
@@ -168,8 +173,6 @@ list.$getitem = function(self, key){
 
         throw _b_.IndexError.$factory($B.class_name(self) +
             " index out of range")
-    }catch(err){
-
     }
     if(key.__class__ === _b_.slice || isinstance(key, _b_.slice)){
         // Find integer values for start, stop and step
@@ -380,6 +383,25 @@ list.__new__ = function(cls, ...args){
     return res
 }
 
+function __newobj__(){
+    // __newobj__ is called with a generator as only argument
+    var $ = $B.args('__newobj__', 0, {}, [], arguments, {}, 'args', null),
+        args = $.args
+    // args for list.__reduce_ex__ is just (klass,)
+    // for tuple.__reduce_ex__ it is (klass, ...items)
+    var res = args.slice(1)
+    res.__class__ = args[0]
+    return res
+}
+
+list.__reduce_ex__ = function(self){
+    return $B.fast_tuple([
+        __newobj__,
+        $B.fast_tuple([self.__class__]),
+        _b_.None,
+        _b_.iter(self)])
+}
+
 list.__repr__ = function(self){
     if($B.repr.enter(self)){ // in py_utils.js
         return '[...]'
@@ -391,7 +413,7 @@ list.__repr__ = function(self){
         _r.push(_b_.repr(self[i]))
     }
 
-    if(self.__class__ === tuple){
+    if(_b_.isinstance(self, tuple)){
         if(self.length == 1){
             res = "(" + _r[0] + ",)"
         }else{
@@ -965,6 +987,14 @@ tuple.__new__ = function(cls, ...args){
         }
     }
     return self
+}
+
+tuple.__reduce_ex__ = function(self){
+    return $B.fast_tuple([
+        __newobj__,
+        $B.fast_tuple([self.__class__].concat(self.slice())),
+        _b_.None,
+        _b_.None])
 }
 
 // set method names

@@ -771,11 +771,6 @@ assert False == False
 assert not (True == None)
 assert True != None
 
-# issue 451
-import copy
-assert copy.copy({1}) == {1}
-assert copy.copy({1: 2}) == {1: 2}
-
 # issue 465
 class A:
 
@@ -1168,14 +1163,6 @@ a = A()
 b = B()
 assert a != b
 assert b != a
-
-# issue 603
-import copy
-a = [[1], 2, 3]
-b = copy.copy(a)
-b[0] += [10]
-assert a == [[1, 10], 2, 3]
-assert b == [[1, 10], 2, 3]
 
 # issue 604
 class StopCompares:
@@ -1853,18 +1840,6 @@ assert regex.sub(switch, 'ba') == 'ab'
 # Broken: .finditer()
 #assert [m.group(0) for m in regex.finditer('ab')] == ['a', 'b']
 
-# issue 918
-import copy
-
-class MyClass:
-
-    def __init__(self, some_param):
-        self.x = some_param
-
-
-obj = MyClass("aaa")
-obj2 = copy.copy(obj)
-assert obj2.x == "aaa"
 
 # issue 923
 v = 1
@@ -2891,6 +2866,74 @@ fg = fib_gen()
 t = [next(fg) for _ in range(7)]
 assert t == [0, 1, 1, 2, 3, 5, 8]
 
+# issue 1652
+try:
+    ()[0]
+    raise Exception("should have raised IndexError")
+except IndexError as exc:
+    assert exc.args[0] == "tuple index out of range"
+
+# issue 1661
+class A():
+    pass
+
+o = A()
+o.x = 1
+
+t = []
+def f():
+    for o.x in range(5):
+        t.append(o.x)
+
+f()
+assert t == [0, 1, 2, 3, 4]
+
+class A():
+    pass
+
+t = []
+def f():
+    o = A()
+    o.x = 1
+    for o.x in range(5):
+        t.append(o.x)
+
+f()
+assert t == [0, 1, 2, 3, 4]
+
+t = []
+def f():
+    d = {}
+    d['x'] = 1
+    for d['x'] in range(5):
+        t.append(d['x'])
+
+f()
+assert t == [0, 1, 2, 3, 4]
+
+t = []
+def f():
+    d = [1]
+    for d[0] in range(5):
+        t.append(d[0])
+
+f()
+assert t == [0, 1, 2, 3, 4]
+
+# issue 1664
+x = 0
+def f():
+    global x
+    x -= -1
+    assert x == 1
+f()
+
+# issue 1665
+def foo(a, b):
+    c = 10
+    return foo.__code__.co_varnames
+
+assert foo(1, 2) == ('a', 'b', 'c')
 
 # ==========================================
 # Finally, report that all tests have passed

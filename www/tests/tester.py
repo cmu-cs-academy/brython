@@ -82,12 +82,22 @@ class _AssertRaisesContext(_AssertRaisesBaseContext):
 
 class Tester:
 
+    def addCleanup(self, function, *args, **kw):
+        if not hasattr(self, "cleanups"):
+            self.cleanups = []
+        self.cleanups.append([function, args, kw])
+
     def assertEqual(self, result, expected, msg=None):
         if result != expected:
             if msg is not None:
                 raise AssertionError(msg)
             raise AssertionError('assertEqual, expected %s, got %s'
                 %(expected, result))
+
+    def assertLess(self, result, value):
+        if result >= value:
+            raise AssertionError('%s not less than %s'
+                %(result, value))
 
     def assertNotEqual(self, result, expected):
         if result == expected:

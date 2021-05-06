@@ -258,14 +258,14 @@ Attributes.get = function(){
     }
 }
 
-Attributes.keys = function(){
+Attributes.$$keys = function(){
     return Attributes.__iter__.apply(null, arguments)
 }
 
 Attributes.items = function(){
     var $ = $B.args("values", 1, {self: null},
         ["self"], arguments, {}, null, null),
-        attrs = $.self.attributes,
+        attrs = $.self.elt.attributes,
         values = []
     for(var i = 0; i < attrs.length; i++){
         values.push([attrs[i].name, attrs[i].value])
@@ -276,7 +276,7 @@ Attributes.items = function(){
 Attributes.values = function(){
     var $ = $B.args("values", 1, {self: null},
         ["self"], arguments, {}, null, null),
-        attrs = $.self.attributes,
+        attrs = $.self.elt.attributes,
         values = []
     for(var i = 0; i < attrs.length; i++){
         values.push(attrs[i].value)
@@ -695,6 +695,7 @@ DOMNode.__getattribute__ = function(self, attr){
         case "attrs":
             return Attributes.$factory(self)
         case "children":
+        case "child_nodes":
         case "class_name":
         case "html":
         case "parent":
@@ -1056,7 +1057,7 @@ DOMNode.__setattr__ = function(self, attr, value){
     // Sets the *property* attr of the underlying element (not its
     // *attribute*)
 
-    if(attr.substr(0,2) == "on"){ // event
+    if(attr.substr(0,2) == "on" && attr.length > 2){ // event
         if(!$B.$bool(value)){ // remove all callbacks attached to event
             DOMNode.unbind(self, attr.substr(2))
         }else{
@@ -1218,9 +1219,19 @@ DOMNode.bind = function(self, event){
 DOMNode.children = function(self){
     var res = []
     if(self.nodeType == 9){self = self.body}
-    self.childNodes.forEach(function(child){
+    for(var child of self.children){
         res.push(DOMNode.$factory(child))
-    })
+    }
+    return res
+}
+
+
+DOMNode.child_nodes = function(self){
+    var res = []
+    if(self.nodeType == 9){self = self.body}
+    for(child of self.childNodes){
+        res.push(DOMNode.$factory(child))
+    }
     return res
 }
 
