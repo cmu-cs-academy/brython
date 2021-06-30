@@ -340,4 +340,114 @@ assert repr(chr(888)) == r"'\u0378'"
 s = 'abc'
 assert s.isprintable()
 
+# upper and lower of surrogate strings
+assert '𐐀'.lower() == '𐐨'
+assert '𐐨'.upper() == '𐐀'
+
+# issue 1626
+class Lamb:
+    species_name = "Lamb"
+    scientific_name = "Lambius lambalot"
+
+    def __init__(self, name):
+        self.name = name
+
+    def __str__(self):
+        return "🐑 : " + self.name
+
+lil = Lamb("lil")
+
+import sys
+
+t = []
+
+class Output:
+
+    def write(self, x):
+        t.append(str(x))
+
+save_stdout = sys.stdout
+sys.stdout = Output()
+
+print(str(lil))
+print(lil)
+
+sys.stdout = save_stdout
+assert t[0] == '🐑 : lil'
+assert t[2] == '🐑 : lil'
+
+assert '🐑 : lil'.replace('🐑 ', 'lamb') == 'lamb: lil'
+assert '🐑 : lil'.count('l') == 2
+assert '🐑 : lil'.count('🐑 ') == 1
+assert '🐑 : lil'.find('🐑 : lil') == 0
+assert '🐑 : lil'.find('🐑 ') == 0
+
+lamb = '🐑 '
+assert f'{lamb}: lil' == '🐑 : lil'
+
+# issue 1637
+try:
+    ''.x = 0
+    raise AssertionError('should have raised AttributeError')
+except AttributeError as exc:
+    assert exc.args[0] == "'str' object has no attribute 'x'"
+
+try:
+    ''.x
+    raise AssertionError('should have raised AttributeError')
+except AttributeError as exc:
+    assert exc.args[0] == "'str' object has no attribute 'x'"
+
+try:
+    ''.__dict__
+    raise AssertionError('should have raised AttributeError')
+except AttributeError as exc:
+    assert exc.args[0] == "'str' object has no attribute '__dict__'"
+
+# tests for partition
+assert ''.partition('.') == ('', '', '')
+assert 'a'.partition('.') == ('a', '', '')
+assert '.'.partition('.') == ('', '.', '')
+assert 'a.'.partition('.') == ('a', '.', '')
+assert 'a.b'.partition('.') == ('a', '.', 'b')
+assert 'a.b.c'.partition('.') == ('a', '.', 'b.c')
+assert 'a__b'.partition('__') == ('a', '__', 'b')
+assert 'a'.partition('__') == ('a', '', '')
+assert 'a__b__c'.partition('__') == ('a', '__', 'b__c')
+
+try:
+    ''.partition('')
+    raise AssertionError('should have raised ValueError')
+except ValueError as exc:
+    assert exc.args[0] == 'empty separator'
+
+try:
+    ''.partition(5)
+    raise AssertionError('should have raised TypeError')
+except TypeError as exc:
+    assert exc.args[0] == "must be str, not int"
+
+# tests for rpartition
+assert ''.rpartition('.') == ('', '', '')
+assert 'a'.rpartition('.') == ('', '', 'a')
+assert '.'.rpartition('.') == ('', '.', '')
+assert 'a.'.rpartition('.') == ('a', '.', '')
+assert 'a.b'.rpartition('.') == ('a', '.', 'b')
+assert 'a.b.c'.rpartition('.') == ('a.b', '.', 'c')
+assert 'a__b'.rpartition('__') == ('a', '__', 'b')
+assert 'a'.rpartition('__') == ('', '', 'a')
+assert 'a__b__c'.rpartition('__') == ('a__b', '__', 'c')
+
+try:
+    ''.rpartition('')
+    raise AssertionError('should have raised ValueError')
+except ValueError as exc:
+    assert exc.args[0] == 'empty separator'
+
+try:
+    ''.rpartition(5)
+    raise AssertionError('should have raised TypeError')
+except TypeError as exc:
+    assert exc.args[0] == "must be str, not int"
+
 print("passed all tests...")

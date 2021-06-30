@@ -427,13 +427,6 @@ assert n == 4
 #issue 297
 assert type((1,) * 2) == tuple
 
-t = 1, 2
-try:
-    t[0] = 1
-    raise Exception('should have raised AttributeError')
-except AttributeError:
-    pass
-
 # issue 298
 n = 1
 for n in range(n):
@@ -777,11 +770,6 @@ assert True != False
 assert False == False
 assert not (True == None)
 assert True != None
-
-# issue 451
-import copy
-assert copy.copy({1}) == {1}
-assert copy.copy({1: 2}) == {1: 2}
 
 # issue 465
 class A:
@@ -1175,14 +1163,6 @@ a = A()
 b = B()
 assert a != b
 assert b != a
-
-# issue 603
-import copy
-a = [[1], 2, 3]
-b = copy.copy(a)
-b[0] += [10]
-assert a == [[1, 10], 2, 3]
-assert b == [[1, 10], 2, 3]
 
 # issue 604
 class StopCompares:
@@ -1860,18 +1840,6 @@ assert regex.sub(switch, 'ba') == 'ab'
 # Broken: .finditer()
 #assert [m.group(0) for m in regex.finditer('ab')] == ['a', 'b']
 
-# issue 918
-import copy
-
-class MyClass:
-
-    def __init__(self, some_param):
-        self.x = some_param
-
-
-obj = MyClass("aaa")
-obj2 = copy.copy(obj)
-assert obj2.x == "aaa"
 
 # issue 923
 v = 1
@@ -2768,7 +2736,205 @@ try:
     raise Exception("should have raised TypeError")
 except TypeError as exc:
     assert exc.args[0] == "'type' object is not subscriptable"
-    
+
+# issue 1529
+assertRaises(SyntaxError, exec, "for x in in range(1):\n pass")
+
+# issue 1531
+try:
+    exec("x =* -1")
+    raise Exception("should have raised SyntaxError")
+except SyntaxError as exc:
+    assert exc.args[0] == "can't use starred expression here"
+
+# issue 1538
+def g(x):
+    if isinstance(x, int):
+        return x
+    return [g(y) for y in x]
+
+assert g([1, [3, 4]]) == [1, [3, 4]]
+
+# issue 1562
+t = *['a', 'b'],
+assert t == ('a', 'b')
+s = *"cde",
+assert s == ('c', 'd', 'e')
+
+try:
+    exec('t = *["a", "b"]')
+    raise Exception("should have raised SyntaxError")
+except SyntaxError:
+    pass
+
+try:
+    exec('s = *"abcd"')
+    raise Exception("should have raised SyntaxError")
+except SyntaxError:
+    pass
+
+spam = ['spam']
+x = *spam[0],
+assert x == ('s', 'p', 'a', 'm')
+
+class Spam:
+  def __neg__(self):
+    return 'spam'
+
+try:
+    exec('x = *-Spam()')
+    raise Exception("should have raised SyntaxError")
+except SyntaxError:
+    pass
+
+x = *-Spam(),
+assert x == ('s', 'p', 'a', 'm')
+
+x = 1, *'two'
+assert x == (1, 't', 'w', 'o')
+
+y = *b'abc',
+assert y == (97, 98, 99)
+
+z = [*'spam']
+assert z == ['s', 'p', 'a', 'm']
+
+# issue 1582
+assert max([1, 2, 3], key=None) == 3
+assert min([1, 2, 3], key=None) == 1
+
+# issue 1596
+x = 0
+y = 0
+def f():
+    x = 1
+    y = 1
+    class C:
+        assert x == 0 # local to a class, unbound : search at module level
+        assert y == 1 # not local, unbound : search in all enclosing scopes
+        x = 2
+f()
+
+# issue 1608
+class Test():
+    def __enter__(self):
+        return (42, 43)
+
+    def __exit__(self, type, value, traceback):
+        pass
+
+with Test() as (a, b):
+    assert type(a) == int
+    assert b == 43
+
+# issue 1618
+assert repr(list[0]) == 'list[0]'
+
+# issue 1621
+english = ["one", "two", "three"]
+español = ["uno", "dos", "tres"]
+
+zip_iter = zip(english, español)
+
+eng, esp = next(zip_iter)
+assert eng == "one"
+assert esp == "uno"
+
+rest = []
+for eng, esp in zip_iter:
+    rest.append([eng, esp])
+assert rest == [["two", "dos"], ["three", "tres"]]
+
+# issue 1632
+def add_seen_k(k, f=lambda x: 0):
+    def inner(z):
+        return k
+    return inner
+
+a = add_seen_k(3)
+assert a(4) == 3
+
+# issue 1638
+def fib_gen():
+    yield from [0, 1]
+    a = fib_gen()
+    next(a)
+    for x, y in zip(a, fib_gen()):
+        yield x + y
+
+fg = fib_gen()
+t = [next(fg) for _ in range(7)]
+assert t == [0, 1, 1, 2, 3, 5, 8]
+
+# issue 1652
+try:
+    ()[0]
+    raise Exception("should have raised IndexError")
+except IndexError as exc:
+    assert exc.args[0] == "tuple index out of range"
+
+# issue 1661
+class A():
+    pass
+
+o = A()
+o.x = 1
+
+t = []
+def f():
+    for o.x in range(5):
+        t.append(o.x)
+
+f()
+assert t == [0, 1, 2, 3, 4]
+
+class A():
+    pass
+
+t = []
+def f():
+    o = A()
+    o.x = 1
+    for o.x in range(5):
+        t.append(o.x)
+
+f()
+assert t == [0, 1, 2, 3, 4]
+
+t = []
+def f():
+    d = {}
+    d['x'] = 1
+    for d['x'] in range(5):
+        t.append(d['x'])
+
+f()
+assert t == [0, 1, 2, 3, 4]
+
+t = []
+def f():
+    d = [1]
+    for d[0] in range(5):
+        t.append(d[0])
+
+f()
+assert t == [0, 1, 2, 3, 4]
+
+# issue 1664
+x = 0
+def f():
+    global x
+    x -= -1
+    assert x == 1
+f()
+
+# issue 1665
+def foo(a, b):
+    c = 10
+    return foo.__code__.co_varnames
+
+assert foo(1, 2) == ('a', 'b', 'c')
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================

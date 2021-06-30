@@ -41,6 +41,9 @@ float.imag = function(self){return _b_.int.$factory(0)}
 float.real = function(self){return float_value(self)}
 float.__float__ = function(self){return float_value(self)}
 
+// cache lshifts of 1
+$B.shift1_cache = {}
+
 float.as_integer_ratio = function(self){
     self = float_value(self)
 
@@ -67,20 +70,29 @@ float.as_integer_ratio = function(self){
         }
     }
 
-    numerator = float.$factory(fp)
+    numerator = _b_.int.$factory(fp)
     py_exponent = abs(exponent)
     denominator = 1
-
-    py_exponent = _b_.getattr(_b_.int.$factory(denominator),
-        "__lshift__")(py_exponent)
+    var x
+    if($B.shift1_cache[py_exponent] !== undefined){
+        x = $B.shift1_cache[py_exponent]
+    }else{
+        x = $B.$getattr(1, "__lshift__")(py_exponent)
+        $B.shift1_cache[py_exponent] = x
+    }
+    py_exponent = x
     if(exponent > 0){
-        numerator = numerator * py_exponent
+        numerator = $B.rich_op("mul", numerator, py_exponent)
     }else{
         denominator = py_exponent
     }
 
-    return _b_.tuple.$factory([_b_.int.$factory(numerator),
+    return $B.fast_tuple([_b_.int.$factory(numerator),
         _b_.int.$factory(denominator)])
+}
+
+float.__abs__ = function(self){
+    return new Number(Math.abs(float_value(self)))
 }
 
 float.__bool__ = function(self){
@@ -145,9 +157,19 @@ float.fromhex = function(arg){
           throw _b_.ValueError.$factory("could not convert string to float")
    }
 
-   var _m = /^(\d*\.?\d*)$/.exec(value)
+   var mo = /^(\d*)(\.?)(\d*)$/.exec(value)
 
-   if(_m !== null){return $FloatClass(parseFloat(_m[1]))}
+   if(mo !== null){
+       var res = parseFloat(mo[1]),
+           coef = 16
+       if(mo[2]){
+           for(var digit of mo[3]){
+               res += parseInt(digit, 16) / coef
+               coef *= 16
+           }
+       }
+       return $FloatClass(res)
+   }
 
    // lets see if this is a hex string.
    var _m = /^(\+|-)?(0x)?([0-9A-F]+\.?)?(\.[0-9A-F]+)?(p(\+|-)?\d+)?$/i.exec(value)
@@ -336,26 +358,43 @@ float.__hash__ = function(self) {
 
 _b_.$isninf = function(x) {
     var x1 = x
-    if(isinstance(x, float)){x1 = x.valueOf()}
+    if(isinstance(x, float)){x1 = float.numerator(x)}
     return x1 == -Infinity || x1 == Number.NEGATIVE_INFINITY
 }
 
 _b_.$isinf = function(x) {
     var x1 = x
-    if(isinstance(x, float)){x1 = x.valueOf()}
+    if((! x instanceof Number) && isinstance(x, float)){
+        x1 = float.numerator(x)
+    }
     return x1 == Infinity || x1 == -Infinity ||
         x1 == Number.POSITIVE_INFINITY || x1 == Number.NEGATIVE_INFINITY
 }
 
+_b_.$isnan = function(x) {
+    var x1 = x
+    if(isinstance(x, float)){x1 = float.numerator(x)}
+    return isNaN(x1)
+}
 
-_b_.$fabs = function(x){return x > 0 ? float.$factory(x) : float.$factory(-x)}
+_b_.$fabs = function(x){
+    if(x == 0){
+        return new Number(0)
+    }
+    return x > 0 ? float.$factory(x) : float.$factory(-x)
+}
 
 _b_.$frexp = function(x){
     var x1 = x
-    if(isinstance(x, float)){x1 = x.valueOf()}
+    if(isinstance(x, float)){
+        x1 = x.valueOf()
+    }
 
-    if(isNaN(x1) || _b_.$isinf(x1)){return [x1, -1]}
-    if (x1 == 0){return [0, 0]}
+    if(isNaN(x1) || _b_.$isinf(x1)){
+        return [x1, -1]
+    }else if (x1 == 0){
+        return [0, 0]
+    }
 
     var sign = 1,
         ex = 0,
@@ -485,7 +524,9 @@ float.__mul__ = function(self, other){
         }
         return new Number(self * other)
     }
-    if(isinstance(other, float)){return new Number(self * float_value(other))}
+    if(isinstance(other, float)){
+        return new Number(self * float_value(other))
+    }
     if(isinstance(other, _b_.bool)){
       var bool_value = 0
       if(other.valueOf()){bool_value = 1}
@@ -495,8 +536,7 @@ float.__mul__ = function(self, other){
       return $B.make_complex(float.$factory(self * other.$real),
           float.$factory(self * other.$imag))
     }
-    if(hasattr(other, "__rmul__")){return getattr(other,"__rmul__")(self)}
-    $err("*", other)
+    return _b_.NotImplemented
 }
 
 float.__ne__ = function(self, other){
@@ -504,8 +544,8 @@ float.__ne__ = function(self, other){
     return res === _b_.NotImplemented ? res : ! res
 }
 
-float.__neg__ = function(self, other){
-    return float.$factory(-float_value(self))
+float.__neg__ = function(self){
+    return new Number(-float_value(self))
 }
 
 float.__new__ = function(cls, value){
@@ -573,15 +613,54 @@ float.__pow__ = function(self, other){
     $err("** or pow()", other)
 }
 
-float.__repr__ = float.__str__ = function(self){
-    self = float_value(self)
-    if(self.valueOf() == Infinity){return 'inf'}
-    if(self.valueOf() == -Infinity){return '-inf'}
-    if(isNaN(self.valueOf())){return 'nan'}
+function __newobj__(){
+    // __newobj__ is called with a generator as only argument
+    var $ = $B.args('__newobj__', 0, {}, [], arguments, {}, 'args', null),
+        args = $.args
+    var res = args.slice(1)
+    res.__class__ = args[0]
+    return res
+}
 
-    var res = self.valueOf() + "" // coerce to string
+float.__reduce_ex__ = function(self){
+    return $B.fast_tuple([
+        __newobj__,
+        $B.fast_tuple([self.__class__ || int, float_value(self)]),
+        _b_.None,
+        _b_.None,
+        _b_.None])
+}
+
+float.__repr__ = float.__str__ = function(self){
+    self = float_value(self).valueOf()
+    if(self == Infinity){
+        return 'inf'
+    }else if(self == -Infinity){
+        return '-inf'
+    }else if(isNaN(self)){
+        return 'nan'
+    }else if(self === 0){
+        if(1 / self === -Infinity){
+            return '-0.0'
+        }
+        return '0.0'
+    }
+
+    var res = self + "" // coerce to string
     if(res.indexOf(".") == -1){
         res += ".0"
+    }
+    var split_e = res.split(/e/i)
+    if(split_e.length == 2){
+        var mant = split_e[0],
+            exp = split_e[1]
+        if(exp.startsWith('-')){
+            exp_str = parseInt(exp.substr(1)) + ''
+            if(exp_str.length < 2){
+                exp_str = '0' + exp_str
+            }
+            return mant + 'e-' + exp_str
+        }
     }
     var x, y
     [x, y] = res.split('.')
@@ -648,8 +727,9 @@ float.__truediv__ = function(self, other){
     }
     if(isinstance(other, _b_.complex)){
         var cmod = other.$real * other.$real + other.$imag * other.$imag
-        if(cmod == 0){throw ZeroDivisionError.$factory("division by zero")}
-
+        if(cmod == 0){
+            throw _b_.ZeroDivisionError.$factory("division by zero")
+        }
         return $B.make_complex(float.$factory(self * other.$real / cmod),
                            float.$factory(-self * other.$imag / cmod))
     }
@@ -679,6 +759,11 @@ var $op_func = function(self, other){
         return float.$factory(self - bool_value)
     }
     if(isinstance(other, _b_.complex)){
+        if(other.$imag == 0){
+            // 1 - 0.0j is complex(1, 0.0) : the imaginary part is 0.0,
+            // *not* -0.0 (cf. https://bugs.python.org/issue22548)
+            return $B.make_complex(self - other.$real, 0)
+        }
         return $B.make_complex(self - other.$real, -other.$imag)
     }
     if(hasattr(other, "__rsub__")){return getattr(other, "__rsub__")(self)}
@@ -782,8 +867,12 @@ float.$factory = function (value){
             return new Number(0)
     }
 
-    if(typeof value == "number"){return new Number(value)}
-    if(isinstance(value, float)){return float_value(value)}
+    if(typeof value == "number"){
+        return new Number(value)
+    }
+    if(isinstance(value, float)){
+        return float_value(value)
+    }
     if(isinstance(value, bytes)){
       var s = getattr(value, "decode")("latin-1")
       return float.$factory(getattr(value, "decode")("latin-1"))
@@ -822,6 +911,9 @@ float.$factory = function (value){
     var klass = value.__class__ || $B.get_class(value),
         num_value = $B.to_num(value, ["__float__", "__index__"])
 
+    if(value !== Number.POSITIVE_INFINITY && ! isFinite(num_value)){
+        throw _b_.OverflowError.$factory('int too large to convert to float')
+    }
     if(num_value !== null){
         return num_value
     }

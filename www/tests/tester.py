@@ -8,7 +8,7 @@ If the test failed, print the exception, and the line in the script where the
 exception happened.
 """
 
-import _jsre as re
+import python_re as re
 import sys
 import time
 import tb
@@ -82,12 +82,22 @@ class _AssertRaisesContext(_AssertRaisesBaseContext):
 
 class Tester:
 
+    def addCleanup(self, function, *args, **kw):
+        if not hasattr(self, "cleanups"):
+            self.cleanups = []
+        self.cleanups.append([function, args, kw])
+
     def assertEqual(self, result, expected, msg=None):
         if result != expected:
             if msg is not None:
                 raise AssertionError(msg)
             raise AssertionError('assertEqual, expected %s, got %s'
                 %(expected, result))
+
+    def assertLess(self, result, value):
+        if result >= value:
+            raise AssertionError('%s not less than %s'
+                %(result, value))
 
     def assertNotEqual(self, result, expected):
         if result == expected:
@@ -98,16 +108,28 @@ class Tester:
         context = _AssertRaisesContext(excClass, self, callableObj)
         return context.handle('assertRaises', callableObj, args, kwargs)
 
-    def assertIs(self, a, b):
+    def assertRaisesRegex(self, excClass, expected_regexp,
+            callableObj=None, *args, **kwargs):
+        context = _AssertRaisesContext(excClass, self, callableObj,
+            expected_regexp)
+        return context.handle('assertRaises', callableObj, args, kwargs)
+
+    def assertRegex(self, text, regex, msg=None):
+        assert re.match(regex, text), msg
+
+    def assertIs(self, a, b, msg=None):
         if not a is b:
-            raise AssertionError('%s is %s should be true' %(a,b))
+            raise AssertionError(msg or '%s is %s should be true' %(a, b))
 
     def assertIsInstance(self, obj, klass):
         if not isinstance(obj, klass):
             raise AssertionError('%s is not an instance of %s' %(obj, klass))
 
     def assertIsNone(self, obj, msg=None):
-        assert obj == None, value
+        assert obj == None, obj
+
+    def assertIsNotNone(self, obj, msg=None):
+        assert obj is not None, obj
 
     def assertIsNot(self, a, b):
         if a is b:
@@ -122,12 +144,63 @@ class Tester:
             raise AssertionError('%s should not be in %s' %(item, container))
 
     def assertTrue(self, item, msg=None):
-        if item is not True:
+        if not item:
             raise AssertionError(msg or '%s is not True' %item)
 
     def assertFalse(self, item, msg=None):
-        if item is not False:
+        if item:
             raise AssertionError(msg or '%s is not False' %item)
+
+    def assertWarns(self, exc):
+      import warnings
+      class Manager:
+
+          def __init__(self, expected, expected_regex=None):
+              self.expected = expected
+              self.expected_regex = expected_regex
+              self.obj_name = None
+
+          def __enter__(self):
+              self.warnings_manager = warnings.catch_warnings(record=True)
+              self.warnings = self.warnings_manager.__enter__()
+              warnings.simplefilter("always", self.expected)
+              return self
+
+          def __exit__(self, exc_type, exc_value, tb):
+              self.warnings_manager.__exit__(exc_type, exc_value, tb)
+              if exc_type is not None:
+                  # let unexpected exceptions pass through
+                  return
+              try:
+                  exc_name = self.expected.__name__
+              except AttributeError:
+                  exc_name = str(self.expected)
+              first_matching = None
+              for m in self.warnings:
+                  w = m.message
+                  if not isinstance(w, self.expected):
+                      continue
+                  if first_matching is None:
+                      first_matching = w
+                  if (self.expected_regex is not None and
+                      not self.expected_regex.search(str(w))):
+                      continue
+                  # store warning for later retrieval
+                  self.warning = w
+                  self.filename = m.filename
+                  self.lineno = m.lineno
+                  return
+              # Now we simply try to choose a helpful failure message
+              if first_matching is not None:
+                  self._raiseFailure('"{}" does not match "{}"'.format(
+                           self.expected_regex.pattern, str(first_matching)))
+              if self.obj_name:
+                  self._raiseFailure("{} not triggered by {}".format(exc_name,
+                                                                     self.obj_name))
+              else:
+                  self._raiseFailure("{} not triggered".format(exc_name))
+
+      return Manager(exc)
 
     def fail(self, *args):
         raise Exception(str(args))
@@ -144,17 +217,33 @@ class Tester:
                 if hasattr(self, 'setUp'):
                     self.setUp()
                 t0 = time.time()
+                print("run test", method)
                 try:
                     f()
                     report.add(method[5:], lineno,
-                        round((time.time()-t0)*1000), 'ok')
+                        round((time.time() - t0) * 1000), 'ok')
                 except SkipTest as exc:
                     print('skip test', exc)
                     report.add(method[5:], lineno,
-                        round((time.time()-t0)*1000), 'skipped')
+                        round((time.time() - t0) * 1000), 'skipped')
                 except Exception as exc:
+                    print("exc", exc)
                     tb.print_exc()
+                    report.add(method[5:], lineno,
+                        round((time.time() - t0) * 1000), 'failed')
         return report
+
+    def subTest(self, *args):
+
+        class Manager:
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+        return Manager()
 
 class MethodReport:
     """Stores the results on a method : line number, execution time, status
@@ -201,11 +290,23 @@ class TestReport:
         res = 'Class %s\n' %self.class_name
         methods = list(self.records.keys())
         methods.sort()
+        ncars = min(40, max(len(method) for method in methods))
         for method in methods:
             report = self.records[method]
-            res += '{:15} {1.status} {1.lineno}\n'.format(method, report)
+            fmt = f'  {{:{ncars}}} {{1.lineno:4}} {{1.status}}\n'
+            res += fmt.format(method, report)
             if report.args:
                 res += '    {0.args[0]}\n'.format(report)
+        results = {}
+        for method in self.records:
+            status = self.records[method].status
+            if status in results:
+                results[status] += 1
+            else:
+                results[status] = 1
+        for status in sorted(results):
+            res += f'{status}: {results[status]}\n'
+
         return res
 
 TestCase = Tester # unittest interface

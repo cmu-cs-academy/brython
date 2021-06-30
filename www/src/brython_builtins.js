@@ -35,6 +35,7 @@ var href = _window.location.href
 $B.protocol = href.split(':')[0]
 
 $B.BigInt = _window.BigInt
+$B.indexedDB = _window.indexedDB
 
 var $path
 
@@ -142,6 +143,9 @@ if($B.isWebWorker){
 // minimum and maximum safe integers
 $B.max_int = Math.pow(2, 53) - 1
 $B.min_int = -$B.max_int
+
+$B.max_float = new Number(Number.MAX_VALUE)
+$B.min_float = new Number(Number.MIN_VALUE)
 
 // Used to compute the hash value of some objects (see
 // py_builtin_functions.js)

@@ -556,4 +556,51 @@ assert math.isnan(float('nan') + float('inf'))
 assert math.isnan(float('nan') - float('-inf'))
 assert math.isnan(float('nan') - float('-inf'))
 
+# issue 1524
+assert isinstance(10 // 3.1, float)
+
+class Float(float):
+  pass
+
+assert 10 // Float(2) == 5.0
+
+# issue 1558
+values = [
+    [
+        76840139,
+        b'\x00\x00\x00\x00\x00\x00\x00\x00\x04\x94|\xcb',
+        b'\xcb|\x94\x04\x00\x00\x00\x00\x00\x00\x00\x00'
+    ],
+    [
+        7684013976526520320,
+        b'\x00\x00\x00\x00j\xa3\x1a\x00\x00\x00\x00\x00',
+        b'\x00\x00\x00\x00\x00\x1a\xa3j\x00\x00\x00\x00'
+    ]
+]
+
+for value in values:
+    for i, byteorder in enumerate(["big", "little"]):
+        b = int.to_bytes(value[0], 12, byteorder)
+        assert b == value[1 + i]
+        assert int.from_bytes(b, byteorder) == value[0]
+
+# issue 1578
+assert str(1e-6) == "1e-06"
+assert str(1e-7) == "1e-07"
+assert str(1e-8) == "1e-08"
+assert str(1e-12) == "1e-12"
+assert str(1.2e-123) == "1.2e-123"
+assert str(1e6) == "1000000.0"
+assert str(1e7) == "10000000.0"
+assert str(1e8) == "100000000.0"
+assert str(1e12) == "1000000000000.0"
+assert str(1.2e123) == "1.2e+123"
+
+# issue 1666
+a = 0.1
+assert abs(a) == 0.1
+
+a = 10**(-1)
+assert abs(a) == 0.1
+
 print('passed all tests...')

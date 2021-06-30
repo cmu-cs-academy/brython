@@ -39,97 +39,97 @@ int.as_integer_ratio = function(){
 }
 
 int.from_bytes = function() {
-  var $ = $B.args("from_bytes", 3,
-      {bytes:null, byteorder:null, signed:null},
-      ["bytes", "byteorder", "signed"],
-      arguments, {signed: false}, null, null)
+    var $ = $B.args("from_bytes", 3,
+        {bytes:null, byteorder:null, signed:null},
+        ["bytes", "byteorder", "signed"],
+        arguments, {signed: false}, null, null)
 
-  var x = $.bytes,
-      byteorder = $.byteorder,
-      signed = $.signed,
-      _bytes, _len
-  if(_b_.isinstance(x, [_b_.bytes, _b_.bytearray])){
-      _bytes = x.source
-      _len = x.source.length
-  }else{
-      _bytes = _b_.list.$factory(x)
-      _len = _bytes.length
-      for(var i = 0; i < _len; i++){
-          _b_.bytes.$factory([_bytes[i]])
-      }
-  }
-  switch(byteorder) {
-      case "big":
-          var num = _bytes[_len - 1]
-          var _mult = 256
-          for(var i = _len - 2; i >= 0; i--){
-              // For operations, use the functions that can take or return
-              // big integers
-              num = $B.add($B.mul(_mult, _bytes[i]), num)
-              _mult = $B.mul(_mult,256)
-          }
-          if(! signed){return num}
-          if(_bytes[0] < 128){return num}
-          return $B.sub(num, _mult)
-      case "little":
-          var num = _bytes[0]
-          if(num >= 128){num = num - 256}
-          var _mult = 256
-          for(var i = 1;  i < _len; i++){
-              num = $B.add($B.mul(_mult, _bytes[i]), num)
-              _mult = $B.mul(_mult, 256)
-          }
-          if(! signed){return num}
-          if(_bytes[_len - 1] < 128){return num}
-          return $B.sub(num, _mult)
-  }
-
-  throw _b_.ValueError.$factory("byteorder must be either 'little' or 'big'")
+    var x = $.bytes,
+        byteorder = $.byteorder,
+        signed = $.signed,
+        _bytes, _len
+    if(_b_.isinstance(x, [_b_.bytes, _b_.bytearray])){
+        _bytes = x.source
+        _len = x.source.length
+    }else{
+        _bytes = _b_.list.$factory(x)
+        _len = _bytes.length
+        for(var i = 0; i < _len; i++){
+            _b_.bytes.$factory([_bytes[i]])
+        }
+    }
+    if(byteorder == "big"){
+        _bytes.reverse()
+    }else if(byteorder != "little"){
+        throw _b_.ValueError.$factory(
+            "byteorder must be either 'little' or 'big'")
+    }
+    var num = _bytes[0]
+    if(signed && num >= 128){
+        num = num - 256
+    }
+    var _mult = 256
+    for(var i = 1;  i < _len; i++){
+        num = $B.add($B.mul(_mult, _bytes[i]), num)
+        _mult = $B.mul(_mult, 256)
+    }
+    if(! signed){
+        return num
+    }
+    if(_bytes[_len - 1] < 128){
+        return num
+    }
+    return $B.sub(num, _mult)
 }
 
 int.to_bytes = function(){
     var $ = $B.args("to_bytes", 3,
-        {self: null, len: null, byteorder: null},
-        ["self", "len", "byteorder"],
-        arguments, {}, "args", "kw"),
+        {self: null, len: null, byteorder: null, signed: null},
+        ["self", "len", "byteorder", "*", "signed"],
+        arguments, {signed: false}, null, null),
         self = $.self,
         len = $.len,
         byteorder = $.byteorder,
-        kwargs = $.kw
+        signed = $.signed
     if(! _b_.isinstance(len, _b_.int)){
         throw _b_.TypeError.$factory("integer argument expected, got " +
             $B.class_name(len))
     }
     if(["little", "big"].indexOf(byteorder) == -1){
-        throw _b_.ValueError.$factory("byteorder must be either 'little' or 'big'")
+        throw _b_.ValueError.$factory(
+            "byteorder must be either 'little' or 'big'")
     }
-    var signed = kwargs.$string_dict["signed"] || false,
-        res = []
+
+    if(_b_.isinstance(self, $B.long_int)){
+        return $B.long_int.to_bytes(self, len, byteorder, signed)
+    }
 
     if(self < 0){
         if(! signed){
-            throw _b_.OverflowError.$factory("can't convert negative int to unsigned")
+            throw _b_.OverflowError.$factory(
+                "can't convert negative int to unsigned")
         }
         self = Math.pow(256, len) + self
     }
-    var value = self
-    while(true){
+
+    var res = [],
+        value = self
+
+    while(value > 0){
         var quotient = Math.floor(value / 256),
             rest = value - 256 * quotient
         res.push(rest)
-        if(quotient == 0){
-            break
+        if(res.length > len){
+            throw _b_.OverflowError.$factory("int too big to convert")
         }
         value = quotient
     }
-    if(res.length > len){
-        throw _b_.OverflowError.$factory("int too big to convert")
-    }else{
-        while(res.length < len){
-            res = res.concat([0])
-        }
+    while(res.length < len){
+        res.push(0)
     }
-    if(byteorder == "big"){res = res.reverse()}
+    if(byteorder == "big"){
+        res.reverse()
+    }
     return {
         __class__: _b_.bytes,
         source: res
@@ -240,10 +240,11 @@ int.__floordiv__ = function(self, other){
         return Math.floor(self / other)
     }
     if(_b_.isinstance(other, _b_.float)){
+        other = _b_.float.numerator(other) // for float subclasses
         if(!other.valueOf()){
             throw _b_.ZeroDivisionError.$factory("division by zero")
         }
-        return Math.floor(self / other)
+        return new Number(Math.floor(self / other))
     }
     if(_b_.hasattr(other, "__rfloordiv__")){
         return $B.$getattr(other, "__rfloordiv__")(self)
@@ -327,7 +328,7 @@ int.__mul__ = function(self, other){
         }
     }
     if(_b_.isinstance(other, _b_.float)){
-        return new Number(self * other)
+        return new Number(self * _b_.float.numerator(other))
     }
     if(_b_.isinstance(other, _b_.bool)){
          if(other.valueOf()){return self}
@@ -384,7 +385,6 @@ function extended_euclidean(a, b){
     }
 }
 
-$B.use_bigint = 0
 int.__pow__ = function(self, other, z){
     if(typeof other == "number"  || _b_.isinstance(other, int)){
         other = int_value(other)
@@ -434,11 +434,12 @@ int.__pow__ = function(self, other, z){
           return result
       }
       var res = Math.pow(self.valueOf(), other.valueOf())
-      if(res > $B.min_int && res < $B.max_int){return res}
-      else if(res !== Infinity && !isFinite(res)){return res}
-      else{
+      if(res > $B.min_int && res < $B.max_int){
+          return other > 0 ? res : new Number(res)
+      }else if(res !== Infinity && !isFinite(res)){
+          return res
+      }else{
           if($B.BigInt){
-              $B.use_bigint++
               return {
                   __class__: $B.long_int,
                   value: ($B.BigInt(self) ** $B.BigInt(other)).toString(),
@@ -450,8 +451,10 @@ int.__pow__ = function(self, other, z){
       }
     }
     if(_b_.isinstance(other, _b_.float)) {
-        if(self >= 0){return new Number(Math.pow(self, other.valueOf()))}
-        else{
+        other = _b_.float.numerator(other)
+        if(self >= 0){
+            return new Number(Math.pow(self, other))
+        }else{
             // use complex power
             return _b_.complex.__pow__($B.make_complex(self, 0), other)
         }
@@ -467,9 +470,26 @@ int.__pow__ = function(self, other, z){
     $err("**", other)
 }
 
+function __newobj__(){
+    // __newobj__ is called with a generator as only argument
+    var $ = $B.args('__newobj__', 0, {}, [], arguments, {}, 'args', null),
+        args = $.args
+    var res = args.slice(1)
+    res.__class__ = args[0]
+    return res
+}
+
+int.__reduce_ex__ = function(self){
+    return $B.fast_tuple([
+        __newobj__,
+        $B.fast_tuple([self.__class__ || int, int_value(self)]),
+        _b_.None,
+        _b_.None,
+        _b_.None])
+}
+
 int.__repr__ = function(self){
-    if(self === int){return "<class 'int'>"}
-    return self.toString()
+    return int_value(self).toString()
 }
 
 // bitwise right shift
@@ -513,6 +533,7 @@ int.__truediv__ = function(self, other){
         return new Number(self / other)
     }
     if(_b_.isinstance(other, _b_.float)){
+        other = _b_.float.numerator(other)
         if(!other.valueOf()){
             throw _b_.ZeroDivisionError.$factory("division by zero")
         }
@@ -560,9 +581,13 @@ var $op_func = function(self, other){
         }
         return self - other
     }
-    if(_b_.isinstance(other, _b_.bool)){return self - other}
+    if(_b_.isinstance(other, _b_.bool)){
+        return self - other
+    }
     var rsub = $B.$getattr(other, "__rsub__", _b_.None)
-    if(rsub !== _b_.None){return rsub(self)}
+    if(rsub !== _b_.None){
+        return rsub(self)
+    }
     $err("-", other)
 }
 
@@ -591,9 +616,14 @@ var $op_func = function(self, other){
         }
     }
     if(_b_.isinstance(other, _b_.float)){
-        return new Number(self - other)
+        return new Number(self - _b_.float.numerator(other))
     }
     if(_b_.isinstance(other, _b_.complex)){
+        if(other.$imag == 0){
+            // 1 - 0.0j is complex(1, 0.0) : the imaginary part is 0.0,
+            // *not* -0.0 (cf. https://bugs.python.org/issue22548)
+            return $B.make_complex(self - other.$real, 0)
+        }
         return $B.make_complex(self - other.$real, -other.$imag)
     }
     if(_b_.isinstance(other, _b_.bool)){
@@ -606,8 +636,8 @@ var $op_func = function(self, other){
     }
     var rsub = $B.$getattr(other, "__rsub__", _b_.None)
     if(rsub !== _b_.None){return rsub(self)}
-    console.log("err", self, other)
-    console.log($B.frames_stack.slice())
+    //console.log("err", self, other)
+    //console.log($B.frames_stack.slice())
     throw $err("-", other)
 }
 $op_func += "" // source code
@@ -627,7 +657,7 @@ var $comp_func = function(self, other){
         other = int_value(other)
         return self.valueOf() > other.valueOf()
     }else if(_b_.isinstance(other, _b_.float)){
-        return self.valueOf() > other.valueOf()
+        return self.valueOf() > _b_.float.numerator(other)
     }else if(_b_.isinstance(other, _b_.bool)) {
       return self.valueOf() > _b_.bool.__hash__(other)
     }
@@ -685,12 +715,16 @@ int.$factory = function(value, base){
         if(value < $B.min_int || value > $B.max_int){
             return $B.long_int.$from_float(value)
         }
-        else{return value > 0 ? Math.floor(value) : Math.ceil(value)}
+        else{
+            return value > 0 ? Math.floor(value) : Math.ceil(value)
+        }
     }
 
     if(! (base >=2 && base <= 36)){
         // throw error (base must be 0, or 2-36)
-        if(base != 0){throw _b_.ValueError.$factory("invalid base")}
+        if(base != 0){
+            throw _b_.ValueError.$factory("invalid base")
+        }
     }
 
     if(typeof value == "number"){
@@ -726,7 +760,9 @@ int.$factory = function(value, base){
             base + ": '" + _b_.str.$factory(value) + "'")
     }
 
-    if(_b_.isinstance(value, _b_.str)){value = value.valueOf()}
+    if(_b_.isinstance(value, _b_.str)){
+        value = value.valueOf()
+    }
     if(typeof value == "string") {
         var _value = value.trim()    // remove leading/trailing whitespace
         if(_value.length == 2 && base == 0 &&
@@ -774,13 +810,16 @@ int.$factory = function(value, base){
         return int.$factory($B.$getattr(value, "decode")("latin-1"), base)
     }
 
-    var num_value = $B.to_num(value, ["__int__", "__index__", "__trunc__"])
-    if(num_value === null){
-        throw _b_.TypeError.$factory(
-            "int() argument must be a string, a bytes-like " +
-            "object or a number, not '" + $B.class_name(value) + "'")
+    for(var special_method of ["__int__", "__index__", "__trunc__"]){
+        var num_value = $B.$getattr(value.__class__ || $B.get_class(value),
+            special_method, _b_.None)
+        if(num_value !== _b_.None){
+            return $B.$call(num_value)(value)
+        }
     }
-    return num_value
+    throw _b_.TypeError.$factory(
+        "int() argument must be a string, a bytes-like " +
+        "object or a number, not '" + $B.class_name(value) + "'")
 }
 
 $B.set_func_names(int, "builtins")
@@ -830,6 +869,7 @@ var bool = {
 
 var methods = $B.op2method.subset("operations", "binary", "comparisons",
         "boolean")
+
 for(var op in methods){
     var method = "__" + methods[op] + "__"
     bool[method] = (function(op){
@@ -849,6 +889,10 @@ bool.__and__ = function(self, other){
         return int.__and__(bool.__index__(self), int.__index__(other))
     }
     return _b_.NotImplemented
+}
+
+bool.__float__ = function(self){
+    return self ? new Number(1) : new Number(0)
 }
 
 bool.__hash__ = bool.__index__ = bool.__int__ = function(self){

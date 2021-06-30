@@ -705,12 +705,16 @@ Random.randrange = function(){
     if($.stop === null){
         var start = 0, stop = $.x.valueOf(), step = 1
     }else{
-        var start = $.x.valueOf(), stop = $.stop.valueOf(),
+        var start = $.x.valueOf(),
+            stop = $.stop.valueOf(),
             step = $.step === null ? 1 : $.step.valueOf()
         if(step == 0){throw _b_.ValueError.$factory('step cannot be 0')}
     }
 
-    if((step > 0 && start >= stop) || (step < 0 && start <= stop)){
+    if(($B.rich_comp("__gt__", step, 0) &&
+            $B.rich_comp("__ge__", start, stop)) ||
+            ($B.rich_comp("__lt__", step, 0) && 
+             $B.rich_comp("__le__", start, stop))){
         throw _b_.ValueError.$factory("empty range for randrange() (" +
             start + ", " + stop + ", " + step + ")")
     }
@@ -824,7 +828,7 @@ Random.sample = function(){
                             _b_.getattr(population, '__getitem__')(j)
         }
     }
-    return result
+    return $B.$list(result) // not "return result", cf. issue #1622
 }
 
 Random.seed = function(){

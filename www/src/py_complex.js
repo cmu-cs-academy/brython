@@ -39,6 +39,10 @@ complex.__bool__ = function(self){
     return (self.$real != 0 || self.$imag != 0)
 }
 
+complex.__complex__ = function(self){
+    return self
+}
+
 complex.__eq__ = function(self, other){
     if(_b_.isinstance(other, complex)){
         return self.$real.valueOf() == other.$real.valueOf() &&
@@ -174,9 +178,10 @@ complex.__new__ = function(cls){
     // If first argument is not a string, the second argument defaults to 0
     $imag = $imag === missing ? 0 : $imag
 
-    if(arguments.length == 1 && $real.__class__ === complex && $imag == 0){
+    if(arguments.length == 2 && $real.__class__ === complex && $imag == 0){
         return $real
     }
+
     if(_b_.isinstance($real, [_b_.float, _b_.int]) &&
             _b_.isinstance($imag, [_b_.float, _b_.int])){
         res = {
@@ -187,7 +192,7 @@ complex.__new__ = function(cls){
         return res
     }
 
-    var real_to_num = $B.to_num($real, 
+    var real_to_num = $B.to_num($real,
         ["__complex__", "__float__", "__index__"])
     if(real_to_num === null){
         throw _b_.TypeError.$factory("complex() first argument must be a " +
@@ -251,27 +256,37 @@ complex.__pow__ = function(self, other){
 }
 
 complex.__str__ = complex.__repr__ = function(self){
+    var real = _b_.str.$factory(self.$real),
+        imag = _b_.str.$factory(self.$imag)
+    if(self.$real instanceof Number && self.$real == parseInt(self.$real)){
+        real = _b_.str.$factory(parseInt(self.$real))
+    }
+    if(self.$imag instanceof Number && self.$imag == parseInt(self.$imag)){
+        imag = _b_.str.$factory(parseInt(self.$imag))
+        if(self.$imag == 0 && 1 / self.$imag === -Infinity){
+            imag = "-0"
+        }
+    }
     if(self.$real == 0){
         if(1 / self.$real < 0){
-            if(self.$imag < 0){
-                return "(-0" + self.$imag + "j)"
-            }else if(self.$imag == 0 && 1 / self.$imag < 0){
-                return "(-0-" + self.$imag + "j)"
-            }else return "(-0+" + self.$imag + "j)"
+            if(imag.startsWith('-')){
+                return "-0" + imag + "j"
+            }
+            return "-0+" + imag + "j"
         }else{
-            if(self.$imag == 0 && 1 / self.$imag < 0){
-                return "-" + self.$imag + "j"
-            }else{return self.$imag + "j"}
+            return imag + "j"
         }
     }
-    if(self.$imag > 0){return "(" + self.$real + "+" + self.$imag + "j)"}
+    if(self.$imag > 0 || isNaN(self.$imag)){
+        return "(" + real + "+" + imag + "j)"
+    }
     if(self.$imag == 0){
         if(1 / self.$imag < 0){
-            return "(" + self.$real + "-" + self.$imag + "j)"
+            return "(" + real + "-0j)"
         }
-        return "(" + self.$real + "+" + self.$imag + "j)"
+        return "(" + real + "+0j)"
     }
-    return "(" + self.$real + "-" + (-self.$imag) + "j)"
+    return "(" + real + "-" + _b_.str.$factory(-self.$imag) + "j)"
 }
 
 complex.__sqrt__ = function(self) {
@@ -377,7 +392,9 @@ complex.real = function(self){return new Number(self.$real)}
 complex.real.setter = function(){
     throw _b_.AttributeError.$factory("readonly attribute")
 }
-complex.imag = function(self){return new Number(self.$imag)}
+complex.imag = function(self){
+    return new Number(self.$imag)
+}
 complex.imag.setter = function(){
     throw _b_.AttributeError.$factory("readonly attribute")
 }

@@ -1,8 +1,8 @@
 This tutorial explains how to develop an application that runs in the browser using the Python programming language. We will take the example of writing a calculator.
 
-You will need a text editor, and of course a browser with an Internet access.
+You will need a text editor, and of course a browser with Internet access.
 
-The contents of this tutorial assumes that you have at least a basic knowledge of HTML (general page structure, most usual tags), of stylesheets (CSS) and of the Python language.
+The contents of this tutorial assume that you have at least a basic knowledge of HTML (general page structure, most usual tags), of stylesheets (CSS) and of the Python language.
 
 In the text editor, create an HTML page with the following content:
 
@@ -42,7 +42,7 @@ Page structure
 ==============
 Let's take a look at the page contents. In the `<head>` zone we load the script __`brython.js`__ : it is the Brython engine, the program that will find and execute the Python scripts included in the page. In this example we get it from a CDN, so that there is nothing to install on the PC. Note the version number (`brython@{implementation}`) : it can be updated for each new Brython version.
 
-The `<body>` tag has an attribute `onload="brython()"`. It means that when the page has finished loading, the browser has to call the function `brython()`, which is defined in the Brython engine loaded in the page. The function searches all the `<script>`tags that have the attribute `type="text/python"` and executes them.
+The `<body>` tag has an attribute `onload="brython()"`. It means that when the page has finished loading, the browser has to call the function `brython()`, which is defined in the Brython engine loaded in the page. The function searches all the `<script>` tags that have the attribute `type="text/python"` and executes them.
 
 Our __`index.html`__ page embeds this script:
 
@@ -60,7 +60,7 @@ To add a text to the document - concretely, to display a text in the browser - t
 document <= "Hello !"
 ```
 
-You can think of the `<=` sign as a left arrow : the document "receives" a new element, here the string "Hello !". You will see later that it is always possible to use the standardized DOM syntax to interact with the page, by Brython provides a few shortcuts to make the code less verbose.
+You can think of the `<=` sign as a left arrow : the document "receives" a new element, here the string "Hello !". You will see later that it is always possible to use the standardized DOM syntax to interact with the page, but Brython provides a few shortcuts to make the code less verbose.
 
 For this specific case, those who are not at ease with the use of the opeartor `<=` can use the method `attach()` of DOM elements instead:
 

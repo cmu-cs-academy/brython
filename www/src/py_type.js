@@ -478,7 +478,10 @@ type.__format__ = function(klass, fmt_spec){
             }
             if($test){console.log("res is function", res)}
 
-            if(attr == "__new__"){res.$type = "staticmethod"}
+            if(attr == "__new__" ||
+                    res.__class__ === $B.builtin_function){
+                res.$type = "staticmethod"
+            }
             if(attr == "__class_getitem__" && res.__class__ !== $B.method){
                 res = _b_.classmethod.$factory(res)
             }
@@ -596,16 +599,17 @@ type.__new__ = function(meta, name, bases, cl_dict){
             if(v.$infos === undefined){
                 console.log("type new", v, v + "")
                 console.log($B.frames_stack.slice())
-            }
-            v.$infos.$class = class_dict
-            v.$infos.__qualname__ = name + '.' + v.$infos.__name__
-            if(v.$infos.$defaults){
-                // If the function was set an attribute __defaults__, it is
-                // stored in v.$infos.$defaults (cf. Function.__setattr__ in
-                // py_builtin_functions.js)
-                var $defaults = v.$infos.$defaults
-                $B.Function.__setattr__(v, "__defaults__",
-                    $defaults)
+            }else{
+                v.$infos.$class = class_dict
+                v.$infos.__qualname__ = name + '.' + v.$infos.__name__
+                if(v.$infos.$defaults){
+                    // If the function was set an attribute __defaults__, it is
+                    // stored in v.$infos.$defaults (cf. Function.__setattr__ in
+                    // py_builtin_functions.js)
+                    var $defaults = v.$infos.$defaults
+                    $B.Function.__setattr__(v, "__defaults__",
+                        $defaults)
+                }
             }
         }
     }
@@ -753,6 +757,12 @@ type.__call__.__class__ = wrapper_descriptor
 
 var $instance_creator = $B.$instance_creator = function(klass){
     // return the function to initalise a class instance
+    if(klass.prototype && klass.prototype.constructor == klass){
+        // JS constructor
+        return function(){
+            return new klass(...arguments)
+        }
+    }
 
     // The class may not be instanciable if it has at least one abstract method
     if(klass.$instanciable !== undefined){
@@ -760,10 +770,9 @@ var $instance_creator = $B.$instance_creator = function(klass){
             "Can't instantiate abstract class interface " +
                 "with abstract methods")}
     }
-    var metaclass = klass.__class__,
+    var metaclass = klass.__class__ || $B.get_class(klass),
         call_func,
         factory
-
     if(metaclass === _b_.type && (!klass.__bases__ || klass.__bases__.length == 0)){
         if(klass.hasOwnProperty("__new__")){
             if(klass.hasOwnProperty("__init__")){
@@ -971,17 +980,23 @@ $B.GenericAlias.__parameters__ = {
 }
 
 $B.GenericAlias.__repr__ = function(self){
-    var items = self.items
-    for(var i = 0, len = items.length; i < len; i++){
-        if(items[i] === _b_.Ellipsis){
-            items[i] = '...'
+    var items = []
+    for(var i = 0, len = self.items.length; i < len; i++){
+        if(self.items[i] === _b_.Ellipsis){
+            items.push('...')
         }else{
-            items[i] = items[i].$infos.__name__
+            if(self.items[i].$is_class){
+                items.push(self.items[i].$infos.__name__)
+            }else{
+                items.push(_b_.repr(self.items[i])) //.$infos.__name__
+            }
         }
     }
     return self.origin_class.$infos.__qualname__ + '[' +
         items.join(", ") + ']'
 }
+
+$B.set_func_names($B.GenericAlias, "builtins")
 
 // this could not be done before $type and $factory are defined
 _b_.object.__class__ = type

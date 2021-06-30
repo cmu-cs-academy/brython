@@ -33,14 +33,17 @@ var set = {
     $native: true
 }
 
-set.__add__ = function(self,other){
+set.__add__ = function(self, other){
     throw _b_.TypeError.$factory(
         "unsupported operand type(s) for +: 'set' and " + typeof other)
 }
 
 set.__and__ = function(self, other, accept_iter){
-    try{$test(accept_iter, other)}
-    catch(err){return _b_.NotImplemented}
+    try{
+        $test(accept_iter, other)
+    }catch(err){
+        return _b_.NotImplemented
+    }
     var res = create_type(self)
     for(var i = 0, len = self.$items.length; i < len; i++){
         if(_b_.getattr(other, "__contains__")(self.$items[i])){
@@ -60,31 +63,29 @@ set.__class_getitem__ = function(cls, item){
 }
 
 set.__contains__ = function(self, item){
-    if(self.$simple){
-        if(typeof item == "number" || item instanceof Number){
-            if(isNaN(item)){ // special case for NaN
-                for(var i = self.$items.length-1; i >= 0; i--){
-                    if(isNaN(self.$items[i])){return true}
+    if(typeof item == "number" || item instanceof Number){
+        if(isNaN(item)){ // special case for NaN
+            for(var i = self.$items.length-1; i >= 0; i--){
+                if(isNaN(self.$items[i])){
+                    return true
                 }
-                return false
-            }else if(item instanceof Number){
-                return self.$numbers.indexOf(item.valueOf()) > -1
-            }else{
-                return self.$items.indexOf(item) > -1
             }
-        }else if(typeof item == "string"){
+            return false
+        }else if(item instanceof Number){
+            return self.$numbers.indexOf(item.valueOf()) > -1
+        }else{
             return self.$items.indexOf(item) > -1
         }
+    }else if(typeof item == "string"){
+        return self.$items.indexOf(item) > -1
     }
-    if(! _b_.isinstance(item, set)){
-        $B.$getattr(item, "__hash__") // raises TypeError if item is not hashable
-        // If item is a set, "item in self" is True if item compares equal to
-        // one of the set items
-    }
-    var hash = _b_.hash(item)
+    var hash = _b_.hash(item), // raises TypeError if item is not hashable
+        is_tuple = item.__class__ === _b_.tuple
     if(self.$hashes[hash]){
         for(var i = 0, len = self.$hashes[hash].length; i < len;i++){
-            if($B.rich_comp("__eq__", self.$hashes[hash][i], item)){
+            if(is_tuple && self.$hashes[hash][i].__class__ === _b_.tuple){
+                return true
+            }else if($B.rich_comp("__eq__", self.$hashes[hash][i], item)){
                 return true
             }
         }
@@ -94,7 +95,9 @@ set.__contains__ = function(self, item){
 
 set.__eq__ = function(self, other){
     // compare class set
-    if(other === undefined){return self === set}
+    if(other === undefined){
+        return self === set
+    }
 
     if(_b_.isinstance(other, [_b_.set, _b_.frozenset])){
       if(other.$items.length == self.$items.length){
@@ -204,7 +207,6 @@ set.__new__ = function(cls){
     }
     return {
         __class__: cls,
-        $simple: true,
         $items: [],
         $numbers: [], // stores integers, and floats equal to integers
         $hashes: {}
@@ -388,6 +390,7 @@ set.clear = function(){
     var $ = $B.args("clear", 1, {self: null}, ["self"],
         arguments, {}, null, null)
     $.self.$items = []
+    $.self.$numbers = []
     $.self.$hashes = {}
     return $N
 }
@@ -778,11 +781,6 @@ frozenset.__hash__ = function(self) {
    if(_hash == -1){_hash = 590923713}
 
    return self.__hashvalue__ = _hash
-}
-
-frozenset.__init__ = function(){
-    // doesn't do anything
-    return $N
 }
 
 frozenset.__new__ = function(cls){

@@ -7,7 +7,7 @@ import shutil
 # generate html files that compare Brython and CPython distributions
 import make_stdlib_list
 
-from make_dist import run, pdir, vname, abs_path
+from make_dist import run, pdir, vname, vname1, vname2, abs_path
 
 run()
 
@@ -32,6 +32,15 @@ with open(README_page, encoding="utf-8") as f:
     content = f.read()
     content = re.sub("npm/brython@\d\.\d+\.\d+", "npm/brython@" + vname,
         content)
+    content = re.sub("npm/brython@\d\.\d+\s", "npm/brython@" + vname2,
+        content)
+    content = re.sub("npm/brython@\d\.\d+\.x", "npm/brython@" + vname2 + '.x',
+        content)
+    content = re.sub("npm/brython@\d\s", "npm/brython@" + vname1,
+        content)
+    content = re.sub("npm/brython@\d\.x\.y", "npm/brython@" + vname1 + '.x.y',
+        content)
+
 with open(README_page, "w", encoding="utf-8") as out:
     out.write(content)
 
@@ -39,12 +48,21 @@ for lang in ["en", "fr", "es"]:
     install_page = os.path.join(pdir, "www", "doc", lang, "install.md")
     with open(install_page, encoding="utf-8") as f:
         content = f.read()
-    content = re.sub("npm/brython@\d\.\d+\.\d+", "npm/brython@" + vname,
+    content = re.sub(r"npm/brython@\d\.\d+\.\d+", "npm/brython@" + vname,
         content)
-    content = re.sub("/brython/\d\.\d+\.\d+", "/brython/" + vname,
+    content = re.sub(r"brython@\d\.\d+\.\d+", "brython@" + vname,
+        content)
+    content = re.sub(r"brython/\d\.\d+\.\d+", "brython/" + vname,
+        content)
+    content = re.sub(r"brython@\d\.\d+\b", "brython@" + vname2,
+        content)
+    content = re.sub(r"brython@\d/", "brython@" + vname1 + '/',
         content)
     with open(install_page, "w", encoding="utf-8") as out:
         out.write(content)
+
+print("make static doc pages...")
+import make_doc
 
 # update implementation in brython/__init__.py
 print("Update CPython brython package...")
@@ -111,10 +129,10 @@ for arc, wfunc in ((dist1, dist1.add), (dist2, dist2.add),
 print('Write changelog file...')
 try:
     first = 'Changes in Brython version {}'.format(vname)
-    with open(os.path.join(pdir, 'setup', 'changelog.txt')) as f:
+    with open(os.path.join(pdir, 'setup', 'changelog.txt'), encoding="utf-8") as f:
         input_changelog_data_string = f.read()
     with open(os.path.join(release_dir,
-            'changelog_{}.txt'.format(vname)), 'w') as out:
+            'changelog_{}.txt'.format(vname)), 'w', encoding="utf-8") as out:
         out.write('%s\n' % first)
         out.write('%s\n\n' % ('=' * len(first)))
         out.write(input_changelog_data_string)

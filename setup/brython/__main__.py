@@ -13,7 +13,8 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument('--add_package',
-        help="Add a CPython package in Lib/site-packages")
+        help="Add an already-installed, pure-Python package from current CPython environment "
+            "into current Brython project's ./Lib/site-packages")
 
     parser.add_argument('--install', help='Install Brython in an empty directory',
         action="store_true")
@@ -78,10 +79,10 @@ def main():
 
     if args.install:
         print('Installing Brython {}'.format(implementation))
-    
+
         data_path = os.path.join(os.path.dirname(__file__), 'data')
         current_path_files = os.listdir(os.getcwd())
-    
+
         if current_path_files and 'brython.js' in current_path_files:
             override = input(
                 'brython.js is already present in this directory.'
@@ -91,13 +92,13 @@ def main():
                 import sys
                 print('exiting')
                 sys.exit()
-    
+
         for path in os.listdir(data_path):
             try:
                 shutil.copyfile(os.path.join(data_path, path), path)
             except shutil.SameFileError:
                 print(f'{path} has not been moved. Are the same file.')
-    
+
         print('done')
 
     if args.update:
@@ -117,19 +118,32 @@ def main():
         print('Create brython_modules.js for cmu_graphics_bry')
         from . import list_modules
 
-        finder = list_modules.ModulesFinder()
+        print('searching brython_stdlib.js...')
+        stdlib_dir, stdlib = list_modules.load_stdlib_sitepackages()
+
+        print('finding packages...')
+        user_modules = list_modules.load_user_modules('../..')
+        finder = list_modules.ModulesFinder(stdlib=stdlib, user_modules=user_modules)
         # finder.inspect()
         finder.modules = {
             'cmu_graphics_bry', 'sys', 'traceback', 'hashlib', 'random', 'math', 'linecache',
         }
-        finder.make_brython_modules()
+        path = os.path.join(stdlib_dir, "brython_modules.js")
+        finder.make_brython_modules(path)
 
     if args.make_dist:
         print('Make a Python distribution for the application')
         from . import list_modules
-        finder = list_modules.ModulesFinder()
+
+        print('searching brython_stdlib.js...')
+        stdlib_dir, stdlib = list_modules.load_stdlib_sitepackages()
+
+        print('finding packages...')
+        user_modules = list_modules.load_user_modules()
+        finder = list_modules.ModulesFinder(stdlib=stdlib, user_modules=user_modules)
         finder.inspect()
-        finder.make_brython_modules()
+        path = os.path.join(stdlib_dir, "brython_modules.js")
+        finder.make_brython_modules(path)
         finder.make_setup()
         print('done')
 
@@ -168,7 +182,7 @@ def main():
                 return ctype
 
             def translate_path(self, path):
-                """Map /cpython_site_packages to local CPython site-packages 
+                """Map /cpython_site_packages to local CPython site-packages
                 directory."""
                 elts = path.split('/')
                 if len(elts) > 1 and elts[0] == '':

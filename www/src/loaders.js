@@ -269,9 +269,10 @@ $B.idb_open = function(obj){
 $B.ajax_load_script = function(script){
     var url = script.url,
         name = script.name
+        console.log("load script", script)
     if($B.files && $B.files.hasOwnProperty(name)){
         $B.tasks.splice(0, 0, [$B.run_script, $B.files[name],
-            name, true])
+            name, url, true])
     }else if($B.protocol != "file"){
         var req = new XMLHttpRequest(),
             qs = $B.$options.cache ? '' :
@@ -284,7 +285,8 @@ $B.ajax_load_script = function(script){
                     if(script.is_ww){
                         $B.webworkers[name] = src
                     }else{
-                        $B.tasks.splice(0, 0, [$B.run_script, src, name, true])
+                        $B.tasks.splice(0, 0, [$B.run_script, src, name, 
+                            url, true])
                     }
                     loop()
                 }else if(this.status == 404){
@@ -352,6 +354,9 @@ var loop = $B.loop = function(){
             $B.idb_cx.result.close()
             $B.idb_cx.$closed = true
         }
+        // dispatch event "brython_done"
+        document.dispatchEvent(new CustomEvent("brython_done",
+            {detail: $B.obj_dict($B.$options)}))
         return
     }
     var task = $B.tasks.shift(),
@@ -410,12 +415,12 @@ $B.handle_error = function(err){
         var name = $B.class_name(err),
             trace = $B.$getattr(err, 'info')
         if(name == 'SyntaxError' || name == 'IndentationError'){
-            var offset = err.args[3]
+            var offset = err.args[1][2]
             trace += '\n    ' + ' '.repeat(offset) + '^' +
-                '\n' + name + ': '+err.args[0]
+                '\n' + name + ': '+ err.args[0]
         }else{
             trace += '\n' + name
-            if(err.args[0] && err.args[0] !== _b_.None){
+            if(err.args[0] !== undefined && err.args[0] !== _b_.None){
                 trace += ': ' + _b_.str.$factory(err.args[0])
             }
         }
@@ -425,13 +430,12 @@ $B.handle_error = function(err){
     }
     try{
         $B.$getattr($B.stderr, 'write')(trace)
-        try{
-            $B.$getattr($B.stderr, 'flush')()
-        }catch(err){
-            console.log(err)
+        var flush = $B.$getattr($B.stderr, 'flush', _b_.None)
+        if(flush !== _b_.None){
+            flush()
         }
     }catch(print_exc_err){
-        console.log(trace)
+        console.debug(trace)
     }
     // Throw the error to stop execution
     throw err

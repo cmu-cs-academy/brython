@@ -172,6 +172,17 @@ var jsobj2pyobj = $B.jsobj2pyobj = function(jsobj) {
        return _b_.float.$factory(jsobj)
     }
 
+    if(typeof jsobj == "function"){
+        // transform Python arguments to equivalent JS arguments
+        return function(){
+            var args = []
+            for(var i = 0, len = arguments.length; i < len; i++){
+                args.push(pyobj2jsobj(arguments[i]))
+            }
+            return jsobj2pyobj(jsobj.apply(null, args))
+        }
+    }
+
     if(jsobj.$nat === 'kw') {
         return jsobj
     }
@@ -239,6 +250,11 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
 
     }else if(klass === $B.Function || klass === $B.method){
         // Transform arguments
+        if(pyobj.prototype.constructor === pyobj && ! pyobj.$is_func){
+            // pyobj is a Javascript constructor - this happens with
+            // javascript.extends
+            return pyobj
+        }
         return function(){
             try{
                 var args = []
@@ -246,7 +262,12 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
                     if(arguments[i] === undefined){args.push(_b_.None)}
                     else{args.push(jsobj2pyobj(arguments[i]))}
                 }
-                return pyobj2jsobj(pyobj.apply(this, args))
+                if(pyobj.prototype.constructor === pyobj && ! pyobj.$is_func){
+                    var res = new pyobj(...args)
+                }else{
+                    var res = pyobj.apply(this, args)
+                }
+                return pyobj2jsobj(res)
             }catch(err){
                 console.log(err)
                 console.log($B.$getattr(err,'info'))
@@ -255,7 +276,6 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
                 throw err
             }
         }
-
     }else{
         // other types are left unchanged
 
@@ -301,6 +321,9 @@ $B.JSObj = $B.make_class("JSObj",
             //jsobj.__class__ = _b_.list
         }else if(typeof jsobj == "function"){
             jsobj.$is_js_func = true
+            jsobj.__new__ = function(){
+                return new jsobj.$js_func(...arguments)
+            }
         }else if(typeof jsobj == "number" && ! Number.isInteger(jsobj)){
             return new Number(jsobj)
         }
@@ -504,8 +527,7 @@ $B.JSObj.__iter__ = function(self){
         return JSObj_iterator.$factory(items)
     }
     // Else iterate on the dictionary built from the JS object
-    var _dict = $B.JSObj.to_dict(self)
-    return _b_.dict.__iter__(_dict)
+    return JSObj_iterator.$factory(Object.keys(self))
 }
 
 $B.JSObj.__len__ = function(self){
@@ -514,7 +536,7 @@ $B.JSObj.__len__ = function(self){
 }
 
 $B.JSObj.__repr__ = $B.JSObj.__str__ = function(self){
-    return '<Javascript ' + self.constructor.name + ' object: ' + 
+    return '<Javascript ' + self.constructor.name + ' object: ' +
         self.toString() + '>'
 }
 
@@ -540,11 +562,25 @@ $B.JSMeta = $B.make_class("JSMeta")
 
 $B.JSMeta.__call__ = function(cls){
     // Create an instance of a class that inherits a Javascript contructor
-    var args = []
+    var extra_args = [],
+        klass = arguments[0]
     for(var i = 1, len = arguments.length; i < len; i++){
-        args.push(arguments[i])
+        extra_args.push(arguments[i])
     }
-    return new cls.__mro__[0].$js_func(...args)
+    var new_func = _b_.type.__getattribute__(klass, "__new__")
+    // create an instance with __new__
+    var instance = new_func.apply(null, arguments)
+    if(instance instanceof cls.__mro__[0].$js_func){
+        // call __init__ with the same parameters
+        var init_func = _b_.type.__getattribute__(klass, "__init__")
+        if(init_func !== _b_.object.__init__){
+            // object.__init__ is not called in this case (it would raise an
+            // exception if there are parameters).
+            var args = [instance].concat(extra_args)
+            init_func.apply(null, args)
+        }
+    }
+    return instance
 }
 
 $B.JSMeta.__mro__ = [_b_.type, _b_.object]
@@ -562,6 +598,28 @@ $B.JSMeta.__getattribute__ = function(cls, attr){
 
 $B.JSMeta.__init_subclass__ = function(){
     // do nothing
+}
+
+$B.JSMeta.__new__ = function(metaclass, class_name, bases, cl_dict){
+    // Creating a class that inherits a Javascript class A must return
+    // another Javascript class B that extends A
+    eval("var " + class_name + ` = function(){
+        if(cl_dict.$string_dict.__init__){
+            var args = [this]
+            for(var i = 0, len = arguments.length; i < len; i++){
+                args.push(arguments[i])
+            }
+            cl_dict.$string_dict.__init__[0].apply(this, args)
+        }else{
+            return new bases[0].$js_func(...arguments)
+        }
+    }`)
+    var new_js_class = eval(class_name)
+    new_js_class.prototype = Object.create(bases[0].$js_func.prototype)
+    new_js_class.prototype.constructor = new_js_class
+    new_js_class.__mro__ = [bases[0], _b_.type]
+    new_js_class.$is_js_class = true
+    return new_js_class
 }
 
 $B.set_func_names($B.JSMeta, "builtins")

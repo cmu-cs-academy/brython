@@ -36,8 +36,10 @@ list.__add__ = function(self, other){
     if($B.get_class(self) !== $B.get_class(other)){
         var radd = getattr(other, "__radd__", _b_.NotImplemented)
         if(radd !== _b_.NotImplemented){return radd(self)}
-        throw _b_.TypeError.$factory('can only concatenate list (not "' +
-            $B.class_name(other) + '") to list')
+        var this_name = $B.class_name(self) // can be tuple
+        throw _b_.TypeError.$factory('can only concatenate ' +
+            this_name + ' (not "' + $B.class_name(other) +
+            '") to ' + this_name)
     }
     var res = self.slice(),
         is_js = other.$brython_class == "js" // list of JS objects
@@ -133,7 +135,9 @@ list.__eq__ = function(self, other){
        if(other.length == self.length){
             var i = self.length
             while(i--){
-                if(! $B.rich_comp("__eq__", self[i], other[i])){return false}
+                if(! $B.rich_comp("__eq__", self[i], other[i])){
+                    return false
+                }
             }
             return true
        }
@@ -154,10 +158,17 @@ list.__getitem__ = function(self, key){
 list.$getitem = function(self, key){
     var factory = (self.__class__ || $B.get_class(self)).$factory
 
-    if(isinstance(key, _b_.int)){
+    var int_key
+    try {
+      int_key = $B.PyNumber_Index(key)
+    } catch(err) {
+
+    }
+
+    if (int_key !== undefined) {
         var items = self.valueOf(),
-            pos = key
-        if(key < 0){pos = items.length + pos}
+            pos = int_key
+        if(int_key < 0){pos = items.length + pos}
         if(pos >= 0 && pos < items.length){return items[pos]}
 
         throw _b_.IndexError.$factory($B.class_name(self) +
@@ -191,10 +202,6 @@ list.$getitem = function(self, key){
             }
             return factory(res)
         }
-    }
-
-    if(_b_.hasattr(key, "__int__") || _b_.hasattr(key, "__index__")){
-       return list.__getitem__(self, _b_.int.$factory(key))
     }
 
     throw _b_.TypeError.$factory($B.class_name(self) +
@@ -376,6 +383,25 @@ list.__new__ = function(cls, ...args){
     return res
 }
 
+function __newobj__(){
+    // __newobj__ is called with a generator as only argument
+    var $ = $B.args('__newobj__', 0, {}, [], arguments, {}, 'args', null),
+        args = $.args
+    // args for list.__reduce_ex__ is just (klass,)
+    // for tuple.__reduce_ex__ it is (klass, ...items)
+    var res = args.slice(1)
+    res.__class__ = args[0]
+    return res
+}
+
+list.__reduce_ex__ = function(self){
+    return $B.fast_tuple([
+        __newobj__,
+        $B.fast_tuple([self.__class__]),
+        _b_.None,
+        _b_.iter(self)])
+}
+
 list.__repr__ = function(self){
     if($B.repr.enter(self)){ // in py_utils.js
         return '[...]'
@@ -387,7 +413,7 @@ list.__repr__ = function(self){
         _r.push(_b_.repr(self[i]))
     }
 
-    if(self.__class__ === tuple){
+    if(_b_.isinstance(self, tuple)){
         if(self.length == 1){
             res = "(" + _r[0] + ",)"
         }else{
@@ -401,13 +427,14 @@ list.__repr__ = function(self){
 }
 
 list.__setattr__ = function(self, attr, value){
-    if(self.__class__ === list){
+    if(self.__class__ === list || self.__class__ === tuple){
+        var cl_name = $B.class_name(self)
         if(list.hasOwnProperty(attr)){
-            throw _b_.AttributeError.$factory("'list' object attribute '" +
-                attr + "' is read-only")
+            throw _b_.AttributeError.$factory("'" + cl_name +
+                "' object attribute '" + attr + "' is read-only")
         }else{
             throw _b_.AttributeError.$factory(
-                "'list' object has no attribute '" + attr + "'")
+                "'" + cl_name + " object has no attribute '" + attr + "'")
         }
     }
     // list subclass : use __dict__
@@ -456,8 +483,6 @@ list.$setitem = function(self, arg, value){
     throw _b_.TypeError.$factory("list indices must be integer, not " +
         $B.class_name(arg))
 }
-
-// there is no list.__str__
 
 // add "reflected" methods
 $B.make_rmethods(list)
@@ -770,6 +795,7 @@ list.sort = function(self){
 // function used for list literals
 $B.$list = function(t){
     t.__brython__ = true
+    t.__class__ = _b_.list
     return t
 }
 
@@ -799,7 +825,9 @@ list.$factory = function(){
         try{
             res[pos++] = next_func()
         }catch(err){
-            if(!isinstance(err, _b_.StopIteration)){throw err}
+            if(!isinstance(err, _b_.StopIteration)){
+                throw err
+            }
             break
         }
     }
@@ -960,6 +988,15 @@ tuple.__new__ = function(cls, ...args){
     }
     return self
 }
+
+tuple.__reduce_ex__ = function(self){
+    return $B.fast_tuple([
+        __newobj__,
+        $B.fast_tuple([self.__class__].concat(self.slice())),
+        _b_.None,
+        _b_.None])
+}
+
 // set method names
 $B.set_func_names(tuple, "builtins")
 

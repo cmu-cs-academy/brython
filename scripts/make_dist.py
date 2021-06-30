@@ -24,6 +24,8 @@ pdir = os.path.dirname(os.getcwd())
 vname = '.'.join(str(x) for x in implementation[:3])
 if implementation[3] == 'rc':
     vname += 'rc%s' % implementation[4]
+vname2 = '.'.join(str(x) for x in implementation[:2])
+vname1 = str(implementation[0])
 
 abs_path = lambda _pth: os.path.join(os.path.dirname(os.getcwd()), 'www',
     'src', _pth)
@@ -64,7 +66,7 @@ def run():
         'stdlib_paths', 'py_import', 'py_float', 'py_int', 'py_long_int',
         'py_complex', 'py_sort', 'py_list', 'unicode_data', 'py_string',
         'py_dict', 'py_dom', 'py_generator', 'builtin_modules',
-        'builtins_docstrings', 'py_import_hooks', 'async'
+        'builtins_docstrings', 'async'
     ]
 
     res = """// brython.js brython.info
