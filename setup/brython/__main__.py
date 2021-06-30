@@ -115,7 +115,7 @@ def main():
             os.path.join(os.getcwd(), 'brython_modules.js'))
 
     if args.modules:
-        print('Create brython_modules.js for cmu_graphics_bry')
+        print('Create brython_modules.js for cmu_graphics')
         from . import list_modules
 
         print('searching brython_stdlib.js...')
@@ -126,7 +126,7 @@ def main():
         finder = list_modules.ModulesFinder(stdlib=stdlib, user_modules=user_modules)
         # finder.inspect()
         finder.modules = {
-            'cmu_graphics_bry', 'sys', 'traceback', 'hashlib', 'random', 'math', 'linecache',
+            'cs_academy_io', 'cmu_graphics', 'sys', 'traceback', 'hashlib', 'random', 'math', 'linecache',
         }
         path = os.path.join(stdlib_dir, "brython_modules.js")
         finder.make_brython_modules(path)

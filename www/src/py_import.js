@@ -983,8 +983,8 @@ function import_error(mod_name){
 $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
     var $test = false;
     if ($B.lockdown) {
-        if ((mod_name === 'cmu_graphics_bry' && (fromlist.length === 0 || fromlist.indexOf('$$window') !== -1))
-            || mod_name === 'browser') {
+        if (((mod_name === 'cmu_graphics' && (fromlist.length === 0 || fromlist.indexOf('$$window') !== -1))
+            || mod_name === 'browser') && (!(globals.$jsobj.__name__ == 'cs_academy_io'))) {
             throw _b_.ModuleNotFoundError.$factory(mod_name)
         }
     }

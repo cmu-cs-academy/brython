@@ -1,9 +1,9 @@
 set -xe
 
-DEST=../cs1-v2/frontend/src/brython
+DEST=../cs-academy/frontend/src/brython
 LIB_DEST="$DEST/../../public/"
 
-(cd scripts && pipenv run python make_dist.py)
+(cd scripts && pipenv run python3.9 make_dist.py)
 
 rm -rf "$DEST"
 mkdir "$DEST"
