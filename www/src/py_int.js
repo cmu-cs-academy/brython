@@ -913,8 +913,14 @@ bool.__or__ = function(self, other){
 
 bool.__pos__ = $B.int_or_bool
 
+BOOL_STRINGS = {
+  "en": ["True", "False"],
+  "es": ["Verdadero", "Falso"],
+  "de": ["Wahr", "Falsch"],
+}
 bool.__repr__ = bool.__str__ = function(self){
-    return self ? "True" : "False"
+    let language = $B.language.slice(0, 2);
+    return BOOL_STRINGS[language][self ? 0 : 1]
 }
 
 bool.__setattr__ = function(self, attr){
