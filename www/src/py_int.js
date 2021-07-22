@@ -919,7 +919,7 @@ BOOL_STRINGS = {
   "de": ["Wahr", "Falsch"],
 }
 bool.__repr__ = bool.__str__ = function(self){
-    let language = $B.language.slice(0, 2);
+    let language = $B.cmuGraphicsLanguage || 'en';
     return BOOL_STRINGS[language][self ? 0 : 1]
 }
 
