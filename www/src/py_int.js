@@ -913,8 +913,15 @@ bool.__or__ = function(self, other){
 
 bool.__pos__ = $B.int_or_bool
 
+BOOL_STRINGS = {
+  "en": ["True", "False"],
+  "es": ["Verdadero", "Falso"],
+  "de": ["Wahr", "Falsch"],
+}
 bool.__repr__ = bool.__str__ = function(self){
-    return self ? "True" : "False"
+    let language = $B.cmuGraphicsLanguage
+    let string_options = BOOL_STRINGS[language] || BOOL_STRINGS['en']
+    return string_options[self ? 0 : 1]
 }
 
 bool.__setattr__ = function(self, attr){
