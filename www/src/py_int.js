@@ -919,8 +919,9 @@ BOOL_STRINGS = {
   "de": ["Wahr", "Falsch"],
 }
 bool.__repr__ = bool.__str__ = function(self){
-    let language = $B.cmuGraphicsLanguage || 'en';
-    return BOOL_STRINGS[language][self ? 0 : 1]
+    let language = $B.cmuGraphicsLanguage
+    let string_options = BOOL_STRINGS[language] || BOOL_STRINGS['en']
+    return string_options[self ? 0 : 1]
 }
 
 bool.__setattr__ = function(self, attr){
