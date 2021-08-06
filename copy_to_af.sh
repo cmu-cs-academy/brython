@@ -16,4 +16,4 @@ git log -n 1 --pretty=format:"%H" > $DEST/git-sha.txt
 rm -rf "$DEST/setup/data" "$LIB_DEST/Lib/test" "$DEST/setup/changelog.txt" "$DEST/setup/README.rst" \
   "$LIB_DEST/Lib/.bundle-ignore" "$LIB_DEST/Lib/email/architecture.rst" \
   "$LIB_DEST/Lib/importlib" "$LIB_DEST/Lib/pkgutil.py" "$LIB_DEST/Lib/imp.py" "$LIB_DEST/Lib/_imp.py" \
-  "$LIB_DEST/Lib/_frozen_importlib.py"
+  "$LIB_DEST/Lib/_frozen_importlib.py" "$LIB_DEST/Lib/site-packages/foobar"
