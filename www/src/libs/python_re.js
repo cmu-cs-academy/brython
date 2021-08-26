@@ -1324,7 +1324,7 @@ function validate(name){
         fail(`bad character in group name '${sname}'`)
     }
 
-    var $B = window.__BRYTHON__,
+    var $B = self.__BRYTHON__,
         cp = name[0]
     if($B.unicode_tables.XID_Start[cp]){
         var pos = 1
