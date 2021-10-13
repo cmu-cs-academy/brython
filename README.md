@@ -44,6 +44,9 @@ Brython supports the syntax of [Python 3](https://www.python.org "Python Homepag
 including comprehensions, generators, metaclasses, imports, etc.
 and many modules of the CPython distribution.
 
+Since version 3.8.0, Brython implements the Python version of the same major /
+minor version number.
+
 It includes libraries to interact with DOM elements and events,
 and with existing Javascript libraries such as jQuery, D3, Highcharts, Raphael etc.
 It supports the latest specs of HTML5/CSS3, and can use CSS Frameworks like
@@ -60,7 +63,7 @@ You can choose the latest stable release :
 
 ```xml
 <script type="text/javascript"
-    src="https://cdn.jsdelivr.net/npm/brython@3.9.2/brython.min.js">
+    src="https://cdn.jsdelivr.net/npm/brython@3.10.0/brython.min.js">
 </script>
 ```
 
@@ -70,14 +73,14 @@ with the [available stdlib](https://github.com/brython-dev/brython/tree/master/w
 
 ```xml
 <script type="text/javascript"
-    src="https://cdn.jsdelivr.net/npm/brython@3.9.2/brython_stdlib.js">
+    src="https://cdn.jsdelivr.net/npm/brython@3.10.0/brython_stdlib.js">
 </script>
 ```
 
-jsDelivr supports version ranges, so if you want the latest of the 
+jsDelivr supports version ranges, so if you want the latest of the
 3.9.x versions:
 
-```
+```xml
 <script type="text/javascript"
     src="https://cdn.jsdelivr.net/npm/brython@3.9/brython.min.js">
 </script>
@@ -88,7 +91,7 @@ jsDelivr supports version ranges, so if you want the latest of the
 
 or the latest of the 3.x.y versions:
 
-```
+```xml
 <script type="text/javascript"
     src="https://cdn.jsdelivr.net/npm/brython@3/brython.min.js">
 </script>

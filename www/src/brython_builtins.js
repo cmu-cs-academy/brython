@@ -79,9 +79,6 @@ $B.__ARGV = []
 // script name and its source code
 $B.webworkers = {}
 
-// Mapping between a module name and its path (url)
-$B.$py_module_path = {}
-
 // File cache, indexed by module names
 $B.file_cache = {}
 
@@ -107,7 +104,9 @@ $B.precompiled = {}
 $B.frames_stack = []
 
 // Python __builtins__
-$B.builtins = {}
+// Set to Object.create(null) instead of {}
+// to avoid conflicts with JS attributes such as "constructor"
+$B.builtins = Object.create(null)
 
 $B.builtins_scope = {id:'__builtins__', module:'__builtins__', binding: {}}
 
@@ -120,8 +119,9 @@ $B.builtin_classes = []
 $B.__getattr__ = function(attr){return this[attr]}
 $B.__setattr__ = function(attr, value){
     // limited to some attributes
-    if(['debug', 'stdout', 'stderr'].indexOf(attr) > -1){$B[attr] = value}
-    else{
+    if(['debug', 'stdout', 'stderr'].indexOf(attr) > -1){
+        $B[attr] = value
+    }else{
         throw $B.builtins.AttributeError.$factory(
             '__BRYTHON__ object has no attribute ' + attr)
     }
@@ -219,6 +219,21 @@ $B.scripts = {} // for Python scripts embedded in a JS file
 
 $B.$options = {}
 
+$B.builtins_repr_check = function(builtin, args){
+    // Called when entering method __repr__ of builtin classes, to check the
+    // the number of arguments, and that the only argument is an instance of
+    // the builtin class
+    var $ = $B.args('__repr__', 1, {self: null}, ['self'], args,
+            {}, null, null),
+        self = $.self,
+        _b_ = $B.builtins
+    if(! _b_.isinstance(self, builtin)){
+        throw _b_.TypeError.$factory("descriptor '__repr__' requires a " +
+            `'${builtin.$infos.__name__}' object but received a ` +
+            `'${$B.class_name(self)}'`)
+    }
+}
+
 // Update the Virtual File System
 $B.update_VFS = function(scripts){
     $B.VFS = $B.VFS || {}
@@ -245,6 +260,7 @@ $B.add_files = function(files){
 
 // Can be used in Javascript programs to run Python code
 $B.python_to_js = function(src, script_id){
+    $B.parse_options()
     $B.meta_path = $B.$meta_path.slice()
     if(!$B.use_VFS){$B.meta_path.shift()}
     if(script_id === undefined){script_id = "__main__"}

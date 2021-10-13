@@ -206,17 +206,6 @@ assert s == "Hello,\tworld!"
 s = bytes("Hello,\\bworld!", "utf-8").decode("unicode-escape")
 assert s == "Hello,\bworld!"
 
-# issue 1047
-from io import StringIO
-s = StringIO()
-s.write(chr(8364))
-assert s.getvalue() == "€"
-s = chr(8364)
-assert s == "€"
-b = s.encode("utf-8")
-assert b == bytes([0xe2, 0x82, 0xac])
-s1 = b.decode("utf-8")
-assert s1 == "€"
 
 # issue 1049
 class Mystring(str):
@@ -449,5 +438,11 @@ try:
     raise AssertionError('should have raised TypeError')
 except TypeError as exc:
     assert exc.args[0] == "must be str, not int"
+
+# issue 1772
+test = '🤔'
+assert ord(test) == 129300
+assert len(test) == 1
+
 
 print("passed all tests...")

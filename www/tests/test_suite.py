@@ -717,4 +717,52 @@ class MyClass(list):
 a = MyClass([1, 2, [3, 4, 5]])
 assert type(a[2]) is MyClass
 
+# issue 1693
+t = []
+if 1: t.append('a');t.append('b')
+else: t.append('c')
+
+assert t == ['a', 'b']
+
+t = []
+if 1: t.append('a');t.append('b');
+else: t.append('c')
+
+assert t == ['a', 'b']
+
+lambda:{};t.append('c');
+assert t[-1] == 'c'
+
+# issue 1697
+try:
+    for x1697.y in [0]:
+        pass
+    raise Exception('should have raised NameError')
+except NameError:
+    pass
+
+# issue 1718 (tabulations)
+characters = {
+    "amber": {
+        'ascension': {
+            'element_1': 'agnidus_agate',
+        },
+        'element': 'pyro'
+    }
+}
+
+# issue 1721
+def f():
+    y = g(0 <= x <= 1)
+    return y
+
+def g(x):
+  return x
+
+x = 0.5
+assert f()
+
+x = 2
+assert not f()
+
 print('passed all tests...')

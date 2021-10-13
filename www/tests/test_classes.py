@@ -385,6 +385,63 @@ class C(A3, A1):
 
 assert C.__class__ == Meta3
 
+
+# setting __class__
+class A:pass
+class B:
+    x = 1
+
+a = A()
+assert not hasattr(a, 'x')
+a.__class__ = B
+assert a.x == 1
+
+# issue 118
+class A:
+
+    def toString(self):
+        return "whatever"
+
+assert A().toString() == "whatever"
+
+# issue 126
+class MyType(type):
+
+    def __getattr__(cls, attr):
+        return "whatever"
+
+class MyParent(metaclass=MyType):
+    pass
+
+class MyClass(MyParent):
+    pass
+
+assert MyClass.spam == "whatever"
+assert MyParent.spam == "whatever"
+
+# issue 154
+class MyMetaClass(type):
+
+    def __str__(cls):
+        return "Hello"
+
+class MyClass(metaclass=MyMetaClass):
+    pass
+
+assert str(MyClass) == "Hello"
+
+# issue 155
+class MyMetaClass(type):
+    pass
+
+class MyClass(metaclass=MyMetaClass):
+    pass
+
+MyOtherClass = MyMetaClass("DirectlyCreatedClass", (), {})
+
+assert isinstance(MyClass, MyMetaClass), type(MyClass)
+assert isinstance(MyOtherClass, MyMetaClass), type(MyOtherClass)
+
 # issue 905
 class A:
     prop: str
@@ -394,7 +451,7 @@ class B(A):
     pass
 
 
-assert {'prop': str} == B.__annotations__
+assert {'prop': 'str'} == B.__annotations__
 
 # issue 922
 class A:
@@ -650,5 +707,67 @@ try:
     m.x
 except Exception as exc:
     assert exc.args[0] == "This will never happen"
+
+# issue 1737
+class A: pass
+
+class B(A): pass
+
+assert A.__bases__ == (object,)
+assert B.__bases__ == (A,)
+
+assert object.__bases__ == ()
+assert type.__bases__ == (object,)
+assert type.__mro__ == (type, object)
+assert object.mro() == [object]
+assert list.__bases__ == (object,)
+
+try:
+    type.mro()
+    raise AssertionError('should have raised TypeError')
+except TypeError:
+    pass
+
+# issue 1740
+class A:
+
+    class B:
+        def __init__(self):
+            pass
+
+    B()
+
+# issue 1779
+class A:
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        t.append('I am A')
+
+t = []
+
+class MetaB(type):
+    def __call__(cls, *args, **kwargs):
+        t.append('MetaB Call')
+        self = super().__call__(*args, **kwargs)  # create
+        return self
+
+
+class B(metaclass=MetaB):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        t.append('I am B')
+
+class C(B, A):
+  pass
+
+c = C()
+assert t == ['MetaB Call', 'I am A', 'I am B']
+
+del t[:]
+
+D = type('C', (B, A,), {})
+
+d = D()
+assert t == ['MetaB Call', 'I am A', 'I am B']
 
 print('passed all tests..')

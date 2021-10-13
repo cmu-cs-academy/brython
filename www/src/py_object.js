@@ -24,7 +24,6 @@ var opnames = ["add", "sub", "mul", "truediv", "floordiv", "mod", "pow",
 var opsigns = ["+", "-", "*", "/", "//", "%", "**", "<<", ">>", "&", "^", "|"]
 
 object.__delattr__ = function(self, attr){
-    attr = $B.from_alias(attr)
     if(self.__dict__ && self.__dict__.$string_dict &&
             self.__dict__.$string_dict[attr] !== undefined){
         delete self.__dict__.$string_dict[attr]
@@ -45,7 +44,7 @@ object.__delattr__ = function(self, attr){
             }
         }
     }
-    throw _b_.AttributeError.$factory(attr)
+    throw $B.attr_error(attr, self)
 }
 
 object.__dir__ = function(self) {
@@ -80,8 +79,7 @@ object.__dir__ = function(self) {
     // add object's own attributes
     if(self.__dict__){
         for(var attr in self.__dict__.$string_dict){
-            if(attr.substr(0, 2) == "$$"){res.push(attr.substr(2))}
-            else if(attr.charAt(0) != "$"){res.push(attr)}
+            if(attr.charAt(0) != "$"){res.push(attr)}
         }
     }
     res = _b_.list.$factory(_b_.set.$factory(res))
@@ -112,7 +110,7 @@ object.__getattribute__ = function(obj, attr){
     var klass = obj.__class__ || $B.get_class(obj),
         is_own_class_instance_method = false
 
-    var $test = false // attr == "__ceil__"
+    var $test = false // attr == "toString"
     if($test){console.log("attr", attr, "de", obj, "klass", klass)}
     if(attr === "__class__"){
         return klass
@@ -124,13 +122,12 @@ object.__getattribute__ = function(obj, attr){
     }
 
     if(res === undefined && obj.__dict__){
-        var dict = obj.__dict__,
-            attr1 = $B.from_alias(attr)
-        if(dict.$string_dict.hasOwnProperty(attr1)){
+        var dict = obj.__dict__
+        if(dict.$string_dict.hasOwnProperty(attr)){
             if($test){
-                console.log("__dict__ hasOwnProperty", attr1, dict.$string_dict[attr1])
+                console.log("__dict__ hasOwnProperty", attr, dict.$string_dict[attr])
             }
-            return dict.$string_dict[attr1][0]
+            return dict.$string_dict[attr][0]
         }
     }
 
@@ -340,7 +337,7 @@ object.__getattribute__ = function(obj, attr){
             }
             return _ga(obj, attr)
         }else{
-            throw _b_.AttributeError.$factory(attr)
+            throw $B.attr_error(attr, obj)
         }
     }
 }
@@ -385,10 +382,12 @@ object.__new__ = function(cls, ...args){
             throw _b_.TypeError.$factory("object() takes no parameters")
         }
     }
-    return {
+    var res = Object.create(null)
+    $B.update_obj(res, {
         __class__ : cls,
         __dict__: $B.empty_dict()
-        }
+        })
+    return res
 }
 
 object.__ne__ = function(self, other){
@@ -480,14 +479,12 @@ object.__setattr__ = function(self, attr, val){
     }else if(self.__class__ === object){
         // setting an attribute to object() is not allowed
         if(object[attr] === undefined){
-            throw _b_.AttributeError.$factory(
-                "'object' object has no attribute '" + attr + "'")
+            throw $B.attr_error(attr, self)
         }else{
             throw _b_.AttributeError.$factory(
                 "'object' object attribute '" + attr + "' is read-only")
         }
     }
-    if($B.aliased_names[attr]){attr = "$$"+attr}
     if(self.__dict__){
         _b_.dict.$setitem(self.__dict__, attr, val)
     }else{
@@ -505,8 +502,35 @@ object.__setattr__.__get__ = function(obj){
 object.__setattr__.__str__ = function(){return "method object.setattr"}
 
 object.__str__ = function(self){
-    var repr_func = $B.$getattr(self, "__repr__")
-    return $B.$call(repr_func)()
+    // If a class doesn't specify __str__, use its __repr__
+    var len = arguments.length
+    if(len == 0){
+        throw _b_.TypeError.$factory("descriptor '__str__' of 'object' " +
+            "object needs an argument")
+    }else if(len > 1){
+        throw _b_.TypeError.$factory("descriptor '__str__' of 'object' " +
+            "expects 1 argument, got " + len)
+    }else if(self.$nat == 'kw'){
+        throw _b_.TypeError.$factory("descriptor '__str__' of 'object' " +
+            "doesn't accept keyword arguments")
+    }
+    // Search in the object metaclass
+    if(self.$is_class || self.$factory){
+        var class_str = $B.$getattr(self.__class__ || $B.get_class(self),
+            '__str__', null)
+        if(class_str !== null && class_str !== object.__str__){
+            return class_str(self)
+        }
+        var class_repr = $B.$getattr(self.__class__ || $B.get_class(self),
+            '__repr__', null)
+        if(class_repr !== null && class_repr !== object.__repr__){
+            return class_repr(self)
+        }
+    }else{
+        // Default to __repr__
+        var repr_func = $B.$getattr(self, "__repr__")
+        return $B.$call(repr_func)()
+    }
 }
 
 object.__subclasshook__ = function(){return _b_.NotImplemented}
@@ -521,14 +545,15 @@ object.$factory = function(){
 
 $B.set_func_names(object, "builtins")
 
-$B.make_class = function(name, factory){
+$B.make_class = function(qualname, factory){
     // Builds a basic class object
 
     var A = {
         __class__: _b_.type,
         __mro__: [object],
         $infos:{
-            __name__: name
+            __qualname__: qualname,
+            __name__: $B.last(qualname.split('.'))
         },
         $is_class: true
     }
@@ -537,7 +562,6 @@ $B.make_class = function(name, factory){
 
     return A
 }
-
 return object
 
 })(__BRYTHON__)

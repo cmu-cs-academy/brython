@@ -25,8 +25,7 @@ keys with the same hash can be stored in a dictionary, $object_dict[hash] is a
 list of [key, [value, rank]] lists.
 */
 
-var bltns = $B.InjectBuiltins()
-eval(bltns)
+var _b_ = $B.builtins
 
 var str_hash = _b_.str.__hash__,
     $N = _b_.None
@@ -171,7 +170,8 @@ var dict = {
         __name__: "dict"
     },
     $is_class: true,
-    $native: true
+    $native: true,
+    $match_mapping_pattern: true // for pattern matching (PEP 634)
 }
 
 dict.$to_obj = function(d){
@@ -276,12 +276,10 @@ dict.__class_getitem__ = function(cls, item){
 }
 
 dict.__contains__ = function(){
-
     var $ = $B.args("__contains__", 2, {self: null, key: null},
         ["self", "key"], arguments, {}, null, null),
         self = $.self,
         key = $.key
-    if(self.$is_namespace){key = $B.to_alias(key)} // issue 1244
 
     if(self.$jsobj){
         return self.$jsobj[key] !== undefined
@@ -296,9 +294,13 @@ dict.__contains__ = function(){
 
     var hash = _b_.hash(key)
     if(self.$str_hash[hash] !== undefined &&
-        $B.rich_comp("__eq__", key, self.$str_hash[hash])){return true}
+            $B.rich_comp("__eq__", key, self.$str_hash[hash])){
+        return true
+    }
     if(self.$numeric_dict[hash] !== undefined &&
-        $B.rich_comp("__eq__", key, hash)){return true}
+            $B.rich_comp("__eq__", key, hash)){
+        return true
+    }
     return rank(self, hash, key) > -1
 }
 
@@ -433,13 +435,12 @@ dict.__getitem__ = function(){
     return dict.$getitem(self, arg)
 }
 
-$B.string_count = 0
-$B.num_count = 0
 dict.$getitem = function(self, arg, ignore_missing){
-    // ignore_missing is only set in dict.setdefault
+    // ignore_missing is set in dict.get and dict.setdefault
     if(self.$jsobj){
         if(self.$jsobj[arg] === undefined){
-            if(self.$jsobj.hasOwnProperty(arg)){
+            if(self.$jsobj.hasOwnProperty &&
+                    self.$jsobj.hasOwnProperty(arg)){
                 return $B.Undefined
             }
             throw _b_.KeyError.$factory(arg)
@@ -451,13 +452,11 @@ dict.$getitem = function(self, arg, ignore_missing){
         case "string":
             var x = self.$string_dict[arg]
             if(x !== undefined){
-                $B.string_count++
                 return x[0]
             }
             break
         case "number":
             if(self.$numeric_dict[arg] !== undefined){
-                $B.num_count++
                 return self.$numeric_dict[arg][0]
             }
             break
@@ -492,8 +491,8 @@ dict.$getitem = function(self, arg, ignore_missing){
     if(! ignore_missing){
         if(self.__class__ !== dict && ! ignore_missing){
             try{
-                var missing_method = getattr(self.__class__, "__missing__",
-                    _b_.None)
+                var missing_method = $B.$getattr(self.__class__,
+                    "__missing__", _b_.None)
             }catch(err){
                 console.log(err)
 
@@ -514,6 +513,10 @@ function init_from_list(self, args){
         si = dict.__setitem__
     while(i++ < stop){
         var item = args[i]
+        if(item.length != 2){
+            throw _b_.ValueError.$factory("dictionary " +
+                `update sequence element #${i} has length 1; 2 is required`)
+        }
         switch(typeof item[0]) {
             case 'string':
                 self.$string_dict[item[0]] = [item[1], self.$order++]
@@ -534,8 +537,9 @@ function init_from_list(self, args){
 }
 
 dict.__init__ = function(self, first, second){
-    var $
-    if(first === undefined){return $N}
+    if(first === undefined){
+        return $N
+    }
     if(second === undefined){
         if(first.$nat != 'kw' && $B.get_class(first) === $B.JSObj){
             for(var key in first){
@@ -554,7 +558,7 @@ dict.__init__ = function(self, first, second){
         }
     }
 
-    $ = $ || $B.args("dict", 1, {self:null}, ["self"],
+    var $ = $B.args("dict", 1, {self:null}, ["self"],
         arguments, {}, "first", "second")
     var args = $.first
     if(args.length > 1){
@@ -618,8 +622,8 @@ dict.__init__ = function(self, first, second){
     return $N
 }
 
-dict.__iter__ = function(self) {
-    return _b_.iter(dict.$$keys(self))
+dict.__iter__ = function(self){
+    return _b_.iter(dict.keys(self))
 }
 
 dict.__ior__ = function(self, other){
@@ -695,6 +699,7 @@ dict.__reduce_ex__ = function(self, protocol){
 }
 
 dict.__repr__ = function(self){
+    $B.builtins_repr_check(dict, arguments) // in brython_builtins.js
     if(self.$jsobj){ // wrapper around Javascript object
         return dict.__repr__(jsobj2dict(self.$jsobj))
     }
@@ -705,7 +710,7 @@ dict.__repr__ = function(self){
         items = to_list(self)
     items.forEach(function(item){
         try{
-            res.push(repr(item[0]) + ": " + repr(item[1]))
+            res.push(_b_.repr(item[0]) + ": " + _b_.repr(item[1]))
         }catch(err){
             throw err
         }
@@ -773,6 +778,9 @@ dict.$setitem = function(self, key, value, $hash){
             self.$jsobj[key] = value
         }
         return $N
+    }
+    if(key instanceof String){
+        key = key.valueOf()
     }
 
     switch(typeof key){
@@ -871,10 +879,6 @@ dict.$setitem = function(self, key, value, $hash){
     return $N
 }
 
-dict.__str__ = function(){
-    return dict.__repr__.apply(null, arguments)
-}
-
 // add "reflected" methods
 $B.make_rmethods(dict)
 
@@ -941,8 +945,10 @@ dict.get = function(){
     var $ = $B.args("get", 3, {self: null, key: null, _default: null},
         ["self", "key", "_default"], arguments, {_default: $N}, null, null)
 
-    try{return dict.__getitem__($.self, $.key)}
-    catch(err){
+    try{
+        // call $getitem with ignore_missign set to true
+        return dict.$getitem($.self, $.key, true)
+    }catch(err){
         if(_b_.isinstance(err, _b_.KeyError)){return $._default}
         else{throw err}
     }
@@ -978,7 +984,7 @@ dict.items = function(self){
 var dict_keys = $B.make_view("dict_keys")
 dict_keys.$iterator = $B.make_iterator_class("dict_keyiterator")
 
-dict.$$keys = function(self){
+dict.keys = function(self){
     if(arguments.length > 1){
        var _len = arguments.length - 1,
            _msg = "keys() takes no arguments (" + _len + " given)"
@@ -1063,7 +1069,7 @@ dict.update = function(self){
         }else if(_b_.hasattr(o, "keys")){
             var _keys = _b_.list.$factory($B.$call($B.$getattr(o, "keys"))())
             for(var i = 0, len = _keys.length; i < len; i++){
-                var _value = getattr(o, "__getitem__")(_keys[i])
+                var _value = $B.$getattr(o, "__getitem__")(_keys[i])
                 dict.$setitem(self, _keys[i], _value)
             }
         }else{
@@ -1178,6 +1184,8 @@ var mappingproxy = $B.mappingproxy = $B.make_class("mappingproxy",
     }
 )
 
+mappingproxy.$match_mapping_pattern = true // for pattern matching (PEP 634)
+
 mappingproxy.__setitem__ = function(){
     throw _b_.TypeError.$factory("'mappingproxy' object does not support " +
         "item assignment")
@@ -1224,8 +1232,8 @@ function jsobj2dict(x){
 $B.obj_dict = function(obj, from_js){
     var klass = obj.__class__ || $B.get_class(obj)
     if(klass !== undefined && klass.$native){
-        throw _b_.AttributeError.$factory("'" + $B.class_name(obj) +
-            "' object has no attribute '__dict__'")}
+        throw $B.attr_error("__dict__", obj)
+    }
     var res = $B.empty_dict()
     res.$jsobj = obj
     res.$from_js = from_js // set to true if

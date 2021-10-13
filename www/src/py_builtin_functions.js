@@ -244,9 +244,11 @@ function callable(obj) {
     return hasattr(obj, '__call__')
 }
 
-function chr(i) {
+function chr(i){
     check_nb_args('chr', 1, arguments)
     check_no_kw('chr', i)
+
+    i = $B.PyNumber_Index(i)
 
     if(i < 0 || i > 1114111){
         throw _b_.ValueError.$factory('Outside valid range')
@@ -300,7 +302,6 @@ var classmethod = $B.make_class("classmethod",
 
 $B.set_func_names(classmethod, "builtins")
 
-//compile() (built in function)
 var code = $B.code = $B.make_class("code")
 
 code.__repr__ = code.__str__ = function(self){
@@ -313,6 +314,7 @@ code.__getattribute__ = function(self, attr){
 
 $B.set_func_names(code, "builtins")
 
+//compile() (built in function)
 function compile() {
     var $ = $B.args('compile', 6,
         {source:null, filename:null, mode:null, flags:null, dont_inherit:null,
@@ -368,7 +370,7 @@ $B.$delete = function(name, is_global){
     function del(obj){
         if(obj.__class__ === $B.generator){
             // Force generator return (useful if yield was in a context manager)
-            obj.return()
+            obj.js_gen.return()
         }
     }
     var found = false,
@@ -387,7 +389,7 @@ $B.$delete = function(name, is_global){
         }
     }
     if(!found){
-        throw _b_.NameError.$factory(name)
+        throw $B.name_error(name)
     }
 }
 
@@ -481,17 +483,6 @@ enumerate.__next__ = function(self){
 
 $B.set_func_names(enumerate, "builtins")
 
-$B.from_alias = function(attr){
-    if(attr.substr(0, 2) == '$$' && $B.aliased_names[attr.substr(2)]){
-        return attr.substr(2)
-    }
-    return attr
-}
-$B.to_alias = function(attr){
-    if($B.aliased_names[attr]){return '$$' + attr}
-    return attr
-}
-
 //eval() (built in function)
 function $$eval(src, _globals, _locals){
     if ($B.lockdown && src.indexOf('__import__') >= 0) {
@@ -513,20 +504,25 @@ function $$eval(src, _globals, _locals){
         _b_.print(">", $.src.source.trim())
     }
 
+    if(src.__class__ === code){
+        mode = src.mode
+        src = src.source
+    }else if(typeof src.valueOf() !== 'string'){
+        throw _b_.TypeError.$factory("eval() arg 1 must be a string, bytes "+
+            "or code object")
+    }else{
+        // src might be an instance of JS String if source has surrogate pairs
+        // cf. issue #1772
+        src = src.valueOf()
+    }
+
     var current_frame = $B.frames_stack[$B.frames_stack.length - 1]
     if(current_frame !== undefined){
         var current_locals_id = current_frame[0].replace(/\./g, '_'),
             current_globals_id = current_frame[2].replace(/\./g, '_')
     }
-    var stack_len = $B.frames_stack.length
 
-    if(src.__class__ === code){
-        mode = src.mode
-        src = src.source
-    }else if(typeof src !== 'string'){
-        throw _b_.TypeError.$factory("eval() arg 1 must be a string, bytes "+
-            "or code object")
-    }
+    var stack_len = $B.frames_stack.length
 
     // code will be run in a specific block
     var globals_id = '$exec_' + $B.UUID(),
@@ -595,16 +591,14 @@ function $$eval(src, _globals, _locals){
                 binding: {}
             }
             for(var attr in _globals.$string_dict){
-                grandparent_scope.binding[$B.to_alias(attr)] = true
+                grandparent_scope.binding[attr] = true
             }
             for(var attr in _locals.$string_dict){
-                parent_scope.binding[$B.to_alias(attr)] = true
+                parent_scope.binding[attr] = true
             }
         }
     }
 
-    // set module path
-    $B.$py_module_path[globals_id] = $B.$py_module_path[current_globals_id]
     // Initialise the object for block namespaces
     eval('var $locals_' + globals_id + ' = {}\nvar $locals_' +
         locals_id + ' = {}')
@@ -616,7 +610,7 @@ function $$eval(src, _globals, _locals){
             obj = {}
         eval(ex) // needed for generators
         for(var attr in gobj){
-            if(attr.startsWith("$") && !attr.startsWith("$$")){continue}
+            if(attr.startsWith("$")){continue}
             obj[attr] = gobj[attr]
         }
         eval("$locals_" + globals_id +" = obj")
@@ -631,9 +625,8 @@ function $$eval(src, _globals, _locals){
         }
         eval("$locals_" + globals_id + " = _globals.$jsobj")
         for(var item in items){
-            var item1 = $B.to_alias(item)
             try{
-                eval('$locals_' + globals_id + '["' + item1 + '"] = items.' + item)
+                eval('$locals_' + globals_id + '["' + item + '"] = items.' + item)
             }catch(err){
                 console.log(err)
                 console.log('error setting', item)
@@ -653,7 +646,7 @@ function $$eval(src, _globals, _locals){
                 ex = '',
                 obj = {}
             for(var attr in current_frame[1]){
-                if(attr.startsWith("$") && !attr.startsWith("$$")){continue}
+                if(attr.startsWith("$")){continue}
                 obj[attr] = lobj[attr]
             }
             eval('$locals_' + locals_id + " = obj")
@@ -669,9 +662,8 @@ function $$eval(src, _globals, _locals){
             _locals.$jsobj = items
         }
         for(var item in items){
-            var item1 = $B.to_alias(item)
             try{
-                eval('$locals_' + locals_id + '["' + item1 + '"] = items.' + item)
+                eval('$locals_' + locals_id + '["' + item + '"] = items.' + item)
             }catch(err){
                 console.log(err)
                 console.log('error setting', item)
@@ -725,6 +717,7 @@ function $$eval(src, _globals, _locals){
             case 'list_or_tuple':
             case 'op':
             case 'ternary':
+            case 'unary':
                 // If the source is an expression, what we must execute is the
                 // block inside the "try" clause : if we run root, since it's
                 // wrapped in try / finally, the value produced by
@@ -800,14 +793,13 @@ function $$eval(src, _globals, _locals){
         if(_locals !== _b_.None){
             lns = eval("$locals_" + locals_id)
             for(var attr in lns){
-                var attr1 = $B.from_alias(attr)
-                if(attr1.charAt(0) != '$'){
+                if(attr.charAt(0) != '$'){
                     if(_locals.$jsobj){
                         _locals.$jsobj[attr] = lns[attr]
                     }else if(_locals.__class__ !== _b_.dict){
-                        $B.$setitem(_locals, attr1, lns[attr])
+                        $B.$setitem(_locals, attr, lns[attr])
                     }else{
-                        _b_.dict.$setitem(_locals, attr1, lns[attr])
+                        _b_.dict.$setitem(_locals, attr, lns[attr])
                     }
                 }
             }
@@ -826,18 +818,17 @@ function $$eval(src, _globals, _locals){
                 delete _globals.$jsobj
             }
             for(var attr in gns){
-                attr1 = $B.from_alias(attr)
-                if(attr1.charAt(0) != '$'){
+                if(attr.charAt(0) != '$'){
                     if(globals_is_dict){
                         _b_.dict.$setitem(_globals, attr, gns[attr])
                     }else{
-                        _globals.$jsobj[attr1] = gns[attr]
+                        _globals.$jsobj[attr] = gns[attr]
                     }
                 }
             }
             // Remove attributes starting with $
             for(var attr in _globals.$string_dict){
-                if(attr.startsWith("$") && !attr.startsWith("$$")){
+                if(attr.startsWith("$")){
                     delete _globals.$string_dict[attr]
                 }
             }
@@ -945,7 +936,8 @@ function format(value, format_spec) {
     return $B.$call(method)(value, $.format_spec)
 }
 
-function attr_error(attr, cname){
+function attr_error(attr, obj){
+    var cname = $B.get_class(obj)
     var msg = "bad operand type for unary #: '" + cname + "'"
     switch(attr){
         case '__neg__':
@@ -958,9 +950,7 @@ function attr_error(attr, cname){
             throw _b_.TypeError.$factory("'" + cname + "'" +
                 ' object is not callable')
         default:
-            while(attr.charAt(0) == '$'){attr = attr.substr(1)}
-            throw _b_.AttributeError.$factory("'" + cname +
-                "' object has no attribute '" + attr + "'")
+            throw $B.attr_error(attr, obj)
     }
 }
 
@@ -988,8 +978,6 @@ function in_mro(klass, attr){
 $B.$getattr = function(obj, attr, _default){
     // Used internally to avoid having to parse the arguments
 
-    attr = $B.to_alias(attr)
-
     if(obj.$method_cache &&
             obj.$method_cache[attr] &&
             obj.__class__ &&
@@ -1013,19 +1001,20 @@ $B.$getattr = function(obj, attr, _default){
 
     var klass = obj.__class__
 
-    var $test = false // attr == "__ceil__" // && obj === $B // "Point"
+    var $test = false // attr == "pop" // && obj === $B // "Point"
     if($test){console.log("$getattr", attr, obj, klass)}
 
     // Shortcut for classes without parents
-    if(klass !== undefined && klass.__bases__ &&
+    if(klass !== undefined && (! klass.$native) && klass.__bases__ &&
             klass.__getattribute__ === undefined &&
             (klass.__bases__.length == 0 ||
                 (klass.__bases__.length == 1 &&
                  klass.__bases__[0] === _b_.object))){
         if($test){
-            console.log("class without parent")
+            console.log("class without parent", klass)
+            console.log('obj[attr]', obj[attr])
         }
-        if(obj.hasOwnProperty(attr)){
+        if(obj[attr] !== undefined){
             return obj[attr]
         }else if(obj.__dict__ &&
                 obj.__dict__.$string_dict.hasOwnProperty(attr) &&
@@ -1073,8 +1062,10 @@ $B.$getattr = function(obj, attr, _default){
                         return $B.$JS2Py(res)
                     }
                 }
-                if(_default !== undefined){return _default}
-                throw _b_.AttributeError.$factory('object has no attribute ' + rawname)
+                if(_default !== undefined){
+                    return _default
+                }
+                throw $B.attr_error(rawname, obj)
             }
         }
     }
@@ -1095,16 +1086,15 @@ $B.$getattr = function(obj, attr, _default){
           if(is_class){
               var proxy = {}
               for(var key in obj){
-                  var key1 = $B.from_alias(key)
-                  if(! key1.startsWith("$")){
-                      proxy[key1] = obj[key]
+                  if(! key.startsWith("$")){
+                      proxy[key] = obj[key]
                   }
               }
               proxy.__dict__ = $B.getset_descriptor.$factory(obj,
                   "__dict__") // in py_dict.js
               return $B.mappingproxy.$factory(proxy) // in py_dict.js
-          }else{
-              if(obj.hasOwnProperty(attr)){
+          }else if(! klass.$native){
+              if(obj[attr] !== undefined){
                   return obj[attr]
               }else if(obj.$infos){
                   if(obj.$infos.hasOwnProperty("__dict__")){
@@ -1135,7 +1125,7 @@ $B.$getattr = function(obj, attr, _default){
           }
           // stop search here, looking in the objects's class would return
           // the classe's __mro__
-          throw _b_.AttributeError.$factory(attr)
+          throw $B.attr_error(attr, obj)
       case '__subclasses__':
           if(klass.$factory || klass.$is_class){
               var subclasses = obj.$subclasses || []
@@ -1177,7 +1167,9 @@ $B.$getattr = function(obj, attr, _default){
                     return object_attr[0]
                 }
                 if(_default === undefined){
-                    attr_error(attr, klass.$infos.__name__)
+                    throw _b_.AttributeError.$factory("'" +
+                        klass.$infos.__name__ +"' object has no attribute '" +
+                        attr + "'")
                 }
                 return _default
             }
@@ -1212,7 +1204,7 @@ $B.$getattr = function(obj, attr, _default){
         }else if(klass[attr] !== undefined){
             return klass[attr]
         }
-        attr_error(rawname, klass.$infos.__name__)
+        attr_error(rawname, klass)
     }
 
     var mro, attr_func
@@ -1243,16 +1235,18 @@ $B.$getattr = function(obj, attr, _default){
         if(Array.isArray(obj) && Array.prototype[attr] !== undefined){
             // Special case for list subclasses. Cf issue 1081.
             res = undefined
-        }
-        if(res === null){
+        }else if(res === null){
             return null
-        }else if(res === undefined && obj.hasOwnProperty(attr)){
-            return res
+        }else if(res === undefined && obj[attr] !== undefined){
+            console.log('cas 1')
+            if(_default === undefined){
+                throw $B.attr_error(attr, obj)
+            }
+            return _default
         }else if(res !== undefined){
             if($test){console.log(obj, attr, obj[attr],
                 res.__set__ || res.$is_class)}
             // Cf. issue 1081
-            //var in_proto = Object.getPrototypeOf(obj)[attr]
             if(res.__set__ === undefined || res.$is_class){
                 if($test){console.log("return", res, res+'',
                     res.__set__, res.$is_class)}
@@ -1277,7 +1271,7 @@ $B.$getattr = function(obj, attr, _default){
     var cname = klass.$infos.__name__
     if(is_class){cname = obj.$infos.__name__}
 
-    attr_error(rawname, cname)
+    attr_error(rawname, is_class ? obj : klass)
 }
 
 //globals() (built in function)
@@ -1303,20 +1297,18 @@ function hasattr(obj,attr){
     }
 }
 
-var hash_cache = {}
+var hash_cache = {} // for strings
 function hash(obj){
     check_no_kw('hash', obj)
     check_nb_args('hash', 1, arguments)
 
-    if(obj.__hashvalue__ !== undefined){return obj.__hashvalue__}
-    if(isinstance(obj, _b_.bool)){return _b_.int.$factory(obj)}
-    if(isinstance(obj, _b_.int)){
-        if(obj.$brython_value === undefined){
-            return obj.valueOf()
-        }else{ // int subclass
-            return obj.__hashvalue__ = obj.$brython_value
-        }
+    if(obj.__hashvalue__ !== undefined){
+        return obj.__hashvalue__
     }
+    if(isinstance(obj, _b_.bool)){
+        return _b_.int.$factory(obj)
+    }
+
     if(obj.$is_class ||
             obj.__class__ === _b_.type ||
             obj.__class__ === $B.Function){
@@ -1336,6 +1328,7 @@ function hash(obj){
         throw _b_.TypeError.$factory("unhashable type: '" +
                 _b_.str.$factory($B.JSObj.$factory(obj)) + "'")
     }
+
     var hash_method = $B.$getattr(klass, '__hash__', _b_.None)
 
     if(hash_method === _b_.None){
@@ -1462,11 +1455,17 @@ function isinstance(obj, cls){
     check_no_kw('isinstance', obj, cls)
     check_nb_args('isinstance', 2, arguments)
 
-    if(obj === null){return cls === None}
-    if(obj === undefined){return false}
-    if(cls.constructor === Array){
-        for(var i = 0; i < cls.length; i++){
-            if(isinstance(obj, cls[i])){return true}
+    if(obj === null){
+        return cls === None
+    }
+    if(obj === undefined){
+        return false
+    }
+    if(Array.isArray(cls)){
+        for(var kls of cls){
+            if(isinstance(obj, kls)){
+                return true
+            }
         }
         return false
     }
@@ -1682,7 +1681,7 @@ function locals(){
     // The last item in __BRYTHON__.frames_stack is
     // [locals_name, locals_obj, globals_name, globals_obj]
     check_nb_args('locals', 0, arguments)
-    var res = $B.obj_dict($B.last($B.frames_stack)[1])
+    var res = $B.obj_dict($B.clone($B.last($B.frames_stack)[1]))
     res.$is_namespace = true
     delete res.$jsobj.__annotations__
     return res
@@ -1723,55 +1722,63 @@ function $extreme(args, op){ // used by min() and max()
     var $op_name = 'min'
     if(op === '__gt__'){$op_name = "max"}
 
-    if(args.length == 0){
-        throw _b_.TypeError.$factory($op_name +
-            " expected 1 arguments, got 0")
-    }
-    var last_arg = args[args.length - 1],
-        nb_args = args.length,
-        has_default = false,
+    var $ = $B.args($op_name, 0, {}, [], args, {}, 'args', 'kw')
+
+    var has_default = false,
         func = false
-    if(last_arg.$nat == 'kw'){
-        nb_args--
-        last_arg = last_arg.kw
-        for(var attr in last_arg){
-            switch(attr){
-                case 'key':
-                    func = last_arg[attr]
-                    break
-                case '$$default': // Brython changes "default" to "$$default"
-                    var default_value = last_arg[attr]
-                    has_default = true
-                    break
-                default:
-                    throw _b_.TypeError.$factory("'" + attr +
-                        "' is an invalid keyword argument for this function")
-            }
+    for(var attr in $.kw.$string_dict){
+        switch(attr){
+            case 'key':
+                func = $.kw.$string_dict[attr][0]
+                break
+            case 'default':
+                var default_value = $.kw.$string_dict[attr][0]
+                has_default = true
+                break
+            default:
+                throw _b_.TypeError.$factory("'" + attr +
+                    "' is an invalid keyword argument for this function")
         }
     }
+
     if((! func) || func === _b_.None){
-        func = function(x){return x}
+        func = x => x
     }
-    if(nb_args == 0){
-        throw _b_.TypeError.$factory($op_name + " expected 1 argument, got 0")
-    }else if(nb_args == 1){
+
+    if($.args.length == 0){
+        throw _b_.TypeError.$factory($op_name +
+            " expected 1 arguments, got 0")
+    }else if($.args.length == 1){
         // Only one positional argument : it must be an iterable
-        var $iter = iter(args[0]),
-            res = null
+        var $iter = iter($.args[0]),
+            res = null,
+            x_value,
+            extr_value
         while(true){
             try{
                 var x = next($iter)
-                if(res === null || $B.$bool($B.$getattr(func(x), op)(func(res)))){
+                if(res === null){
+                    extr_value = func(x)
                     res = x
+                }else{
+                    x_value = func(x)
+                    if($B.rich_comp(op, x_value, extr_value)){
+                        res = x
+                        extr_value = x_value
+                    }
                 }
             }catch(err){
                 if(err.__class__ == _b_.StopIteration){
                     if(res === null){
-                        if(has_default){return default_value}
-                        else{throw _b_.ValueError.$factory($op_name +
-                            "() arg is an empty sequence")
+                        if(has_default){
+                            return default_value
+                        }else{
+                            throw _b_.ValueError.$factory($op_name +
+                                "() arg is an empty sequence")
                         }
-                    }else{return res}
+                    }else{
+                        return res
+                    }
                 }
                 throw err
             }
@@ -1781,14 +1788,12 @@ function $extreme(args, op){ // used by min() and max()
            throw _b_.TypeError.$factory("Cannot specify a default for " +
                $op_name + "() with multiple positional arguments")
         }
-        var res = null
-        for(var i = 0; i < nb_args; i++){
-            var x = args[i]
-            if(res === null || $B.$bool($B.$getattr(func(x), op)(func(res)))){
-                res = x
-            }
+        if($B.last(args).$nat){
+            var _args = [$.args].concat($B.last(args))
+        }else{
+            var _args = [$.args]
         }
-        return res
+        return $extreme.call(null, _args, op)
     }
 }
 
@@ -1822,6 +1827,9 @@ var memoryview = $B.make_class('memoryview',
         }
     }
 )
+
+memoryview.$match_sequence_pattern = true, // for Pattern Matching (PEP 634)
+
 memoryview.__eq__ = function(self, other){
     if(other.__class__ !== memoryview){return false}
     return $B.$getattr(self.obj, '__eq__')(other.obj)
@@ -1855,6 +1863,14 @@ memoryview.__getitem__ = function(self, key){
 
 memoryview.__len__ = function(self){
     return len(self.obj) / self.itemsize
+}
+
+memoryview.__setitem__ = function(self, key, value){
+    try{
+        $B.$setitem(self.obj, key, value)
+    }catch(err){
+        throw _b_.TypeError.$factory("cannot modify read-only memory")
+    }
 }
 
 memoryview.cast = function(self, format){
@@ -1957,7 +1973,7 @@ function ord(c) {
     check_nb_args('ord', 1, arguments)
     //return String.charCodeAt(c)  <= this returns an undefined function error
     // see http://msdn.microsoft.com/en-us/library/ie/hza4d04f(v=vs.94).aspx
-    if(typeof c == 'string'){
+    if(typeof c.valueOf() == 'string'){
         if(c.length == 1){
             return c.charCodeAt(0)
         }
@@ -1999,7 +2015,7 @@ function pow() {
         z = $.mod
     var klass = x.__class__ || $B.get_class(x)
     if(z === _b_.None){
-        return $B.$call($B.$getattr(klass, '__pow__'))(x, y)
+        return $B.rich_op('pow', x, y)
     }else{
         if(x != _b_.int.$factory(x) || y != _b_.int.$factory(y)){
             throw _b_.TypeError.$factory("pow() 3rd argument not allowed " +
@@ -2091,11 +2107,8 @@ property.__init__ = function(self, fget, fset, fdel, doc) {
 }
 
 property.__repr__ = function(self){
+    $B.builtins_repr_check(property, arguments) // in brython_builtins.js
     return _b_.repr(self.fget(self))
-}
-
-property.__str__ = function(self){
-    return _b_.str.$factory(self.fget(self))
 }
 
 $B.set_func_names(property, "builtins")
@@ -2220,11 +2233,8 @@ $B.$setattr = function(obj, attr, value){
 
     // Used in the code generated by py2js. Avoids having to parse the
     // since we know we will get the 3 values
-    var $test = false // attr === "__module__" // && value == "my doc."
-    var unaliased = $B.from_alias(attr)
-    if($B.aliased_names[attr]){
-        attr = '$$' + attr
-    }else if(attr == '__dict__'){
+    var $test = false // attr === "x" // && value == "my doc."
+    if(attr == '__dict__'){
         // set attribute __dict__
         // remove previous attributes
         if(! isinstance(value, _b_.dict)){
@@ -2249,7 +2259,8 @@ $B.$setattr = function(obj, attr, value){
                 "supported for heap types or ModuleType subclasses")
             }else if(Array.isArray(value.__bases__)){
                 for(var i = 0; i < value.__bases__.length; i++){
-                    if(value.__bases__[i].__module__ == "builtins"){
+                    if(value.__bases__[i] !== _b_.object &&
+                            value.__bases__[i].__module__ == "builtins"){
                         error("__class__ assignment: '" + $B.class_name(obj) +
                             "' object layout differs from '" +
                             $B.class_name(value) + "'")
@@ -2319,6 +2330,10 @@ $B.$setattr = function(obj, attr, value){
     if(res !== undefined && res !== null){
         // descriptor protocol : if obj has attribute attr and this attribute
         // has a method __set__(), use it
+        if(res.__get__ && res.__set__ === undefined){
+            throw _b_.AttributeError.$factory("can't set attribute '" + attr +
+                "'")
+        }
         if(res.__set__ !== undefined){
             res.__set__(res, obj, value); return None
         }
@@ -2387,20 +2402,19 @@ $B.$setattr = function(obj, attr, value){
             return []
         }
         var has_slot = false
-        if(mangled_slots(klass).indexOf(unaliased) > -1){
+        if(mangled_slots(klass).indexOf(attr) > -1){
             has_slot = true
         }else{
             for(var i = 0; i < klass.__mro__.length; i++){
                 var kl = klass.__mro__[i]
-                if(mangled_slots(kl).indexOf(unaliased) > - 1){
+                if(mangled_slots(kl).indexOf(attr) > - 1){
                     has_slot = true
                     break
                 }
             }
         }
         if(! has_slot){
-            throw _b_.AttributeError.$factory("'"  + klass.$infos.__name__ +
-            "' object has no attribute '" + unaliased + "'")
+            throw $B.attr_error(attr, klass)
         }
     }
     if($test){console.log("attr", attr, "use _setattr", _setattr)}
@@ -2408,7 +2422,7 @@ $B.$setattr = function(obj, attr, value){
         if(obj.__dict__ === undefined){
             obj[attr] = value
         }else{
-            _b_.dict.$setitem(obj.__dict__, unaliased, value)
+            _b_.dict.$setitem(obj.__dict__, attr, value)
         }
         if($test){
             console.log("no setattr, obj", obj)
@@ -2457,7 +2471,7 @@ function sum(iterable, start){
         start = $.start
 
     if(_b_.isinstance(start, [_b_.str, _b_.bytes])){
-        throw _b_.TypeError.$factory("TypeError: sum() can't sum bytes" +
+        throw _b_.TypeError.$factory("sum() can't sum bytes" +
             " [use b''.join(seq) instead]")
     }
 
@@ -2466,11 +2480,13 @@ function sum(iterable, start){
     while(1){
         try{
             var _item = next(iterable)
-            res = $B.$getattr(res, '__add__')(_item)
+            res = $B.add(res, _item)
         }catch(err){
            if(err.__class__ === _b_.StopIteration){
                break
-           }else{throw err}
+           }else{
+               throw err
+           }
         }
     }
     return res
@@ -2568,7 +2584,7 @@ $$super.__getattribute__ = function(self, attr){
         if($test){
             console.log("no attr", attr, self, "mro", mro)
         }
-        throw _b_.AttributeError.$factory(attr)
+        throw $B.attr_error(attr, self)
     }
 
     if($test){console.log("super", attr, self, "mro", mro,
@@ -2608,11 +2624,22 @@ $$super.__getattribute__ = function(self, attr){
         return method
     }
 
-    throw _b_.AttributeError.$factory("object 'super' has no attribute '" +
-        attr + "'")
+    throw $B.attr_error(attr, self)
 }
 
-$$super.__repr__ = $$super.__str__ = function(self){
+$$super.__init__ = function(cls){
+    if(cls === undefined){
+        throw _b_.TypeError.$factory("descriptor '__init__' of 'super' " +
+            "object needs an argument")
+    }
+    if(cls.__class__ !== $$super){
+        throw _b_.TypeError.$factory("descriptor '__init__' requires a" +
+            " 'super' object but received a '" + $B.class_name(cls) + "'")
+    }
+}
+
+$$super.__repr__ = function(self){
+    $B.builtins_repr_check($$super, arguments) // in brython_builtins.js
     var res = "<super: <class '" + self.__thisclass__.$infos.__name__ + "'>"
     if(self.__self_class__ !== undefined){
         res += ', <' + self.__self_class__.__class__.$infos.__name__ + ' object>'
@@ -2643,20 +2670,30 @@ function vars(){
 
 var $Reader = $B.make_class("Reader")
 
-$Reader.__enter__ = function(self){return self}
+$Reader.__enter__ = function(self){
+    return self
+}
 
-$Reader.__exit__ = function(self){return false}
+$Reader.__exit__ = function(self){
+    return false
+}
 
 $Reader.__iter__ = function(self){
     // Iteration ignores last empty lines (issue #1059)
     return iter($Reader.readlines(self))
 }
 
-$Reader.__len__ = function(self){return self.lines.length}
+$Reader.__len__ = function(self){
+    return self.lines.length
+}
 
-$Reader.close = function(self){self.closed = true}
+$Reader.close = function(self){
+    self.closed = true
+}
 
-$Reader.flush = function(self){return None}
+$Reader.flush = function(self){
+    return None
+}
 
 $Reader.read = function(){
     var $ = $B.args("read", 2, {self: null, size: null},
@@ -2666,61 +2703,49 @@ $Reader.read = function(){
     if(self.closed === true){
         throw _b_.ValueError.$factory('I/O operation on closed file')
     }
-    make_content(self)
-
-    var len = self.$binary ? self.$bytes.source.length : self.$string.length
     if(size < 0){
-        size = len - self.$counter
+        size = self.$length - self.$counter
     }
 
     if(self.$binary){
-        res = _b_.bytes.$factory(self.$bytes.source.slice(self.$counter,
+        res = _b_.bytes.$factory(self.$content.source.slice(self.$counter,
             self.$counter + size))
     }else{
-        res = self.$string.substr(self.$counter, size)
+        res = self.$content.substr(self.$counter, size)
     }
     self.$counter += size
     return res
 }
 
-$Reader.readable = function(self){return true}
-
-function make_content(self){
-    // If the stream "self" is opened on text mode and does not have an
-    // attribute $string, create it from the attributes $bytes and
-    // encoding.
-    // If it is opened on binary mode and does not have an attribute $bytes,
-    // create it from attributes $string and encoding
-    if(self.$binary && self.$bytes === undefined){
-        self.$bytes = _b_.str.encode(self.$string, self.encoding)
-    }else if((! self.$binary) && self.$string === undefined){
-        self.$string = _b_.bytes.decode(self.$bytes, self.encoding)
-    }
+$Reader.readable = function(self){
+    return true
 }
 
 function make_lines(self){
     // If the stream "self" has no attribute $lines, build it as a list of
     // strings if the stream is opened on text mode, of bytes otherwise
     if(self.$lines === undefined){
-        make_content(self)
         if(! self.$binary){
-            self.$lines = self.$string.split("\n")
+            self.$lines = self.$content.split("\n")
+            if($B.last(self.$lines) == ''){
+                self.$lines.pop()
+            }
+            self.$lines = self.$lines.map(x => x + '\n')
         }else{
-            console.log("make lines, binary")
             var lines = [],
                 pos = 0,
-                source = self.$bytes.source
-            while(true){
-                var ix = source.indexOf(10)
+                source = self.$content.source
+            while(pos < self.$length){
+                var ix = source.indexOf(10, pos)
                 if(ix == -1){
-                    lines.push({__class__: _b_.bytes, source: source})
+                    lines.push({__class__: _b_.bytes, source: source.slice(pos)})
                     break
                 }else{
                     lines.push({
                         __class__: _b_.bytes,
-                        source: source.slice(0, ix + 1)
+                        source: source.slice(pos, ix + 1)
                     })
-                    source = source.slice(ix + 1)
+                    pos = ix + 1
                 }
             }
             self.$lines = lines
@@ -2740,26 +2765,33 @@ $Reader.readline = function(self, size){
         throw _b_.ValueError.$factory('I/O operation on closed file')
     }
 
-    make_content(self)
+    //make_content(self)
     if(self.$binary){
-        var ix = self.$bytes.source.indexOf(10, self.$counter)
+        var ix = self.$content.source.indexOf(10, self.$counter)
         if(ix == -1){
-            return _b_.bytes.$factory()
+            var rest = self.$content.source.slice(self.$counter)
+            self.$counter = self.$content.source.length
+            return _b_.bytes.$factory(rest)
         }else{
             var res = {
                 __class__: _b_.bytes,
-                source : self.$bytes.source.slice(self.$counter,
+                source : self.$content.source.slice(self.$counter,
                     ix + 1)
             }
             self.$counter = ix + 1
             return res
         }
     }else{
-        var ix = self.$string.indexOf("\n", self.$counter)
-        if(ix == -1){
+        if(self.$counter == self.$content.length){
             return ''
+        }
+        var ix = self.$content.indexOf("\n", self.$counter)
+        if(ix == -1){
+            var rest = self.$content.substr(self.$counter)
+            self.$counter = self.$content.length
+            return rest
         }else{
-            var res = self.$string.substring(self.$counter, ix + 1)
+            var res = self.$content.substring(self.$counter, ix + 1)
             self.$counter = ix + 1
             self.$lc += 1
             return res
@@ -2789,7 +2821,6 @@ $Reader.readlines = function(){
             lines.push(self.$lines[self.$lc])
         }
     }
-    while(lines[lines.length - 1] == ''){lines.pop()}
     return lines
 }
 
@@ -2797,19 +2828,30 @@ $Reader.seek = function(self, offset, whence){
     if(self.closed === True){
         throw _b_.ValueError.$factory('I/O operation on closed file')
     }
-    if(whence === undefined){whence = 0}
-    if(whence === 0){self.$counter = offset}
-    else if(whence === 1){self.$counter += offset}
-    else if(whence === 2){self.$counter = self.$content.length + offset}
+    if(whence === undefined){
+        whence = 0
+    }
+    if(whence === 0){
+        self.$counter = offset
+    }else if(whence === 1){
+        self.$counter += offset
+    }else if(whence === 2){
+        self.$counter = self.$length + offset
+    }
+    return None
 }
 
-$Reader.seekable = function(self){return true}
+$Reader.seekable = function(self){
+    return true
+}
 
 $Reader.tell = function(self){
     return self.$counter
 }
 
-$Reader.writable = function(self){return false}
+$Reader.writable = function(self){
+    return false
+}
 
 $B.set_func_names($Reader, "builtins")
 
@@ -2830,7 +2872,7 @@ var $TextIOWrapper = $B.make_class('_io.TextIOWrapper',
               null, null)
         return {
             __class__: $TextIOWrapper,
-            $bytes: $.buffer.$bytes,
+            $content: _b_.bytes.decode($.buffer.$content, $.encoding),
             encoding: $.encoding,
             errors: $.errors,
             newline: $.newline
@@ -2848,15 +2890,13 @@ $B.BufferedReader = $BufferedReader
 
 function $url_open(){
     // first argument is file : can be a string, or an instance of a DOM File object
-    var $ns = $B.args('open', 3, {file: null, mode: null, encoding: null},
+    var $ = $B.args('open', 3, {file: null, mode: null, encoding: null},
         ['file', 'mode', 'encoding'], arguments,
         {mode: 'r', encoding: 'utf-8'}, 'args', 'kw'),
-        $bytes,
-        $string,
-        $res
-    for(var attr in $ns){eval('var ' + attr + '=$ns["' + attr + '"]')}
-    if(args.length > 0){var mode = args[0]}
-    if(args.length > 1){var encoding = args[1]}
+        file = $.file,
+        mode = $.mode,
+        encoding = $.encoding,
+        result = {}
     if(mode.search('w') > -1){
         throw _b_.IOError.$factory("Browsers cannot write on disk")
     }else if(['r', 'rb'].indexOf(mode) == -1){
@@ -2865,12 +2905,15 @@ function $url_open(){
     if(isinstance(file, _b_.str)){
         // read the file content and return an object with file object methods
         var is_binary = mode.search('b') > -1
-        if($B.file_cache.hasOwnProperty($ns.file)){
-            $string = $B.file_cache[$ns.file]
-        }else if($B.files && $B.files.hasOwnProperty($ns.file)){
+        if($B.file_cache.hasOwnProperty($.file)){
+            result.content = $B.file_cache[$.file] // string
+            if(is_binary){
+                result.content = _b_.str.encode(result.content, 'utf-8')
+            }
+        }else if($B.files && $B.files.hasOwnProperty($.file)){
             // Virtual file system created by
             // python -m brython --make_file_system
-            $res = atob($B.files[$ns.file].content)
+            $res = atob($B.files[$.file].content)
             var source = []
             for(const char of $res){
                 source.push(char.charCodeAt(0))
@@ -2879,60 +2922,67 @@ function $url_open(){
             $bytes.source = source
         }else if($B.protocol != "file"){
             // Try to load file by synchronous Ajax call
-            if(is_binary){
-                throw _b_.IOError.$factory(
-                    "open() in binary mode is not supported")
-            }
-            var req = new XMLHttpRequest();
+            var req = new XMLHttpRequest()
+            // Set mimetype so that bytes are not modified
+            req.overrideMimeType('text/plain;charset=x-user-defined')
             req.onreadystatechange = function(){
-                try{
-                    var status = this.status
-                    if(status == 404){
-                        $res = _b_.FileNotFoundError.$factory(file)
-                    }else if(status != 200){
-                        $res = _b_.IOError.$factory('Could not open file ' +
-                            file + ' : status ' + status)
-                    }else{
-                        $res = this.responseText
+                if(this.readyState != 4){
+                    return
+                }
+                var status = this.status
+                if(status == 404){
+                    result.error = _b_.FileNotFoundError.$factory(file)
+                }else if(status != 200){
+                    result.error = _b_.IOError.$factory('Could not open file ' +
+                        file + ' : status ' + status)
+                }else{
+                    var bytes = []
+                    for(var i = 0, len = this.response.length; i < len; i++){
+                        var cp = this.response.codePointAt(i)
+                        if(cp > 0xf700){
+                            cp -= 0xf700
+                        }
+                        bytes.push(cp)
                     }
-                }catch (err){
-                    $res = _b_.IOError.$factory('Could not open file ' +
-                        file + ' : error ' + err)
+                    result.content = _b_.bytes.$factory(bytes)
+                    if(! is_binary){
+                        // use encoding to restore text
+                        try{
+                            result.content = _b_.bytes.decode(result.content,
+                                encoding)
+                        }catch(error){
+                            result.error = error
+                        }
+                    }
                 }
             }
             // add fake query string to avoid caching
             var fake_qs = $B.$options.cache ? '' :
                               '?foo=' + (new Date().getTime())
-            req.open('GET', file + fake_qs, false)
-            req.overrideMimeType('text/plain; charset=utf-8')
+            req.open('GET', encodeURI(file + fake_qs), false)
             req.send()
-
-            if($res.constructor === Error){
-                throw $res
-            }
-            $string = $res
         }else{
             throw _b_.FileNotFoundError.$factory(
                 "cannot use 'open()' with protocol 'file'")
         }
 
-        if($string === undefined && $bytes === undefined){
-            throw _b_.FileNotFoundError.$factory($ns.file)
+        if(result.error !== undefined){
+            throw result.error
         }
 
         // return the file-like object
         var res = {
             $binary: is_binary,
-            $string: $string,
-            $bytes: $bytes,
+            $content: result.content,
             $counter: 0,
+            $encoding: encoding,
+            $length: is_binary ? result.content.source.length :
+                result.content.length,
             closed: False,
-            encoding: encoding,
-            mode: mode,
+            mode,
             name: file
         }
         res.__class__ = is_binary ? $BufferedReader : $TextIOWrapper
-
         return res
     }else{
         throw _b_.TypeError.$factory("invalid argument for open(): " +
@@ -3024,8 +3074,7 @@ function no_set_attr(klass, attr){
         throw _b_.AttributeError.$factory("'" + klass.$infos.__name__ +
             "' object attribute '" + attr + "' is read-only")
     }else{
-        throw _b_.AttributeError.$factory("'" + klass.$infos.__name__ +
-            "' object has no attribute '" + attr + "'")
+        throw $B.attr_error(attr, klass)
     }
 }
 
@@ -3146,7 +3195,9 @@ $B.Function.__getattribute__ = function(self, attr){
             return self.$infos.__dict__.$string_dict[attr][0]
     }else if(attr == "__closure__"){
         var free_vars = self.$infos.__code__.co_freevars
-        if(free_vars.length == 0){return None}
+        if(free_vars.length == 0){
+            return None
+        }
         var cells = []
         for(var i = 0; i < free_vars.length; i++){
             try{
@@ -3166,7 +3217,7 @@ $B.Function.__getattribute__ = function(self, attr){
     }
 }
 
-$B.Function.__repr__ = $B.Function.__str__ = function(self){
+$B.Function.__repr__ = function(self){
     if(self.$infos === undefined){
         return '<function ' + self.name + '>'
     }else{
@@ -3293,8 +3344,8 @@ for(var i = 0; i < builtin_names.length; i++){
         orig_name = name,
         name1 = name
     if(name == 'open'){name1 = '$url_open'}
-    if(name == 'super'){name = name1 = '$$super'}
-    if(name == 'eval'){name = name1 = '$$eval'}
+    if(name == 'super'){name1 = '$$super'}
+    if(name == 'eval'){name1 = '$$eval'}
     if(name == 'print'){name1 = '$print'}
     try{
         _b_[name] = eval(name1)
@@ -3317,7 +3368,7 @@ for(var i = 0; i < builtin_names.length; i++){
 
 _b_['open'] = $url_open
 _b_['print'] = $print
-_b_['$$super'] = $$super
+_b_['super'] = $$super
 
 _b_.object.__init__.__class__ = wrapper_descriptor
 _b_.object.__new__.__class__ = builtin_function

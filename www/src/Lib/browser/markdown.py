@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
 
-try:
-    import _jsre as re
-except:
-    import re
+import re
 
 import random
 
@@ -294,14 +291,16 @@ def apply_markdown(src):
     i = 0
     while i < len(src):
         if src[i] == '[':
+            img_link = i > 0 and src[i - 1] == '!'
             start_a = i + 1
+            nb = 1
             while True:
                 end_a = src.find(']', i)
                 if end_a == -1:
                     break
-                if src[end_a - 1] == '\\':
-                    i = end_a + 1
-                else:
+                nb += src[i + 1:end_a].count('[') - 1
+                i = end_a + 1
+                if nb == 0:
                     break
             if end_a > -1 and src[start_a:end_a].find('\n') == -1:
                 link = src[start_a:end_a]
@@ -317,9 +316,14 @@ def apply_markdown(src):
                         else:
                             break
                     if end_href > -1 and rest[:end_href].find('\n') == -1:
-                        tag = ('<a href="' + rest[1:end_href] + '">' + link
-                            + '</a>')
-                        src = src[:start_a - 1] + tag + rest[end_href + 1:]
+                        if img_link:
+                            tag = ('<img src="' + rest[1:end_href] +
+                                '" alt="' + link + '">')
+                            src = src[:start_a - 2] + tag + rest[end_href + 1:]
+                        else:
+                            tag = ('<a href="' + rest[1:end_href] + '">' + link
+                                + '</a>')
+                            src = src[:start_a - 1] + tag + rest[end_href + 1:]
                         i = start_a + len(tag)
                 elif rest and rest[0] == '[':
                     j = 0

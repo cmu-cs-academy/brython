@@ -99,4 +99,10 @@ assert f'{theta=}  {cos(radians(theta))=:.3f}' == \
 # issue 1554
 assertRaises(SyntaxError, exec, 'f"Bad format {}"')
 
+# issue 1734
+assert f'[{"Text":10}]' == '[Text      ]'
+assert f'[{"Text:":10}]' == '[Text:     ]'
+
+x = 45
+assert f'{x}' 'b' == '45b'
 print("passed all tests")

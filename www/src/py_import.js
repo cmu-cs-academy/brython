@@ -8,12 +8,12 @@ var _b_ = $B.builtins,
 // Class for modules
 var Module = $B.module = $B.make_class("module",
     function(name, doc, $package){
-        return {
-            __class__: Module,
-            __name__: name,
-            __doc__: doc || _b_.None,
-            __package__: $package || _b_.None
-        }
+        var obj = Object.create(null)
+        obj.__class__ = Module
+        obj.__name__ = name
+        obj.__doc__ = doc || _b_.None
+        obj. __package__ = $package || _b_.None
+        return obj
     }
 )
 
@@ -137,9 +137,10 @@ function run_js(module_contents, path, _module){
         if(typeof $module[attr] == "function"){
             $module[attr].$infos = {
                 __module__: _module.__name__,
-                __name__: $B.from_alias(attr),
-                __qualname__: $B.from_alias(attr)
+                __name__: attr,
+                __qualname__: attr
             }
+            $module[attr].$in_js_module = true
         }
     }
 
@@ -189,7 +190,6 @@ function run_py(module_contents, path, module, compiled) {
     if(! compiled){
         var $Node = $B.$Node,
             $NodeJSCtx = $B.$NodeJSCtx
-        $B.$py_module_path[module.__name__] = path
 
         var src = {
             src: module_contents,
@@ -268,6 +268,7 @@ function run_py(module_contents, path, module, compiled) {
 }
 
 $B.run_py = run_py // used in importlib.basehook
+$B.run_js = run_js
 
 var ModuleSpec = $B.make_class("ModuleSpec",
     function(fields) {
@@ -393,6 +394,12 @@ VFSLoader.exec_module = function(self, modobj){
             // Initialise $B.imported[parent]
             var mod_js = $B.precompiled[parent],
                 is_package = modobj.$is_package
+            if(mod_js === undefined){
+                // Might be the case if the code in package __init__.py
+                // imports a submodule : the parent of the submodule is not
+                // yet in precompiled
+                continue
+            }
             if(Array.isArray(mod_js)){mod_js = mod_js[0]}
             var mod = $B.imported[parent] = Module.$factory(parent,
                 undefined, is_package)
@@ -413,6 +420,7 @@ VFSLoader.exec_module = function(self, modobj){
                     mod)
             }catch(err){
                 if($B.debug > 1){
+                    console.log('error in module', mod)
                     console.log(err)
                     for(var k in err){console.log(k, err[k])}
                     console.log(Object.keys($B.imported))
@@ -440,6 +448,7 @@ VFSLoader.exec_module = function(self, modobj){
             console.log("run Python code from VFS", mod_name)
         }
         var record = run_py(module_contents, modobj.__path__, modobj)
+        record.imports = imports.join(',')
         record.is_package = modobj.$is_package
         record.timestamp = $B.timestamp
         record.source_ts = timestamp
@@ -725,12 +734,13 @@ PathEntryFinder.find_spec = function(self, fullname){
         notfound = true,
         hint = self.hint,
         base_path = self.path_entry + fullname.match(/[^.]+$/g)[0],
-        modpaths = []
+        modpaths = [],
+        py_ext = $B.$options.python_extension // defaults to .py (issue #1748)
     var tryall = hint === undefined
     if(tryall || hint == 'py'){
         // either py or undefined , try py code
-        modpaths = modpaths.concat([[base_path + ".py", "py", false],
-            [base_path + "/__init__.py", "py", true]])
+        modpaths = modpaths.concat([[base_path + py_ext, "py", false],
+            [base_path + "/__init__" + py_ext, "py", true]])
     }
 
     for(var j = 0; notfound && j < modpaths.length; ++j){
@@ -940,7 +950,6 @@ function import_engine(mod_name, _path, from_stdlib){
     }
     if($B.$getattr(spec, "has_location")){
         module.__file__ = $B.$getattr(spec, "origin")
-        $B.$py_module_path[module.__name__] = module.__file__
     }
     var cached = $B.$getattr(spec, "cached")
     if(! $B.is_none(cached)){
@@ -981,9 +990,10 @@ function import_error(mod_name){
 
 // Default __import__ function
 $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
-    var $test = false;
+    var $test = false; // mod_name == "__main__"
+    if ($test) { console.log("__import__", mod_name) }
     if ($B.lockdown) {
-        if ((mod_name === 'cmu_graphics' && (fromlist.length === 0 || fromlist.indexOf('$$window') !== -1))
+        if ((mod_name === 'cmu_graphics' && (fromlist.length === 0 || fromlist.indexOf('window') !== -1))
             || mod_name === 'browser') {
             throw _b_.ModuleNotFoundError.$factory(mod_name)
         }
@@ -1162,7 +1172,7 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
             }
         }else{
             prefix = false;
-            norm_parts.push(p.substr(0,2) == "$$" ? p.substr(2) : p)
+            norm_parts.push(p)
         }
     }
     var mod_name = norm_parts.join(".")
@@ -1196,7 +1206,7 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
         if(alias){
             locals[alias] = $B.imported[mod_name]
         }else{
-            locals[$B.to_alias(norm_parts[0])] = modobj
+            locals[norm_parts[0]] = modobj
             // TODO: After binding 'a' should we also bind 'a.b' , 'a.b.c' , ... ?
         }
     }else{
@@ -1230,11 +1240,10 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
                     // [Import spec] attempt to import a submodule with that name ...
                     // FIXME : level = 0 ? level = 1 ?
                     try{
-                        var name1 = $B.from_alias(name)
-                        $B.$getattr(__import__, '__call__')(mod_name + '.' + name1,
+                        $B.$getattr(__import__, '__call__')(mod_name + '.' + name,
                             globals, undefined, [], 0)
                         // [Import spec] ... then check imported module again for name
-                        locals[alias] = $B.$getattr(modobj, name1)
+                        locals[alias] = $B.$getattr(modobj, name)
                     }catch($err3){
                         // [Import spec] Attribute not found
                         if(mod_name === "__future__"){
@@ -1248,13 +1257,7 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
                                 current_frame[3].src, undefined, line_num)
                         }
                         if($err3.$py_error){
-                            var errname = $err3.__class__.$infos.__name__
-                            if($err3.__class__ !== _b_.ImportError &&
-                                    $err3.__class__ !== _b_.ModuleNotFoundError){
-                                $B.handle_error($err3)
-                            }
-                            throw _b_.ImportError.$factory(
-                                "cannot import name '" + name + "'")
+                            throw $err3
                         }
                         if($B.debug > 1){
                             console.log($err3)
@@ -1273,9 +1276,7 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
 $B.import_all = function(locals, module){
     // Used for "from module import *"
     for(var attr in module){
-        if(attr.startsWith("$$")){
-            locals[attr] = module[attr]
-        }else if('_$'.indexOf(attr.charAt(0)) == -1){
+        if('_$'.indexOf(attr.charAt(0)) == -1){
             locals[attr] = module[attr]
         }
     }

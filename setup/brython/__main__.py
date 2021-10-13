@@ -39,6 +39,9 @@ def main():
     parser.add_argument('--update', help='Update Brython scripts',
         action="store_true")
 
+    parser.add_argument('--version', help='Brython version number',
+        action="store_true")
+
     args = parser.parse_args()
 
     files = ['README.txt', 'demo.html', 'index.html',
@@ -202,6 +205,9 @@ def main():
                 '"--server PORT".')
         print("Press CTRL+C to Quit.\n")
         http.server.test(HandlerClass=Handler, port=port)
+
+    if args.version:
+        print('Brython version', implementation)
 
 if __name__ == "__main__":
     main()
