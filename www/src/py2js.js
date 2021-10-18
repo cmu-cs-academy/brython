@@ -33,7 +33,9 @@ Utility functions
 // Return a clone of an object
 var clone = $B.clone = function(obj){
     var res = {}
-    for(var attr in obj){res[attr] = obj[attr]}
+    for(var attr in obj){
+        res[attr] = obj[attr]
+    }
     return res
 }
 
@@ -49,8 +51,12 @@ $B.last = function(table){
 $B.list2obj = function(list, value){
     var res = {},
         i = list.length
-    if(value === undefined){value = true}
-    while(i-- > 0){res[list[i]] = value}
+    if(value === undefined){
+        value = true
+    }
+    while(i-- > 0){
+        res[list[i]] = value
+    }
     return res
 }
 
@@ -78,8 +84,7 @@ $B.op2method = {
         "<": "lt", ">": "gt", "<=": "le", ">=": "ge", "==": "eq", "!=": "ne"
     },
     boolean: {
-        "or": "or", "and": "and", "in": "in", "not": "not", "is": "is",
-        "not_in": "not_in", "is_not": "is_not" // fake
+        "or": "or", "and": "and", "in": "in", "not": "not", "is": "is"
     },
     subset: function(){
         var res = {},
@@ -88,14 +93,15 @@ $B.op2method = {
             keys = Object.keys($B.op2method)
             keys.splice(keys.indexOf("subset"), 1)
         }else{
-            for(var i = 0, len=arguments.length; i < len; i++){
-                keys.push(arguments[i])
+            for(var arg of arguments){
+                keys.push(arg)
             }
         }
-        for(var i = 0, len = keys.length; i < len; i++){
-            var key = keys[i],
-                ops = $B.op2method[key]
-            if(ops === undefined){throw Error(key)}
+        for(var key of keys){
+            var ops = $B.op2method[key]
+            if(ops === undefined){
+                throw Error(key)
+            }
             for(var attr in ops){
                 res[attr] = ops[attr]
             }
@@ -129,19 +135,140 @@ var $op_order = [['or'], ['and'], ['not'],
 
 var $op_weight = {},
     $weight = 1
-$op_order.forEach(function(_tmp){
-    _tmp.forEach(function(item){
+for(var _tmp of $op_order){
+    for(var item of _tmp){
         $op_weight[item] = $weight
-    })
+    }
     $weight++
-})
+}
 
 // Variable used to generate random names used in loops
 var $loop_num = 0
 
+// ast
+var ast = {}
+ast.arg = function(arg){
+    this.arg = arg
+}
+
+// binary operator tokens
+var binary_ops = {
+    '+': 'Add', '-': 'Sub', '*': 'Mult', '/': 'Div', '//': 'FloorDiv',
+    '%': 'Mod', '**': 'Pow', '<<': 'LShift', '>>': 'RShift', '|': 'BitOr',
+    '^': 'BitXor', '&': 'BitAnd', '@': 'MatMult'
+    }
+
+for(var key in binary_ops){
+    eval('ast.' + binary_ops[key] + ' = function(){}')
+}
+
+// boolean operator tokens
+var boolean_ops = {'and': 'And', 'or': 'Or'}
+for(var key in boolean_ops){
+    eval('ast.' + boolean_ops[key] + ' = function(){}')
+}
+
+// comparison operator tokens
+var comparison_ops = {
+    '==': 'Eq', '!=': 'NotEq', '<': 'Lt', '<=': 'LtE', '>': 'Gt', '>=': 'GtE',
+    'is': 'Is', 'is_not': 'IsNot', 'in': 'In', 'not_in': 'NotIn'}
+for(var key in comparison_ops){
+    eval('ast.' + comparison_ops[key] + ' = function(){}')
+}
+
+// unary operator tokens
+for(var tok of ['UAdd', 'USub', 'Not', 'Invert']){
+    eval('ast.' + tok + ' = function(){}')
+}
+
+ast.Assign = function(targets, value){
+    this.targets = targets
+    this.value = value
+}
+ast.AsyncFunctionDef = function(name, args, body, decorator_list){
+    this.name = name
+    this.args = args
+    this.body = body
+    this.decorator_lsit = decorator_list
+}
+ast.AugAssign = function(target, op, value){
+    this.target = target
+    this.op = op
+    this.value = value
+}
+ast.BinaryOp = function(left, op, right){
+    this.left = left
+    this.op = op
+    this.right = right
+}
+ast.BooleanOp = function(left, op, right){
+    this.left = left
+    this.op = op
+    this.right = right
+}
+ast.Call = function(func, args, keywords){
+    this.func = func
+    this.args = args
+    this.keywords = keywords
+}
+ast.ClassDef = function(name, bases, keywords, body, decorator_list){
+    this.name = name
+    this.bases = bases
+    this.keywords = keywords
+    this.body = body
+    this.decorator_list = decorator_list
+}
+ast.Constant = function(value){
+    this.value = value
+}
+ast.Del = function(){}
+ast.Delete = function(targets){
+    this.targets = targets
+}
+ast.Expr = function(value){
+    this.value = value
+}
+ast.FunctionDef = function(name, args, body, decorator_list){
+    this.name = name
+    this.args = args
+    this.body = body
+    this.decorator_lsit = decorator_list
+}
+ast.keyword = function(arg, value){
+    this.arg = arg
+    this.value = value
+}
+ast.Load = function(){}
+ast.Name = function(id, ctx){
+    this.id = id
+    this.ctx = ctx || ast.Load
+}
+ast.Pass = function(){}
+ast.Return = function(){}
+ast.Slice = function(){}
+ast.Starred = function(value){
+    this.value = value
+}
+ast.Store = function(){}
+ast.Subscript = function(value, slice){
+    this.value = value
+    this.slice = slice
+    this.ctx = ast.Load
+}
+ast.UnaryOp = function(op, operand){
+    this.op = op
+    this.operand = operand
+}
+
+function ast_or_obj(obj){
+    // temporary function used while all contexts don't have ast()
+    // implemented
+    return obj.ast ? obj.ast() : obj
+}
+
 var create_temp_name = $B.parser.create_temp_name = function(prefix) {
     var _prefix = prefix || '$temp'
-    return _prefix + $loop_num ++;
+    return _prefix + $loop_num ++
 }
 
 /*
@@ -150,58 +277,11 @@ var create_temp_name = $B.parser.create_temp_name = function(prefix) {
  */
 var replace_node = $B.parser.replace_node = function(replace_what, replace_with){
     var parent = replace_what.parent
-    var pos = get_rank_in_parent(replace_what)
+    var pos = replace_what.parent.children.indexOf(replace_what)
     parent.children[pos] = replace_with
     replace_with.parent = parent
     // Save node bindings
     replace_with.bindings = replace_what.bindings
-}
-
-/*
- * Returns n such that :param:`node` is the n-th child of its parent node.
- */
-var get_rank_in_parent = $B.parser.get_rank_in_parent = function(node) {
-    return node.parent.children.indexOf(node)
-}
-
-// Adds a new identifier node to :param:`parent` at position :param:`insert_at`.
-// The identifier will be named :param:`name` and it will be assigned the value
-// :param:`val`, which should be a node.
-// Position may also be '-1' in which case the node is added at the end. Other
-// negative positions are not supported.
-// Returns the newly created $Node.
-//
-// Example:
-//
-// If one wants to add, e.g., the python statement
-//
-//    a = 10
-//
-// to a node, one could use the method as follows
-//
-//    add_identnode(node, -1, 'a', new $JSCode('10'))
-//
-//
-var add_identnode = $B.parser.add_identnode = function(parent, insert_at, name, val) {
-    var new_node = new $Node()
-    new_node.parent = parent
-    new_node.locals = parent.locals
-    new_node.module = parent.module
-    var new_ctx = new $NodeCtx(new_node)
-
-    var expr_ctx = new $ExprCtx(new_ctx, 'id', true)
-    var idctx = new $IdCtx(expr_ctx, name)
-    var assign = new $AssignCtx(expr_ctx)
-
-    if (insert_at === -1)
-        parent.add(new_node)
-    else
-        parent.insert(insert_at, new_node)
-
-    assign.tree[1] = val
-
-
-    return new_node
 }
 
 // Variable used for chained comparison
@@ -212,23 +292,30 @@ Function called in case of SyntaxError
 ======================================
 */
 
-var $_SyntaxError = $B.parser.$_SyntaxError = function (context, msg, indent){
-    //console.log("syntax error", context, "msg", msg, "indent", indent)
+var $_SyntaxError = $B.parser.$_SyntaxError = function(context, msg, indent){
+    // console.log("syntax error", context, "msg", msg, "indent", indent, '$pos', $pos)
     var ctx_node = context
-    while(ctx_node.type !== 'node'){ctx_node = ctx_node.parent}
+    while(ctx_node.type !== 'node'){
+        ctx_node = ctx_node.parent
+    }
     var tree_node = ctx_node.node,
         root = tree_node
-    while(root.parent !== undefined){root = root.parent}
-    var module = tree_node.module,
+    while(root.parent !== undefined){
+        root = root.parent
+    }
+    var module = tree_node.module || $get_module(context).module,
         src = root.src,
         line_num = tree_node.line_num
+    if(context.$pos !== undefined){
+        $pos = context.$pos
+    }
     if(src){
         line_num = src.substr(0, $pos).split("\n").length
     }
     if(root.line_info){
         line_num = root.line_info
     }
-    if(indent === undefined || typeof indent != "number"){
+    if(indent === undefined){
         if(msg && Array.isArray(msg)){
             $B.$SyntaxError(module, msg[0], src, $pos, line_num, root)
         }
@@ -244,20 +331,97 @@ var $_SyntaxError = $B.parser.$_SyntaxError = function (context, msg, indent){
             message += ' (' + msg + ')'
         }
         $B.$SyntaxError(module, message, src, $pos, line_num, root)
-    }else{
+    }else if(typeof indent == 'number'){
         throw $B.$IndentationError(module, msg, src, $pos, line_num, root)
+    }else{
+        // indent is the node that expected indentation
+        throw $B.$IndentationError(module, msg, src, $pos, line_num, root,
+            indent)
     }
 }
 
-function SyntaxWarning(context, msg){
-    var node = $get_node(context),
-        module = $get_module(context),
-        src = module.src,
-        lines = src.split("\n"),
-        message = `Module ${module.module} line ${node.line_num}: ${msg}\n` +
-            '    ' + lines[node.line_num - 1]
-    $B.$getattr($B.stderr, "write")(message)
+/*
+Function that checks that a context is not inside another incompatible
+context. Used for (augmented) assignements */
+function check_assignment(context, kwargs){
+    // kwargs, if provided, is a Javascript object that can have these
+    // attributes:
+    //  .once : if set, only check the context; otherwise, also check
+    //      the context's parents
+    //  .delete: if set, the context checked is not an assignment but
+    //      a "del"; adapt error message
+    var once,
+        action = 'assign to',
+        augmented = false
+    if(kwargs){
+        once = kwargs.once
+        action = kwargs.action || action
+        augmented = kwargs.augmented === undefined ? false : kwargs.augmented
+    }
+    var ctx = context,
+        forbidden = ['assert', 'import', 'raise', 'return']
+    if(action != 'delete'){
+        // "del x = ..." is invalid
+        forbidden.push('del')
+    }
+    function report(wrong_type){
+        if(augmented){
+            $_SyntaxError(context,
+                [`'${wrong_type}' is an illegal expression ` +
+                    'for augmented assignment'])
+        }else{
+            $_SyntaxError(context, [`cannot ${action} ${wrong_type}`])
+        }
+    }
+    while(ctx){
+        if(forbidden.indexOf(ctx.type) > -1){
+            $_SyntaxError(context, 'assign to ' + ctx.type)
+        }else if(ctx.type == "expr"){
+            var assigned = ctx.tree[0]
+            if(assigned.type == "op"){
+                if($B.op2method.comparisons[ctx.tree[0].op] !== undefined){
+                    report('comparison')
+                }else{
+                    report('operator')
+                }
+            }else if(assigned.type == 'call'){
+                report('function call')
+            }else if(assigned.type == 'id'){
+                var name = assigned.value
+                if(['None', 'True', 'False', '__debug__'].indexOf(name) > -1){
+                    report(name)
+                }
+                if(noassign[name] === true){
+                    report(keyword)
+                }
+            }else if(['str', 'int', 'float', 'complex'].indexOf(assigned.type) > -1){
+                report('literal')
+            }else if(assigned.type == "ellipsis"){
+                report('Ellipsis')
+            }else if(assigned.type == 'list_or_tuple' &&
+                    assigned.real == 'gen_expr'){
+                report('generator expression')
+            }else if(assigned.type == 'packed'){
+                check_assignment(assigned.tree[0], {action, once: true})
+            }
+        }else if(ctx.type == 'list_or_tuple'){
+            for(var item of ctx.tree){
+                check_assignment(item, {action, once: true})
+            }
+        }else if(ctx.type == "comprehension"){
+            report('comprehension')
+        }else if(ctx.type == "ternary"){
+            report('conditional expression')
+        }else if(ctx.type == 'op'){
+            report('operator')
+        }
+        if(once){
+            break
+        }
+        ctx = ctx.parent
+    }
 }
+
 
 /*
 Class for Python abstract syntax tree
@@ -270,38 +434,31 @@ as a child of the block where it stands : the root for instructions at
 module level, or a function definition, a loop, a condition, etc.
 */
 
-/*
-Function that checks that a context is not inside another incompatible
-context. Used for (augmented) assignements */
-function check_assignment(context){
-    var ctx = context,
-        forbidden = ['assert', 'del', 'import', 'raise', 'return']
-    while(ctx){
-        if(forbidden.indexOf(ctx.type) > -1){
-            $_SyntaxError(context, 'invalid syntax - assign')
-        }else if(ctx.type == "expr" &&
-                ctx.tree[0].type == "op"){
-            if($B.op2method.comparisons[ctx.tree[0].op] !== undefined){
-                $_SyntaxError(context, ["cannot assign to comparison"])
-            }else{
-                $_SyntaxError(context, ["cannot assign to operator"])
-            }
-        }
-        ctx = ctx.parent
-    }
-}
-
 var $Node = $B.parser.$Node = function(type){
     this.type = type
     this.children = []
 }
-
 
 $Node.prototype.add = function(child){
     // Insert as the last child
     this.children[this.children.length] = child
     child.parent = this
     child.module = this.module
+}
+
+$Node.prototype.ast = function(){
+    if(this.context){
+        if(this.context.tree[0].ast){
+            console.log('ast for node', this, '\n',
+                this.context.tree[0].ast())
+        }else{
+            console.log(this.context.tree[0].type, '(no ast)')
+        }
+    }else{
+        for(var node of this.children){
+            node.ast()
+        }
+    }
 }
 
 $Node.prototype.insert = function(pos, child){
@@ -311,26 +468,30 @@ $Node.prototype.insert = function(pos, child){
     child.module = this.module
 }
 
-$Node.prototype.toString = function(){return "<object 'Node'>"}
+$Node.prototype.toString = function(){
+    return "<object 'Node'>"
+}
 
 $Node.prototype.show = function(indent){
     // For debugging purposes
     var res = ''
     if(this.type === 'module'){
-        this.children.forEach(function(child){
+        for(var child of this.children){
             res += child.show(indent)
-        })
+        }
         return res
     }
 
     indent = indent || 0
     res += ' '.repeat(indent)
     res += this.context
-    if(this.children.length > 0){res += '{'}
+    if(this.children.length > 0){
+        res += '{'
+    }
     res +='\n'
-    this.children.forEach(function(child){
-       res += '[' + i + '] ' + child.show(indent + 4)
-    })
+    for(var child of this.children){
+       res += child.show(indent + 4)
+    }
     if(this.children.length > 0){
       res += ' '.repeat(indent)
       res += '}\n'
@@ -341,31 +502,35 @@ $Node.prototype.show = function(indent){
 $Node.prototype.to_js = function(indent){
     // Convert the node into a string with the translation in Javascript
 
-    if(this.js !== undefined){return this.js}
+    if(this.js !== undefined){
+        return this.js
+    }
 
     this.res = []
     this.unbound = []
     if(this.type === 'module'){
-        this.children.forEach(function(child){
+        for(var child of this.children){
             this.res.push(child.to_js())
-        }, this)
+        }
         this.js = this.res.join('')
         return this.js
     }
     indent = indent || 0
     var ctx_js = this.context.to_js()
     if(ctx_js){ // empty for "global x"
-      this.res.push(' '.repeat(indent))
-      this.res.push(ctx_js)
-      if(this.children.length > 0){this.res.push('{')}
-      this.res.push('\n')
-      this.children.forEach(function(child){
-          this.res.push(child.to_js(indent + 4))
-      }, this)
-      if(this.children.length > 0){
-         this.res.push(' '.repeat(indent))
-         this.res.push('}\n')
-      }
+        this.res.push(' '.repeat(indent))
+        this.res.push(ctx_js)
+        if(this.children.length > 0){
+            this.res.push('{')
+        }
+        this.res.push('\n')
+        for(var child of this.children){
+            this.res.push(child.to_js(indent + 4))
+        }
+        if(this.children.length > 0){
+            this.res.push(' '.repeat(indent))
+            this.res.push('}\n')
+        }
     }
     this.js = this.res.join('')
 
@@ -378,10 +543,19 @@ $Node.prototype.transform = function(rank){
     // we must jump to the next original node, skipping those that have
     // just been inserted
     if(this.has_await){
+        // If node has an "await" statement, insert a node to save
+        // execution stack, so that it can be restored when the awaitable
+        // is completed
         this.parent.insert(rank,
             $NodeJS("var save_stack = $B.save_stack()"))
-        this.parent.insert(rank + 2,
-            $NodeJS("$B.restore_stack(save_stack, $locals)"))
+        if(! (this.context && this.context.tree.length > 0 &&
+                this.context.tree[0].type == 'return')){
+            // Add node to restore execution stack
+            // This is already done in $ReturnCtx.to_js() before returning the
+            // value
+            this.parent.insert(rank + 2,
+                $NodeJS("$B.restore_stack(save_stack, $locals)"))
+        }
         this.has_await = false // avoid recursion
         return 1
     }
@@ -411,7 +585,7 @@ $Node.prototype.transform = function(rank){
             var new_node = new $Node()
             var new_ctx = new $NodeCtx(new_node)
             var new_expr = new $ExprCtx(new_ctx, 'js', false)
-            var _id = new $RawJSCtx(new_expr, `var _i${this.has_yield.from_num}`)
+            var _id = new $RawJSCtx(new_expr, `$locals.$expr${this.has_yield.from_num}`)
             var assign = new $AssignCtx(new_expr)
             var right = new $ExprCtx(assign)
             right.tree = this.has_yield.tree
@@ -419,11 +593,11 @@ $Node.prototype.transform = function(rank){
 
             var pnode = $get_node(this.has_yield)
 
-
             var n = this.has_yield.from_num
 
             var replace_with = `$B.$import("sys", [], {})
-            _i${n} = _b_.iter(_i${n})
+            var _i${n} = _b_.iter($locals.$expr${n}),
+                _r${n}
             var $failed${n} = false
             try{
                 var _y${n} = _b_.next(_i${n})
@@ -449,7 +623,7 @@ $Node.prototype.transform = function(rank){
                         if(_e.__class__ === _b_.GeneratorExit){
                             var $failed2${n} = false
                             try{
-                                var _m${n} = $B.$geatttr(_i${n}, "close")
+                                var _m${n} = $B.$getattr(_i${n}, "close")
                             }catch(_e1){
                                 $failed2${n} = true
                                 if(_e1.__class__ !== _b_.AttributeError){
@@ -560,7 +734,9 @@ $Node.prototype.transform = function(rank){
         var i = 0
         while(i < this.children.length){
             var offset = this.children[i].transform(i)
-            if(offset === undefined){offset = 1}
+            if(offset === undefined){
+                offset = 1
+            }
             i += offset
         }
     }else{
@@ -574,10 +750,14 @@ $Node.prototype.transform = function(rank){
         var i = 0
         while(i < this.children.length){
             var offset = this.children[i].transform(i)
-            if(offset === undefined){offset = 1}
+            if(offset === undefined){
+                offset = 1
+            }
             i += offset
         }
-        if(ctx_offset === undefined){ctx_offset = 1}
+        if(ctx_offset === undefined){
+            ctx_offset = 1
+        }
 
         return ctx_offset
     }
@@ -597,8 +777,8 @@ $Node.prototype.clone_tree = function(){
         res[attr] = this[attr]
     }
     res.children = []
-    for(var i = 0, len = this.children.length; i < len; i++){
-        res.add(this.children[i].clone_tree())
+    for(var child of this.children){
+        res.add(child.clone_tree())
     }
     return res
 }
@@ -638,7 +818,7 @@ var $AbstractExprCtx = $B.parser.$AbstractExprCtx = function(context, with_comma
     this.with_commas = with_commas
     this.parent = context
     this.tree = []
-    context.tree[context.tree.length] = this
+    context.tree.push(this)
 }
 
 $AbstractExprCtx.prototype.toString = function(){
@@ -658,7 +838,9 @@ $AbstractExprCtx.prototype.transition = function(token, value){
             case 'int':
             case 'float':
             case 'str':
+            case 'JoinedStr':
             case 'bytes':
+            case 'ellipsis':
             case '[':
             case '(':
             case '{':
@@ -671,10 +853,6 @@ $AbstractExprCtx.prototype.transition = function(token, value){
                 context = context.parent
                 context.packed = packed
                 context.is_await = is_await
-                if(assign){
-                    console.log("set assign to parent", context)
-                    context.assign = assign
-                }
         }
     }
 
@@ -686,6 +864,9 @@ $AbstractExprCtx.prototype.transition = function(token, value){
                 value)
         case 'str':
             return new $StringCtx(new $ExprCtx(context, 'str', commas),
+                value)
+        case 'JoinedStr':
+            return new JoinedStrCtx(new $ExprCtx(context, 'str', commas),
                 value)
         case 'bytes':
             return new $StringCtx(new $ExprCtx(context, 'bytes', commas),
@@ -708,7 +889,7 @@ $AbstractExprCtx.prototype.transition = function(token, value){
         case '{':
             return new $DictOrSetCtx(
                 new $ExprCtx(context, 'dict_or_set', commas))
-        case '.':
+        case 'ellipsis':
             return new $EllipsisCtx(
                 new $ExprCtx(context, 'ellipsis', commas))
         case 'not':
@@ -749,10 +930,23 @@ $AbstractExprCtx.prototype.transition = function(token, value){
                     context = context.parent
                     return new $NotCtx(
                         new $ExprCtx(context, 'not', commas))
+                case '...':
+                    return new $EllipsisCtx(new $ExprCtx(context, 'ellipsis', commas))
             }
             $_SyntaxError(context, 'token ' + token + ' after ' +
                 context)
-        case '=', 'in':
+        case 'in':
+            if(context.parent.type == 'op' && context.parent.op == 'not'){
+                context.parent.op = 'not_in'
+                return context
+            }
+            $_SyntaxError(context, 'token ' + token + ' after ' +
+                context)
+        case '=':
+            if(context.parent.type == "yield"){
+                $_SyntaxError(context,
+                    ["assignment to yield expression not possible"])
+            }
             $_SyntaxError(context, 'token ' + token + ' after ' +
                 context)
         case 'yield':
@@ -773,6 +967,18 @@ $AbstractExprCtx.prototype.transition = function(token, value){
                 case 'op':
                 case 'yield':
                     break
+                case 'match':
+                    if(token == ','){
+                        // implicit tuple
+                        context.parent.tree.pop()
+                        var tuple = new $ListOrTupleCtx(context.parent,
+                            'tuple')
+                        tuple.implicit = true
+                        tuple.has_comma = true
+                        tuple.tree = [context]
+                        context.parent = tuple
+                        return tuple
+                    }
                 case 'annotation':
                     $_SyntaxError(context, "empty annotation")
                 default:
@@ -784,7 +990,9 @@ $AbstractExprCtx.prototype.transition = function(token, value){
 
 $AbstractExprCtx.prototype.to_js = function(){
     this.js_processed = true
-    if(this.type === 'list') return '[' + $to_js(this.tree) + ']'
+    if(this.type === 'list'){
+        return '[' + $to_js(this.tree) + ']'
+    }
     return $to_js(this.tree)
 }
 
@@ -839,7 +1047,9 @@ var $AnnotationCtx = $B.parser.$AnnotationCtx = function(context){
     }
 }
 
-$AnnotationCtx.prototype.toString = function(){return '(annotation) ' + this.tree}
+$AnnotationCtx.prototype.toString = function(){
+    return '(annotation) ' + this.tree
+}
 
 $AnnotationCtx.prototype.transition = function(token, value){
     var context = this
@@ -857,6 +1067,10 @@ $AnnotationCtx.prototype.transition = function(token, value){
 }
 
 $AnnotationCtx.prototype.to_js = function(){
+    if(this.tree[0].type == 'expr' &&
+            this.tree[0].tree[0].type == 'id'){
+        return `"${this.tree[0].tree[0].value}"`
+    }
     return $to_js(this.tree)
 }
 
@@ -868,7 +1082,9 @@ var $AssertCtx = $B.parser.$AssertCtx = function(context){
     context.tree[context.tree.length] = this
 }
 
-$AssertCtx.prototype.toString = function(){return '(assert) ' + this.tree}
+$AssertCtx.prototype.toString = function(){
+    return '(assert) ' + this.tree
+}
 
 $AssertCtx.prototype.transition = function(token, value){
     var context = this
@@ -878,7 +1094,9 @@ $AssertCtx.prototype.transition = function(token, value){
         }
         return new $AbstractExprCtx(this, false)
     }
-    if(token == 'eol'){return $transition(context.parent, token)}
+    if(token == 'eol'){
+        return $transition(context.parent, token)
+    }
     $_SyntaxError(context, token)
 }
 
@@ -907,14 +1125,13 @@ $AssertCtx.prototype.transform = function(node, rank){
     var not_ctx = new $NotCtx(new_ctx)
     not_ctx.tree = [condition]
     node.context = new_ctx
-    var new_node = new $Node()
+
     var js = 'throw _b_.AssertionError.$factory()'
     if(message !== null){
         js = 'throw _b_.AssertionError.$factory(_b_.str.$factory(' +
             message.to_js() + '))'
     }
-    new $NodeJSCtx(new_node, js)
-    node.add(new_node)
+    node.add($NodeJS(js))
 }
 
 function make_assign(left, right, module){
@@ -942,43 +1159,39 @@ var $AssignCtx = $B.parser.$AssignCtx = function(context, expression){
     }
 
     this.type = 'assign'
-    if(expression == 'expression'){
-        this.expression = true
-        console.log("parent of assign expr", context.parent)
-    }
+
     // replace parent by "this" in parent tree
     context.parent.tree.pop()
-    context.parent.tree[context.parent.tree.length] = this
+    context.parent.tree.push(this)
 
     this.parent = context.parent
     this.tree = [context]
 
     var scope = $get_scope(this)
 
-    if(context.type == 'expr' && context.tree[0].type == 'call'){
-          $_SyntaxError(context, ["cannot assign to function call "])
-    }else if(context.type == 'list_or_tuple' ||
+    if(context.type == 'list_or_tuple' ||
             (context.type == 'expr' && context.tree[0].type == 'list_or_tuple')){
-        if(context.type == 'expr'){context = context.tree[0]}
+        if(context.type == 'expr'){
+            context = context.tree[0]
+        }
         // Bind all the ids in the list or tuple
         context.bind_ids(scope)
     }else if(context.type == 'assign'){
-        context.tree.forEach(function(elt){
+        check_assignment(context.tree[1])
+        for(var elt of context.tree){
             var assigned = elt.tree[0]
             if(assigned.type == 'id'){
                 $bind(assigned.value, scope, this)
             }
-        }, this)
+        }
     }else{
         var assigned = context.tree[0]
         if(assigned && assigned.type == 'id'){
-            if(noassign[assigned.value] === true){
-                $_SyntaxError(context,["cannot assign to keyword"])
-            }
+            var name = assigned.value
             // Attribute bound of an id indicates if it is being
             // bound, as it is the case in the left part of an assignment
             assigned.bound = true
-            if(!scope.globals || !scope.globals.has(assigned.value)){
+            if(! scope.globals || ! scope.globals.has(assigned.value)){
                 // A value is going to be assigned to a name
                 // After assignment the name will be bound to the current
                 // scope
@@ -1000,12 +1213,42 @@ var $AssignCtx = $B.parser.$AssignCtx = function(context, expression){
                 assigned.global_module = module.module
                 $bind(assigned.value, module, this)
             }
-        }else if(["str", "int", "float", "complex"].indexOf(assigned.type) > -1){
-            $_SyntaxError(context, ["cannot assign to literal"])
+        }else if(assigned.type == "ellipsis"){
+                $_SyntaxError(context, ['cannot assign to Ellipsis'])
         }else if(assigned.type == "unary"){
             $_SyntaxError(context, ["cannot assign to operator"])
+        }else if(assigned.type == "packed"){
+            if(assigned.tree[0].name == 'id'){
+                var id = assigned.tree[0].tree[0].value
+                if(['None', 'True', 'False', '__debug__'].indexOf(id) > -1){
+                    $_SyntaxError(context,
+                        ['cannot assign to ' + id])
+                }
+            }
+            // If the packed item was in a tuple (eg "a, *b = X") the
+            // assignment is valid; in this case the attribute in_tuple
+            // is set
+            if(assigned.parent.in_tuple === undefined){
+                $_SyntaxError(context,
+                    ["starred assignment target must be in a list or tuple"])
+            }
         }
     }
+}
+
+$AssignCtx.prototype.ast = function(){
+    var value = ast_or_obj(this.tree[1]),
+        targets = [],
+        target = this.tree[0]
+    while(target.type == 'assign'){
+        targets.splice(0, 0, ast_or_obj(target.tree[1]))
+        target = target.tree[0]
+    }
+    targets.splice(0, 0, ast_or_obj(target.tree[0]))
+    for(var tg of targets){
+        tg.ctx = ast.Store
+    }
+    return new ast.Assign(targets, value)
 }
 
 $AssignCtx.prototype.guess_type = function(){
@@ -1055,7 +1298,7 @@ $AssignCtx.prototype.transform = function(node, rank){
         nassign.tree[1] = right
 
         // create nodes with target set to right, from left to right
-        assigned.forEach(function(elt){
+        for(var elt of assigned){
             if(elt.type == "expr" && elt.tree[0].type == "list_or_tuple" &&
                     elt.tree[0].real == "tuple" &&
                     elt.tree[0].tree.length == 1){
@@ -1070,7 +1313,7 @@ $AssignCtx.prototype.transform = function(node, rank){
             elt.parent = node_ctx
             var assign = new $AssignCtx(elt)
             new $RawJSCtx(assign, '$temp' + $loop_num)
-        })
+        }
         $loop_num++
         this.tree[0] = left
         return
@@ -1139,15 +1382,15 @@ $AssignCtx.prototype.transform = function(node, rank){
         new $NodeJSCtx(new_node, 'var ' + $var + ' = [], $pos = 0')
         new_nodes[pos++] = new_node
 
-        right_items.forEach(function(right_item){
+        for(var right_item of right_items){
             var js = $var + '[$pos++] = ' + right_item.to_js()
             var new_node = new $Node()
             new_node.line_num = node.line_num
             new $NodeJSCtx(new_node, js)
             new_nodes[pos++] = new_node
-        })
+        }
         var this_node = $get_node(this)
-        left_items.forEach(function(left_item){
+        for(var left_item of left_items){
             var new_node = new $Node()
             new_node.id = this_node.module
             new_node.locals = this_node.locals
@@ -1159,7 +1402,7 @@ $AssignCtx.prototype.transform = function(node, rank){
             var assign = new $AssignCtx(left_item, false)
             assign.tree[1] = new $JSCode($var + '[' + i + ']')
             new_nodes[pos++] = new_node
-        }, this)
+        }
         node.parent.children.splice(rank,1) // remove original line
         for(var i = new_nodes.length - 1; i >= 0; i--){
             node.parent.insert(rank, new_nodes[i])
@@ -1236,6 +1479,7 @@ $AssignCtx.prototype.transform = function(node, rank){
             node.parent.insert(rank++, new_node)
             var context = new $NodeCtx(new_node) // create ordinary node
             left_item.parent = context
+            left_item.in_tuple = true
             // assignment to left operand
             var assign = new $AssignCtx(left_item, false)
             var js = rlname
@@ -1396,8 +1640,11 @@ $AttrCtx.prototype.transition = function(token, value){
     var context = this
     if(token === 'id'){
         var name = value
-        if(noassign[name] === true){$_SyntaxError(context,
-            ["cannot assign to " + name])}
+        if(name == '__debug__'){
+            $_SyntaxError(context, ['cannot assign to __debug__'])
+        }else if(noassign[name] === true){
+            $_SyntaxError(context, `'${name}' cannot be an attribute`)
+        }
         name = $mangle(name, context)
         context.name = name
         return context.parent
@@ -1421,7 +1668,7 @@ $AttrCtx.prototype.to_js = function(){
                     return [js + ".__class__ && " + js + ".__dict__ && !" +
                         js + ".__class__.$has_setattr && ! " + js +
                         ".$is_class ? _b_.dict.$setitem(" + js +
-                        ".__dict__, '" + $B.from_alias(this.name) +
+                        ".__dict__, '" + this.name +
                         "', ", ") : $B.$setattr(" + js +
                         ', "' + this.name + '", ']
                 }
@@ -1441,7 +1688,7 @@ $AttrCtx.prototype.to_js = function(){
 var $AugmentedAssignCtx = $B.parser.$AugmentedAssignCtx = function(context, op){
     // Class for augmented assignments such as "+="
 
-    check_assignment(context)
+    check_assignment(context, {augmented: true})
 
     this.type = 'augm_assign'
     this.context = context
@@ -1457,9 +1704,7 @@ var $AugmentedAssignCtx = $B.parser.$AugmentedAssignCtx = function(context, op){
         var assigned = context.tree[0]
         if(assigned.type == 'id'){
             var name = assigned.value
-            if(noassign[name] === true){
-                $_SyntaxError(context, ["cannot assign to keyword"])
-            }else if((scope.ntype == 'def' || scope.ntype == 'generator') &&
+            if((scope.ntype == 'def' || scope.ntype == 'generator') &&
                     (scope.binding[name] === undefined)){
                 if(scope.globals === undefined ||
                         ! scope.globals.has(name)){
@@ -1470,8 +1715,6 @@ var $AugmentedAssignCtx = $B.parser.$AugmentedAssignCtx = function(context, op){
                     assigned.unbound = true
                 }
             }
-        }else if(['str', 'int', 'float', 'complex'].indexOf(assigned.type) > -1){
-            $_SyntaxError(context, ["cannot assign to literal"])
         }
     }
 
@@ -1531,8 +1774,8 @@ $AugmentedAssignCtx.prototype.transform = function(node, rank){
         // For performance reasons, this is only implemented in debug mode
         if($B.debug > 0){
             var check_node = $NodeJS('if(' + this.tree[0].to_js() +
-                ' === undefined){throw _b_.NameError.$factory("name \'' +
-                this.tree[0].tree[0].value + '\' is not defined")}')
+                " === undefined){throw $B.name_error('" +
+                this.tree[0].tree[0].value + "')}")
             node.parent.insert(rank, check_node)
             offset++
         }
@@ -1645,6 +1888,9 @@ $AugmentedAssignCtx.prototype.transform = function(node, rank){
     var op1 = op.charAt(0)
 
     if(prefix){
+        parent.insert(rank + offset, $NodeJS('$left = ' + left))
+        offset++
+
         var left1 = in_class ? '$left' : left
         var new_node = new $Node()
         if(!lnum_set){
@@ -1652,24 +1898,31 @@ $AugmentedAssignCtx.prototype.transform = function(node, rank){
             lnum_set = true
         }
         js = right_is_int ? 'if(' : 'if(typeof $temp.valueOf() == "number" && '
-        js += left1 + '.constructor === Number'
+        js += '$left.constructor === Number'
 
         // If both arguments are integers, we must check that the result
         // is a safe integer
-        js += ' && Number.isSafeInteger(' + left + op1 + right + ')){' +
+        js += ' && Number.isSafeInteger($left' + op1 + right + ')){' +
             (right_is_int ? '(' : '(typeof $temp == "number" && ') +
-            'typeof ' + left1 + ' == "number") ? '
+            'typeof $left == "number") ? '
 
         js += left + op + right
 
         // result is a float
-        js += ' : ' + left + ' = new Number(' + left + op1 +
+        js += ' : ' + left + ' = new Number($left' + op1 +
             (right_is_int ? right : right + '.valueOf()') + ')}'
 
         new $NodeJSCtx(new_node, js)
         parent.insert(rank + offset, new_node)
         offset++
 
+        if(op == '+='){
+            // shortcut for += on strings
+            var js = 'else if(typeof $left == "string" && typeof $temp == ' +
+                '"string"){' + left + ' = $left + $temp}'
+            parent.insert(rank + offset, $NodeJS(js))
+            offset++
+        }
     }
     var aaops = {'+=': 'add', '-=': 'sub', '*=': 'mul'}
     if(context.tree[0].type == 'sub' &&
@@ -1686,30 +1939,40 @@ $AugmentedAssignCtx.prototype.transform = function(node, rank){
         return
     }
 
-    // insert node 'if(!hasattr(x, "__iadd__"))
-    var new_node = new $Node()
-    if(!lnum_set){new_node.line_num = line_num; lnum_set = true}
-    var js = ''
-    if(prefix){js += 'else '}
-    js += 'if(! _b_.hasattr(' + context.to_js() + ',"' + func + '"))'
-    new $NodeJSCtx(new_node, js)
-    parent.insert(rank + offset, new_node)
+    if(prefix){
+        var else_node = $NodeJS('else')
+    }else{
+        var else_node = $NodeJS('if(true)')
+    }
+    parent.insert(rank + offset, else_node)
     offset++
+
+    // insert node 'iadd = getattr(x, "__iadd__", None)'
+    var iadd_node = $NodeJS('var iadd = $B.$getattr(' + context.to_js() +
+        ',"' + func + '", null)')
+    if(!lnum_set){
+        iadd_node.line_num = line_num
+        lnum_set = true
+    }
+    else_node.add(iadd_node)
+
+    var no_iadd_node = $NodeJS('if(iadd === null)')
+    else_node.add(no_iadd_node)
 
     // create node for "x = x + y"
     var aa1 = new $Node()
     aa1.id = this.scope.id
     aa1.line_num = node.line_num
-    new_node.add(aa1)
+    no_iadd_node.add(aa1)
     var ctx1 = new $NodeCtx(aa1)
     var expr1 = new $ExprCtx(ctx1, 'clone', false)
     if(left_id_unbound){
         new $RawJSCtx(expr1, left)
     }else{
         expr1.tree = context.tree
-        expr1.tree.forEach(function(elt){
+        for(var elt of expr1.tree){
             elt.parent = expr1
-        })
+        }
     }
     var assign1 = new $AssignCtx(expr1)
     var new_op = new $OpCtx(expr1, op.substr(0, op.length - 1))
@@ -1720,13 +1983,13 @@ $AugmentedAssignCtx.prototype.transform = function(node, rank){
     expr1.parent.tree.push(assign1)
 
     // create node for "else"
-    var else_node = $NodeJS("else")
-    parent.insert(rank + offset, else_node)
+    var yes_iadd_node = $NodeJS("else")
+    else_node.add(yes_iadd_node)
 
-    // create node for "x = x.__iadd__(y)"
+    // create node for "x.__iadd__(y)"
     var aa2 = new $Node()
     aa2.line_num = node.line_num
-    else_node.add(aa2)
+    yes_iadd_node.add(aa2)
 
     var ctx2 = new $NodeCtx(aa2)
     var expr2 = new $ExprCtx(ctx2, 'clone', false)
@@ -1738,13 +2001,12 @@ $AugmentedAssignCtx.prototype.transform = function(node, rank){
         new $RawJSCtx(expr2, js) //'$locals["' + left_id + '"]')
     }else{
         expr2.tree = context.tree
-        expr2.tree.forEach(function(elt){
+        for(var elt of expr2.tree){
             elt.parent = expr2
-        })
+        }
     }
     var assign2 = new $AssignCtx(expr2)
-    assign2.tree.push($NodeJS('$B.$getattr(' + context.to_js() + ',"' +
-        func + '")(' + right + ')'))
+    assign2.tree.push($NodeJS('iadd(' + right + ')'))
     expr2.parent.tree.pop()
     expr2.parent.tree.push(assign2)
 
@@ -1785,8 +2047,13 @@ $AwaitCtx.prototype.transition = function(token, value){
 }
 
 $AwaitCtx.prototype.to_js = function(){
+    // Save execution stack before awaiting.
+    // If the promise is rejected, restore it before throwing the
+    // exception.
+    // cf. issue #1701
     return 'var save_stack = $B.save_stack();' +
-        'await ($B.promise(' + $to_js(this.tree) + '));' +
+        'try{await ($B.promise(' + $to_js(this.tree) + '))}' +
+        'catch(err){$B.restore_stack(save_stack, $locals);throw err};' +
         '$B.restore_stack(save_stack, $locals); '
 }
 
@@ -1794,7 +2061,9 @@ var $BodyCtx = $B.parser.$BodyCtx = function(context){
     // inline body for def, class, if, elif, else, try...
     // creates a new node, child of context node
     var ctx_node = context.parent
-    while(ctx_node.type !== 'node'){ctx_node = ctx_node.parent}
+    while(ctx_node.type !== 'node'){
+        ctx_node = ctx_node.parent
+    }
     var tree_node = ctx_node.node
     var body_node = new $Node()
     body_node.is_body_node = true
@@ -1909,11 +2178,13 @@ $CallArgCtx.prototype.transition = function(token, value){
         case 'int':
         case 'float':
         case 'str':
+        case 'JoinedStr':
         case 'bytes':
         case '[':
         case '(':
         case '{':
         case '.':
+        case 'ellipsis':
         case 'not':
         case 'lambda':
             if(context.expect == 'id'){
@@ -2033,6 +2304,36 @@ var $CallCtx = $B.parser.$CallCtx = function(context){
 
 }
 
+$CallCtx.prototype.ast = function(){
+    var res = new ast.Call(ast_or_obj(this.func), [], [])
+    console.log('call ast', this.tree)
+    for(var call_arg of this.tree){
+        if(call_arg.type == 'double_star_arg'){
+            var value = call_arg.tree[0].tree[0].value,
+                keyword = new ast.keyword(null, value)
+            delete keyword.arg
+            res.keywords.push(keyword)
+            continue
+        }
+        var item = call_arg.tree[0]
+        if(item === undefined){
+            // case when call ends with ",)"
+            continue
+        }
+        if(item.type == 'kwarg'){
+            res.keywords.push(new ast.keyword(item.tree[0].value,
+                ast_or_obj(item.tree[1])))
+        }else if(item.type == 'star_arg'){
+            var starred = new ast.Starred(ast_or_obj(item.tree[0]))
+            starred.ctx = ast.Load
+            res.args.push(starred)
+        }else{
+            res.args.push(ast_or_obj(item))
+        }
+    }
+    return res
+}
+
 $CallCtx.prototype.toString = function(){
     return '(call) ' + this.func + '(' + this.tree + ')'
 }
@@ -2050,6 +2351,7 @@ $CallCtx.prototype.transition = function(token, value){
         case 'int':
         case 'float':
         case 'str':
+        case 'JoinedStr':
         case 'bytes':
         case '[':
         case '(':
@@ -2057,6 +2359,7 @@ $CallCtx.prototype.transition = function(token, value){
         case '.':
         case 'not':
         case 'lambda':
+        case 'ellipsis':
             context.expect = ','
             return $transition(new $CallArgCtx(context), token,
                 value)
@@ -2124,7 +2427,7 @@ $CallCtx.prototype.to_js = function(){
             star_args = false,
             dstar_args = []
 
-        this.tree.forEach(function(arg){
+        for(var arg of this.tree){
             var type
             switch(arg.type){
                 case 'star_arg':
@@ -2165,7 +2468,7 @@ $CallCtx.prototype.to_js = function(){
                     }
                     break
             }
-        })
+        }
 
         var args_str
 
@@ -2280,31 +2583,37 @@ $CaseCtx.prototype.transition = function(token, value){
         case ':':
             // check if case is 'irrefutable' (cf. PEP 634)
             function is_irrefutable(pattern){
+                var cause
                 if(pattern.type == "capture_pattern"){
-                    return true
+                    return pattern.tree[0]
                 }else if(pattern.type == "or_pattern"){
                     for(var subpattern of pattern.tree){
-                        if(is_irrefutable(subpattern)){
-                            return true
+                        if(cause = is_irrefutable(subpattern)){
+                            return cause
                         }
                     }
                 }else if(pattern.type == "sequence_pattern" &&
                         pattern.token == '(' &&
                         pattern.tree.length == 1 &&
-                        is_irrefutable(pattern.tree[0])){
-                    return true
+                        (cause = is_irrefutable(pattern.tree[0]))){
+                    return cause
                 }
                 return false
             }
-            if(is_irrefutable(this.tree[0])){
+            var cause
+            if(cause = is_irrefutable(this.tree[0])){
                 // mark match node as having already an irrefutable pattern,
                 // so that remaining patterns raise a SyntaxError
-                $get_node(context).parent.irrefutable = context
+                $get_node(context).parent.irrefutable = cause
             }
             switch(context.expect) {
                 case 'id':
                 case 'as':
                 case ':':
+                    var last = $B.last(context.tree)
+                    if(last && last.type == 'sequence_pattern'){
+                        remove_empty_pattern(last)
+                    }
                     return $BodyCtx(context)
             }
             break
@@ -2313,16 +2622,38 @@ $CaseCtx.prototype.transition = function(token, value){
                 return new $PatternCtx(new $PatternOrCtx(context))
             }
             $_SyntaxError(context, ['expected :'])
+        case ',':
+            if(context.expect == ':' || context.expect == 'as'){
+                return new $PatternCtx(new $PatternSequenceCtx(context))
+            }
+        case 'if':
+            // guard
+            context.has_guard = true
+            return new $AbstractExprCtx(new $ConditionCtx(context, token),
+                false)
         default:
             $_SyntaxError(context, ['expected :'])
     }
 }
 
-
 $CaseCtx.prototype.to_js = function(){
-    console.log('Case to js', this)
-    return 'if($B.pattern_match(subject, ' + $to_js(this.tree) +
-        (this.alias ? `, {as: "${this.alias.value}"}` : '') + '))'
+    var node = $get_node(this),
+        rank = node.parent.children.indexOf(node),
+        prefix = rank == 0 ? 'if' : 'else if'
+    // since statement is "if", $add_line_num doesn't insert a node with the
+    // line number
+    if(this.has_guard){
+        // Guard is added as the final condition. The code is derived from the
+        // one generated by guard.to_js(), which has the form "if(...)", by
+        // removing the leading "if(" and the trailing ")"
+        var guard = this.tree.pop(),
+            guard_js = guard.to_js().substr(3), // remove leading "if("
+            guard_js = guard_js.substr(0, guard_js.length - 1) // trailing ")"
+    }
+    return prefix + '(($locals.$line_info="' + node.line_num + ',' +
+        node.module + '") && $B.pattern_match(subject, ' + $to_js(this.tree) +
+        (this.alias ? `, {as: "${this.alias.value}"}` : '') + ')' +
+        (this.has_guard ? ' && ' + guard_js : '') + ')'
 
 }
 
@@ -2343,6 +2674,27 @@ var $ClassCtx = $B.parser.$ClassCtx = function(context){
     }
 }
 
+$ClassCtx.prototype.ast = function(){
+    var decorators = get_decorators(this.parent.node),
+        bases = [],
+        keywords = []
+    if(this.args){
+        for(var arg of this.args.tree){
+            if(arg.vars.length == 2){
+                keywords.push(new ast.keyword(ast_or_obj(arg.vars[0]),
+                    ast_or_obj(arg.vars[1])))
+            }else{
+                bases.push(new ast.arg(ast_or_obj(arg.vars[0])))
+            }
+        }
+    }
+    var res = new ast.ClassDef(this.name, bases, keywords, [], decorators)
+    for(var child of this.parent.node.children){
+        res.body.push(ast_or_obj(child.context.tree[0]))
+    }
+    return res
+}
+
 $ClassCtx.prototype.toString = function(){
     return '(class) ' + this.name + ' ' + this.tree + ' args ' + this.args
 }
@@ -2360,6 +2712,16 @@ $ClassCtx.prototype.transition = function(token, value){
         case '(':
             return new $CallCtx(context)
         case ':':
+            if(this.args){
+                for(var arg of this.args.tree){
+                    var param = arg.tree[0]
+                    if((param.type == 'expr' && param.name == 'id') ||
+                            param.type == "kwarg"){
+                        continue
+                    }
+                    $_SyntaxError(context, 'invalid class parameter')
+                }
+            }
             return $BodyCtx(context)
     }
     $_SyntaxError(context, 'token ' + token + ' after ' + context)
@@ -2477,26 +2839,26 @@ $ClassCtx.prototype.transform = function(node, rank){
             args = [],
             kw = []
 
-        arg_tree.forEach(function(_tmp){
+        for(var _tmp of arg_tree){
             if(_tmp.tree[0].type == 'kwarg'){kw.push(_tmp.tree[0])}
             else{args.push(_tmp.to_js())}
-        })
+        }
         js[pos++] = ', _b_.tuple.$factory([' + args.join(',') + ']),['
         // add the names - needed to raise exception if a value is undefined
         var _re = new RegExp('"', 'g'),
             _r = [],
             rpos = 0
-        args.forEach(function(arg){
+        for(var arg of args){
             _r[rpos++] = '"' + arg.replace(_re, '\\"') + '"'
-        })
+        }
         js[pos++] = _r.join(',') + ']'
 
         _r = []
         rpos = 0
-        kw.forEach(function(_tmp){
+        for(var _tmp of kw){
             _r[rpos++] = '["' + _tmp.tree[0].value + '",' +
               _tmp.tree[1].to_js() + ']'
-        })
+        }
         js[pos++] = ',[' + _r.join(',') + ']'
 
     }else{ // form "class foo:"
@@ -2580,9 +2942,9 @@ $ComprehensionCtx.prototype.transition = function(token, value){
 $ComprehensionCtx.prototype.to_js = function(){
     this.js_processed = true
     var intervals = []
-    this.tree.forEach(function(elt){
+    for(var elt of this.tree){
         intervals.push(elt.start)
-    })
+    }
     return intervals
 }
 
@@ -2646,11 +3008,35 @@ var $ConditionCtx = $B.parser.$ConditionCtx = function(context,token){
     this.token = token
     this.parent = context
     this.tree = []
+    this.node = $get_node(this)
     this.scope = $get_scope(this)
     if(token == 'while'){
         this.loop_num = $loop_num++
     }
-    context.tree[context.tree.length] = this
+    if(token == 'elif'){
+        // in the AST, this is the attribute 'orelse' of the previous "if"
+        // or "elif"
+        var rank = this.node.parent.children.indexOf(this.node),
+            previous = this.node.parent.children[rank - 1]
+        previous.context.tree[0].orelse = this
+    }
+    context.tree.push(this)
+}
+
+$ConditionCtx.prototype.ast = function(){
+    var types = {'if': 'If', 'while': 'While', 'elif': 'If'}
+    var res = {
+        type: types[this.token],
+        test: ast_or_obj(this.tree[0])
+    }
+    if(this.orelse){
+        res.orelse = ast_or_obj(this.orelse)
+    }
+    res.body = []
+    for(var node of this.node.children){
+        res.body.push(ast_or_obj(node.context.tree[0]))
+    }
+    return res
 }
 
 $ConditionCtx.prototype.toString = function(){
@@ -2666,7 +3052,7 @@ $ConditionCtx.prototype.transition = function(token, value){
         }
         return $BodyCtx(context)
     }
-    $_SyntaxError(context, 'token ' + token + ' after ' + context)
+    $_SyntaxError(context, ["expected ':'"])
 }
 
 $ConditionCtx.prototype.transform = function(node, rank){
@@ -2856,9 +3242,9 @@ $DecoratorCtx.prototype.transform = function(node, rank){
     //
     this.dec_ids = []
     var pos = 0
-    decorators.forEach(function(){
+    for(var _ of decorators){
         this.dec_ids.push('$id' + $B.UUID())
-    }, this)
+    }
 
     var obj = children[func_rank].context.tree[0]
     if(obj.type == 'def'){
@@ -2901,6 +3287,25 @@ $DecoratorCtx.prototype.to_js = function(){
             $to_js(decorator) + ';')
     }, this)
     return res.join('')
+}
+
+function get_decorators(node){
+    var decorators = []
+    var parent_node = node.parent
+    var rank = parent_node.children.indexOf(node)
+    while(true){
+        rank--
+        if(rank < 0){
+            break
+        }else if(parent_node.children[rank].context.tree[0].type ==
+                'decorator'){
+            var deco = parent_node.children[rank].context.tree[0].tree[0]
+            decorators.push(ast_or_obj(deco))
+        }else{
+            break
+        }
+    }
+    return decorators
 }
 
 var $DefCtx = $B.parser.$DefCtx = function(context){
@@ -2974,6 +3379,67 @@ var $DefCtx = $B.parser.$DefCtx = function(context){
     this.after_star = []
 }
 
+$DefCtx.prototype.ast = function(){
+    var args = {
+            posonlyargs: [],
+            args: [],
+            kwonlyargs: [],
+            kwdefaults: [],
+            defaults: []
+        },
+        decorators = get_decorators(this.parent.node),
+        func_args = this.tree[1].tree,
+        state = 'arg',
+        default_value,
+        res
+    for(var arg of func_args){
+        if(arg.type == 'end_positional'){
+            args.posonlyargs = args.args
+            args.args = []
+        }else if(arg.type == 'func_star_arg'){
+            if(arg.op == '*' && arg.name == '*'){
+                state = 'kwonly'
+            }else if(arg.op == '*'){
+                args.vararg = new ast.arg(arg.name)
+            }else if(arg.op == '**'){
+                args.kwarg = new ast.arg(arg.name)
+            }
+        }else{
+            default_value = false
+            if(arg.has_default){
+                default_value = ast_or_obj(arg.tree[0])
+            }
+            var argument = new ast.arg(arg.name)
+            if(arg.annotation){
+                argument.annotation = ast_or_obj(arg.annotation.tree[0])
+            }
+            if(state == 'kwonly'){
+                args.kwonlyargs.push(argument)
+                if(default_value){
+                    args.kwdefaults.push(default_value)
+                }
+            }else{
+                args.args.push(argument)
+                if(default_value){
+                    args.defaults.push(default_value)
+                }
+            }
+        }
+    }
+    if(this.async){
+        res = new ast.AsyncFunctionDef(this.name, args, [], decorators)
+    }else{
+        res = new ast.FunctionDef(this.name, args, [], decorators)
+    }
+    if(this.annotation){
+        res.returns = ast_or_obj(this.annotation.tree[0])
+    }
+    for(var child of this.parent.node.children){
+        res.body.push(ast_or_obj(child.context.tree[0]))
+    }
+    return res
+}
+
 $DefCtx.prototype.set_name = function(name){
     try{
         name = $mangle(name, this.parent.tree[0])
@@ -2981,6 +3447,9 @@ $DefCtx.prototype.set_name = function(name){
         console.log(err)
         console.log('parent', this.parent)
         throw err
+    }
+    if(["None", "True", "False"].indexOf(name) > -1){
+        $_SyntaxError(this, 'invalid function name')
     }
     var id_ctx = new $IdCtx(this, name)
     this.name = name
@@ -3105,7 +3574,7 @@ $DefCtx.prototype.transform = function(node, rank){
     }
 
     var func_args = this.tree[1].tree
-    func_args.forEach(function(arg){
+    for(var arg of func_args){
         if(arg.type == 'end_positional'){
             this.args.push("/")
             slot_list.push('"/"')
@@ -3127,9 +3596,9 @@ $DefCtx.prototype.transform = function(node, rank){
                     this.otherdefaults.push(arg.name)
                 }
             }
-            this.slots.push(arg.name + ':null')
+            this.slots.push('"' + arg.name + '":null')
             slot_list.push('"' + arg.name + '"')
-            slot_init.push(arg.name + ':' + arg.name)
+            slot_init.push('"' + arg.name + '": _' + arg.name)
             if(arg.tree.length > 0){
                 defaults.push('"' + arg.name + '"')
                 defs1.push(arg.name + ':' + $to_js(arg.tree))
@@ -3143,7 +3612,7 @@ $DefCtx.prototype.transform = function(node, rank){
             var name = $mangle(arg.name, this)
             annotations.push(name + ': ' + arg.annotation.to_js())
         }
-    }, this)
+    }
 
     slot_init = '{' + slot_init.join(", ") + '}'
 
@@ -3200,9 +3669,9 @@ $DefCtx.prototype.transform = function(node, rank){
             $NodeJS(`$locals.$async = "${this.id}"`))
     }
 
-    enter_frame_nodes.forEach(function(node){
-        node.enter_frame = true
-    })
+    for(var _node of enter_frame_nodes){
+        _node.enter_frame = true
+    }
 
     if(this.is_comp){
         nodes.push($NodeJS("var $defaults = {}"))
@@ -3247,9 +3716,9 @@ $DefCtx.prototype.transform = function(node, rank){
 
         // If at least one argument is not "simple", fall back to
         // $B.args()
-        make_args_nodes.forEach(function(item){
+        for(var item of make_args_nodes){
             new_node.add(item)
-        })
+        }
 
         var else_node = new $Node()
         new $NodeJSCtx(else_node, 'else')
@@ -3276,7 +3745,7 @@ $DefCtx.prototype.transform = function(node, rank){
                 '", $len, ' + pos_len + ', [' + slot_list + '])}'))
 
             // Replace missing arguments with default values
-            subelse_node = $NodeJS("else")
+            var subelse_node = $NodeJS("else")
             else_node.add(subelse_node)
 
             subelse_node.add($NodeJS(local_ns + ' = $locals = ' +
@@ -3292,17 +3761,17 @@ $DefCtx.prototype.transform = function(node, rank){
 
     nodes = nodes.concat(enter_frame_nodes)
 
-    // nodes.push($NodeJS('$locals.$name = "' + this.name + '"'))
-
     // Handle name __class__ in methods (PEP 3135 and issue #1068)
     var is_method = scope.ntype == "class"
     if(is_method){
-        class_ref = "$locals_" + scope.parent_block.id.replace(/\./g, '_') +
-            '.' + scope.context.tree[0].qualname
+        var scope_ref = '$locals_' + scope.parent_block.id.replace(/\./g, '_'),
+            class_ref = scope.context.tree[0].qualname
         // bind name __class__ in method
+        var had_class = this.parent.node.binding["__class__"] // already bound ?
         this.parent.node.binding["__class__"] = true
         // set its value to the class where the method is defined
-        nodes.push($NodeJS("$locals.__class__ = " + class_ref))
+        nodes.push($NodeJS('$locals.__class__ = $B.get_method_class(' +
+            scope_ref + ', "' + class_ref + '")'))
     }
 
     // set __BRYTHON__.js_this to Javascript "this"
@@ -3320,7 +3789,7 @@ $DefCtx.prototype.transform = function(node, rank){
     var def_func_node = new $Node()
     this.params = ''
     if(only_positional){
-        this.params = Object.keys(this.varnames).join(', ')
+        this.params = Object.keys(this.varnames).map(x => '_' + x).join(', ')
     }
     new $NodeJSCtx(def_func_node, '')
     def_func_node.is_def_func = true
@@ -3354,6 +3823,14 @@ $DefCtx.prototype.transform = function(node, rank){
             }
         }
     }
+    if(this.parent.node.nonlocals){
+        for(var key of this.parent.node.nonlocals){
+            var attr = '"' + key + '"'
+            if(free_vars.indexOf(attr) == -1){
+                free_vars.push(attr)
+            }
+        }
+    }
 
     // Add the new function definition
     node.add(def_func_node)
@@ -3377,26 +3854,26 @@ $DefCtx.prototype.transform = function(node, rank){
 
         // Add attribute __name__
         var __name__ = this.name
-        if(this.name.substr(0, 2) == "$$"){__name__ = __name__.substr(2)}
         if(__name__.substr(0, 15) == 'lambda_' + $B.lambda_magic){
             __name__ = "<lambda>"
         }
-        js = '    __name__:"' + $B.from_alias(__name__) + '",'
+        js = '    __name__:"' + __name__ + '",'
         node.parent.insert(rank + offset++, $NodeJS(js))
 
         // Add attribute __qualname__
         var __qualname__ = __name__
-        if(this.class_name){__qualname__ = this.class_name + '.' +
-            $B.from_alias(__name__)}
+        if(this.class_name){
+            __qualname__ = this.class_name + '.' + __name__
+        }
         js = '    __qualname__:"' + __qualname__ + '",'
         node.parent.insert(rank + offset++, $NodeJS(js))
 
         // Add attribute __defaults__
         if(this.otherdefaults.length > 0){
             var def_names = []
-            this.otherdefaults.forEach(function(_default){
+            for(var _default of this.otherdefaults){
                 def_names.push('$defaults.' + _default)
-            })
+            }
             node.parent.insert(rank + offset++, $NodeJS('    __defaults__ : ' +
                 '$B.fast_tuple([' + def_names.join(', ') + ']),'))
         }else{
@@ -3408,9 +3885,9 @@ $DefCtx.prototype.transform = function(node, rank){
         // keyword-only parameters
         if(this.kwonlyargsdefaults.lengh > 0){
             var def_names = []
-            this.kwonlyargsdefaults.forEach(function(_default){
+            for(var _default of this.kwonlyargsdefaults){
                 def_names.push('$defaults.' + _default)
-            })
+            }
             node.parent.insert(rank + offset++, $NodeJS('    __kwdefaults__ : ' +
                 '$B.fast_tuple([' + def_names.join(', ') + ']),'))
         }else{
@@ -3436,11 +3913,18 @@ $DefCtx.prototype.transform = function(node, rank){
             $NodeJS('    __module__ : "' + root.module + '",'))
 
         for(var attr in this.parent.node.binding){
+            // for attribute __class__, if function is a method and name
+            // __class__ was not explicitely bound, had_class is false and
+            // __class__ was added to binding only to be available inside the
+            // function. Don't add is to varnames
+            if(attr == "__class__" && is_method && ! had_class){
+                continue
+            }
             this.varnames[attr] = true
         }
         var co_varnames = []
         for(var attr in this.varnames){
-            co_varnames.push('"' + $B.from_alias(attr) + '"')
+            co_varnames.push('"' + attr + '"')
         }
 
         // CODE_MARKER is a placeholder which will be replaced
@@ -3513,20 +3997,20 @@ $DefCtx.prototype.transform = function(node, rank){
     var try_node = $NodeJS('try'),
         children = parent.children.slice(pos + 1)
     parent.insert(pos + 1, try_node)
-    children.forEach(function(child){
+    for(var child of children){
         if(child.is_def_func){
-            child.children.forEach(function(grand_child){
+            for(var grand_child of child.children){
                 try_node.add(grand_child)
-            })
+            }
         }else{
             try_node.add(child)
         }
-    })
+    }
     parent.children.splice(pos + 2, parent.children.length)
 
     var except_node = $NodeJS('catch(err)')
     except_node.add($NodeJS('$B.set_exc(err)'))
-    except_node.add($NodeJS('if($locals.$f_trace !== _b_.None){' +
+    except_node.add($NodeJS('if((! err.$in_trace_func) && $locals.$f_trace !== _b_.None){' +
         '$locals.$f_trace = $B.trace_exception()}'))
     except_node.add($NodeJS('$B.leave_frame({$locals});throw err'))
 
@@ -3537,13 +4021,14 @@ $DefCtx.prototype.transform = function(node, rank){
     return offset
 }
 
+
 $DefCtx.prototype.to_js = function(func_name){
     this.js_processed = true
 
     if(this.is_comp){
         return "var " + this.name + " = " +
             (this.async ? ' async ' : '') +
-            "function* (expr)"
+            "function* (_expr)"
     }
 
     func_name = func_name || this.tree[0].to_js()
@@ -3560,8 +4045,28 @@ var $DelCtx = $B.parser.$DelCtx = function(context){
     // Class for keyword "del"
     this.type = 'del'
     this.parent = context
-    context.tree[context.tree.length] = this
+    context.tree.push(this)
     this.tree = []
+}
+
+$DelCtx.prototype.ast = function(){
+    var targets
+    console.log('ast del', this.tree[0])
+    if(this.tree[0].type == 'list_or_tuple'){
+        // Syntax "del a, b, c"
+        targets = this.tree[0].tree.slice()
+    }else if(this.tree[0].type == 'expr' &&
+            this.tree[0].tree[0].type == 'list_or_tuple'){
+        // del(x[0]) is the same as del x[0], cf.issue #923
+        targets = this.tree[0].tree[0]
+    }else{
+        targets = [this.tree[0].tree[0]]
+    }
+    for(var i = 0; i < targets.length; i++){
+        targets[i] = ast_or_obj(targets[i])
+        targets[i].ctx = ast.Del
+    }
+    return new ast.Delete(targets)
 }
 
 $DelCtx.prototype.toString = function(){
@@ -3570,7 +4075,10 @@ $DelCtx.prototype.toString = function(){
 
 $DelCtx.prototype.transition = function(token, value){
     var context = this
-    if(token == 'eol'){return $transition(context.parent, token)}
+    if(token == 'eol'){
+        check_assignment(this.tree[0], {action: 'delete'})
+        return $transition(context.parent, token)
+    }
     $_SyntaxError(context, 'token ' + token + ' after ' + context)
 }
 
@@ -3582,12 +4090,12 @@ $DelCtx.prototype.to_js = function(){
     if(this.tree[0].type == 'list_or_tuple'){
         // Syntax "del a, b, c"
         var res = []
-        this.tree[0].tree.forEach(function(elt){
+        for(var elt of this.tree[0].tree){
             var subdel = new $DelCtx(context) // this adds an element to context.tree
             subdel.tree = [elt]
             res.push(subdel.to_js())
             context.tree.pop() // remove the element from context.tree
-        })
+        }
         this.tree = []
         return res.join(';')
     }else if(this.tree[0].type == 'expr' &&
@@ -3622,9 +4130,9 @@ $DelCtx.prototype.to_js = function(){
                 return res
             case 'list_or_tuple':
                 var res = []
-                expr.tree.forEach(function(elt){
+                for(var elt of expr.tree){
                   res.push('delete ' + elt.to_js())
-                })
+                }
                 return res.join(';')
             case 'sub':
                 // Delete an item in a list : "del a[x]"
@@ -3632,10 +4140,6 @@ $DelCtx.prototype.to_js = function(){
                 js = expr.to_js()
                 expr.func = 'getitem'
                 return js
-            case 'op':
-                  $_SyntaxError(this, ["cannot delete operator"])
-            case 'call':
-                $_SyntaxError(this, ["cannot delete function call"])
             case 'attribute':
                 return '_b_.delattr(' + expr.value.to_js() + ',"' +
                     expr.name + '")'
@@ -3696,12 +4200,17 @@ $DictOrSetCtx.prototype.transition = function(token, value){
                              context.closed = true
                              return context
                         case 'dict':
-                            if(context.nb_dict_items() % 2 == 0){
-                                context.items = context.tree
-                                context.tree = []
-                                context.closed = true
-                                return context
+                            if($B.last(this.tree).type == 'abstract_expr'){
+                                $_SyntaxError(context,
+                                    ["expression expected after dictionary key and ':'"])
+                            }else if(context.nb_dict_items() % 2 != 0){
+                                $_SyntaxError(context,
+                                    ["':' expected after dictionary key"])
                             }
+                            context.items = context.tree
+                            context.tree = []
+                            context.closed = true
+                            return context
                       }
                       $_SyntaxError(context, 'token ' + token +
                           ' after ' + context)
@@ -3711,8 +4220,8 @@ $DictOrSetCtx.prototype.transition = function(token, value){
                     }
                     if(context.real == 'dict' &&
                             context.nb_dict_items() % 2){
-                        $_SyntaxError(context, 'token ' + token +
-                            ' after ' + context)
+                        $_SyntaxError(context,
+                            ["':' expected after dictionary key"])
                     }
                     context.expect = 'id'
                     return context
@@ -3721,13 +4230,20 @@ $DictOrSetCtx.prototype.transition = function(token, value){
                       context.real = 'dict'
                   }
                   if(context.real == 'dict'){
-                      context.expect = ','
-                      return new $AbstractExprCtx(context,false)
-                  }else{$_SyntaxError(context, 'token ' + token +
-                      ' after ' + context)}
+                      context.expect = 'value'
+                      context.value_pos = $pos
+                      return context
+                  }else{
+                      $_SyntaxError(context, 'token ' + token +
+                      ' after ' + context)
+                  }
                 case 'for':
-
                     // comprehension
+                    if(context.real == "set" && context.tree.length > 1){
+                        context.$pos = context.tree[0].$pos
+                        $_SyntaxError(context, ["did you forget " +
+                            "parentheses around the comprehension target?"])
+                    }
                     if(context.real == 'dict_or_set'){
                         context.real = 'set_comp'
                     }else{
@@ -3765,6 +4281,7 @@ $DictOrSetCtx.prototype.transition = function(token, value){
                 case 'int':
                 case 'float':
                 case 'str':
+                case 'JoinedStr':
                 case 'bytes':
                 case '[':
                 case '(':
@@ -3814,6 +4331,16 @@ $DictOrSetCtx.prototype.transition = function(token, value){
                         ' after ' + context)
             }
             $_SyntaxError(context, 'token ' + token + ' after ' + context)
+        }else if(context.expect == 'value'){
+            try{
+                context.expect = ','
+                return $transition(new $AbstractExprCtx(context, false),
+                    token, value)
+            }catch(err){
+                context.$pos = context.value_pos
+                $_SyntaxError(context, ["expression expected after " +
+                    "dictionary key and ':'"])
+            }
         }
         return $transition(context.parent, token, value)
     }
@@ -3821,10 +4348,13 @@ $DictOrSetCtx.prototype.transition = function(token, value){
 
 $DictOrSetCtx.prototype.nb_dict_items = function(){
     var nb = 0
-    this.tree.forEach(function(item){
-        if(item.packed){nb += 2}
-        else{nb++}
-    })
+    for(var item of this.tree){
+        if(item.packed){
+            nb += 2
+        }else{
+            nb++
+        }
+    }
     return nb
 }
 
@@ -3852,6 +4382,10 @@ $DictOrSetCtx.prototype.unpack_dict = function(packed){
             res = "_b_.list.$factory(_b_.dict.items(" + item.to_js() + "))"
             i++
         }else{
+            if(this.items[i + 1] === undefined){
+                console.log('stack', $B.frames_stack.slice(),
+                    'this.items', this.items, 'i', i)
+            }
             res = "[[" + item.to_js() + "," +
                 this.items[i + 1].to_js() + "]]"
             i += 2
@@ -3929,6 +4463,7 @@ $DoubleStarArgCtx.prototype.transition = function(token, value){
         case 'int':
         case 'float':
         case 'str':
+        case 'JoinedStr':
         case 'bytes':
         case '[':
         case '(':
@@ -3958,7 +4493,6 @@ var $EllipsisCtx = $B.parser.$EllipsisCtx = function(context){
     // Class for "..."
     this.type = 'ellipsis'
     this.parent = context
-    this.nbdots = 1
     this.start = $pos
     context.tree[context.tree.length] = this
 }
@@ -3969,21 +4503,7 @@ $EllipsisCtx.prototype.toString = function(){
 
 $EllipsisCtx.prototype.transition = function(token, value){
     var context = this
-    if(token == '.'){
-        context.nbdots++
-        if(context.nbdots == 3 && $pos - context.start == 2){
-            context.$complete = true
-        }
-        return context
-    }else{
-        if(! context.$complete){
-            $pos--
-            $_SyntaxError(context, 'token ' + token + ' after ' +
-                context)
-        }else{
-            return $transition(context.parent, token, value)
-        }
-    }
+    return $transition(context.parent, token, value)
 }
 
 $EllipsisCtx.prototype.to_js = function(){
@@ -4033,6 +4553,7 @@ $ExceptCtx.prototype.transition = function(token, value){
         case 'int':
         case 'float':
         case 'str':
+        case 'JoinedStr':
         case 'bytes':
         case '[':
         case '(':
@@ -4082,9 +4603,13 @@ $ExceptCtx.prototype.transition = function(token, value){
                     (context.expect == 'as' || context.expect == ',')){
                 context.expect = 'id'
                 return context
+            }else if(context.parenth === undefined){
+                $_SyntaxError(context,
+                    ["multiple exception types must be parenthesized"])
             }
-  }
-  $_SyntaxError(context, 'token ' + token + ' after ' + context.expect)
+    }
+    console.log('error', context, token)
+    $_SyntaxError(context, 'token ' + token + ' after ' + context.expect)
 }
 
 $ExceptCtx.prototype.set_alias = function(alias){
@@ -4123,9 +4648,9 @@ $ExceptCtx.prototype.to_js = function(){
     }
 
     var res = []
-    this.tree.forEach(function(elt){
+    for(var elt of this.tree){
         res.push(elt.to_js())
-    })
+    }
     var lnum = ''
     if($B.debug > 0){
         var module = $get_module(this)
@@ -4140,6 +4665,7 @@ var $ExprCtx = $B.parser.$ExprCtx = function(context, name, with_commas){
     // Base class for expressions
     this.type = 'expr'
     this.name = name
+    this.$pos = $pos
     // allow expression with comma-separted values, or a single value ?
     this.with_commas = with_commas
     this.expect = ',' // can be 'expr' or ','
@@ -4161,6 +4687,25 @@ var $ExprCtx = $B.parser.$ExprCtx = function(context, name, with_commas){
     context.tree[context.tree.length] = this
 }
 
+$ExprCtx.prototype.ast = function(){
+    var res
+    if(['imaginary', 'int', 'float', 'list', 'str', 'operand'].indexOf(this.name) > -1){
+        var res = ast_or_obj(this.tree[0])
+    }else if(this.name == 'id'){
+        if(['id', 'call', 'sub'].indexOf(this.tree[0].type) > -1){
+            res = this.tree[0].ast()
+        }
+    }
+    if(res){
+        if(this.parent.type == 'node'){
+            return new ast.Expr(res)
+        }else{
+            return res
+        }
+    }
+    return this
+}
+
 $ExprCtx.prototype.toString = function(){
     return '(expr ' + this.with_commas + ') ' + this.tree
 }
@@ -4176,7 +4721,12 @@ $ExprCtx.prototype.transition = function(token, value){
         case 'lambda':
         case 'pass':
         case 'str':
-            console.log("syntax error", context, token, value)
+        case 'JoinedStr':
+            if(context.parent.type == 'dict_or_set' &&
+                    context.parent.expect == ','){
+                $_SyntaxError(context,
+                    ["invalid syntax. Perhaps you forgot a comma?"])
+            }
             $_SyntaxError(context, 'token ' + token + ' after ' +
                 context)
             break
@@ -4201,7 +4751,9 @@ $ExprCtx.prototype.transition = function(token, value){
     }
     switch(token) {
         case 'not':
-            if(context.expect == ','){return new $ExprNot(context)}
+            if(context.expect == ','){
+                return new $ExprNot(context)
+            }
             break
         case 'in':
             if(context.parent.type == 'target_list'){
@@ -4250,8 +4802,9 @@ $ExprCtx.prototype.transition = function(token, value){
           var op1 = context.parent,
               repl = null
           while(1){
-              if(op1.type == 'expr'){op1 = op1.parent}
-              else if(op1.type == 'op' &&
+              if(op1.type == 'expr'){
+                  op1 = op1.parent
+              }else if(op1.type == 'op' &&
                       $op_weight[op1.op] >= $op_weight[op] &&
                       !(op1.op == '**' && op == '**')){ // cf. issue #250
                   repl = op1
@@ -4260,16 +4813,14 @@ $ExprCtx.prototype.transition = function(token, value){
                       $op_weight['not'] > $op_weight[op]){
                   repl = op1
                   op1 = op1.parent
-              }else{break}
+              }else{
+                  break
+              }
           }
           if(repl === null){
-              while(1){
-                  if(context.parent !== op1){
-                      context = context.parent
-                      op_parent = context.parent
-                  }else{
-                      break
-                  }
+              while(context.parent !== op1){
+                  context = context.parent
+                  op_parent = context.parent
               }
               context.parent.tree.pop()
               var expr = new $ExprCtx(op_parent, 'operand',
@@ -4281,7 +4832,7 @@ $ExprCtx.prototype.transition = function(token, value){
           }else{
               // issue #371
               if(op === 'and' || op === 'or'){
-                  while(repl.parent.type == 'not'||
+                  while(repl.parent.type == 'not' ||
                           (repl.parent.type == 'expr' &&
                           repl.parent.parent.type == 'not')){
                       // 'and' and 'or' have higher precedence than 'not'
@@ -4404,6 +4955,7 @@ $ExprCtx.prototype.transition = function(token, value){
               // annotation
               if(context.tree.length == 1){
                   var child = context.tree[0]
+                  check_assignment(child)
                   if(["id", "sub", "attribute"].indexOf(child.type) > -1){
                       return new $AbstractExprCtx(new $AnnotationCtx(context), false)
                   }else if(child.real == "tuple" && child.expect == "," &&
@@ -4464,8 +5016,8 @@ $ExprCtx.prototype.transition = function(token, value){
              while(context.parent !== undefined){
                  context = context.parent
                  if(context.type == "condition"){
-                     $_SyntaxError(context, 'token ' + token + ' after '
-                         + context)
+                     $_SyntaxError(context, ["invalid syntax. Maybe you" +
+                         " meant '==' or ':=' instead of '='?"])
                  }else if(context.type == "augm_assign"){
                      $_SyntaxError(context,
                          "assignment inside augmented assignment")
@@ -4492,10 +5044,15 @@ $ExprCtx.prototype.transition = function(token, value){
               $_SyntaxError(context,
                   ':= invalid inside function arguments' )
           }
-          if(context.tree.length == 1 &&
-                  context.tree[0].type == "id"){
+          if(context.tree.length == 1 && context.tree[0].type == "id"){
               var scope = $get_scope(context),
                   name = context.tree[0].value
+              if(['None', 'True', 'False'].indexOf(name) > -1){
+                  $_SyntaxError(context,
+                      [`cannot use assignment expressions with ${name}`])
+              }else if(name == '__debug__'){
+                  $_SyntaxError(context, ['cannot assign to __debug__'])
+              }
               while(scope.is_comp){
                   scope = scope.parent_block
               }
@@ -4580,6 +5137,9 @@ $ExprCtx.prototype.to_js = function(arg){
     if(this.type == 'list'){
         res = '[' + $to_js(this.tree) + ']'
     }else if(this.tree.length == 1){
+        if(this.tree[0].to_js === undefined){
+            console.log('pas de to_js', this)
+        }
         res = this.tree[0].to_js(arg)
     }else{
         res = '_b_.tuple.$factory([' + $to_js(this.tree) + '])'
@@ -4602,7 +5162,7 @@ $ExprCtx.prototype.to_js = function(arg){
                 scope = scope.parent_block
             }
         }else if(scope.nonlocals &&
-                scope.nonlocals[this.assign.value]){
+                scope.nonlocals.has(this.assign.value)){
             // Name is declared nonlocal
             scope = scope.parent_block
         }
@@ -4667,6 +5227,7 @@ $ForExpr.prototype.transition = function(token, value){
         case 'in':
             // bind single ids in target list
             for(var target_expr of context.tree[0].tree){
+                check_assignment(target_expr.tree[0])
                 if(target_expr.tree[0].type == 'id'){
                     var id = target_expr.tree[0]
                     $bind(id.value, this.scope, id)
@@ -4700,7 +5261,7 @@ $ForExpr.prototype.transform = function(node,rank){
                 pnode.outermost_expr = this.tree[1]
                 module.outermost_expr = this.tree[1]
                 this.tree.pop()
-                new $RawJSCtx(this, "expr")
+                new $RawJSCtx(this, "_expr")
             }
             break
         }
@@ -4827,9 +5388,9 @@ $ForExpr.prototype.transform = function(node,rank){
                 num + ',1)}'))
         }
         // Add the loop body
-        children.forEach(function(child){
+        for(var child of children){
             for_node.add(child.clone_tree())
-        })
+        }
         // Add a line to reset the line number
         if($B.last(node.children).context.tree[0].type != "return"){
             var js = '$locals.$line_info = "' + node.line_num +
@@ -4890,9 +5451,9 @@ $ForExpr.prototype.transform = function(node,rank){
                 node.parent.insert(rank, new_nodes[0])
                 k++
             }
-            new_nodes[k].children.forEach(function(child){
+            for(var child of new_nodes[k].children){
                 node.parent.insert(rank + k, child)
-            })
+            }
             node.parent.children[rank].line_num = node.line_num
             node.parent.children[rank].bindings = node.bindings
             node.children = []
@@ -4922,6 +5483,9 @@ $ForExpr.prototype.transform = function(node,rank){
         js = 'var ' + iterable_name + ' = ' + it_js + ';' +
              '$locals["$next' + num + '"]' + ' = $B.$getattr($B.$iter(' +
              iterable_name + '),"__next__")'
+    if(it_js == 'expr'){
+        console.log('it js is expr, iterable', iterable)
+    }
     new $NodeJSCtx(new_node,js)
     new_nodes[pos++] = new_node
 
@@ -4984,7 +5548,7 @@ $ForExpr.prototype.transform = function(node,rank){
              '{break;}else{throw($err)}}'))
 
     // set new loop children
-    children.forEach(function(child){
+    for(var child of children){
         // Copy clone, because child might have already been added to the
         // "for" node if the iterable is range.
         // This happens in code like
@@ -4994,7 +5558,7 @@ $ForExpr.prototype.transform = function(node,rank){
         //     for i in range(2):
         //         print(i)
         while_node.add(child.clone())
-    })
+    }
 
     // Add a line to reset the line number, except if the last
     // instruction in the loop is a return, because the next
@@ -5102,9 +5666,9 @@ $ForExpr.prototype.transform_async = function(node, rank){
     catch_node.add($NodeJS(js))
 
     // else
-    node.children.forEach(function(child){
+    for(var child of node.children){
         while_node.add(child)
-    })
+    }
 
     // Remove original "for" node
     node.parent.children.splice(rank, 1)
@@ -5142,12 +5706,12 @@ $FromCtx.prototype.bind_names = function(){
     // Called at the end of the 'from' statement
     // Binds the names or aliases in current scope
     var scope = $get_scope(this)
-    this.names.forEach(function(name){
+    for(var name of this.names){
         if(Array.isArray(name)){
             name = name[1]
         }
         $bind(name, scope, this)
-    }, this)
+    }
 }
 
 $FromCtx.prototype.transition = function(token, value){
@@ -5266,7 +5830,7 @@ $FromCtx.prototype.to_js = function(){
             if($package === undefined){
                 return 'throw _b_.SystemError.$factory("Parent module \'\' ' +
                     'not loaded, cannot perform relative import")'
-            }else if($package == 'None'){
+            }else if($package === 'None'){
                 console.log('package is None !')
             }
             _mod = _mod.substr(1)
@@ -5304,7 +5868,7 @@ $FromCtx.prototype.to_js = function(){
         scope.blurred = true
         res[pos++] = '\n' + head + '$B.import_all($locals, module);'
     }else{
-        this.names.forEach(function(name){
+        for(var name of this.names){
             var alias = name
             if(Array.isArray(name)){
                 alias = name[1]
@@ -5314,7 +5878,7 @@ $FromCtx.prototype.to_js = function(){
             res[pos++] = '\n' + head + '$locals["' +
                 alias + '"] = $B.$getattr($B.imported["' +
                 mod_name + '"], "' + name + '");'
-        }, this)
+        }
     }
     res[pos++] = '\n' + head + '_b_.None;'
 
@@ -5341,6 +5905,29 @@ $FuncArgs.prototype.toString = function(){
 
 $FuncArgs.prototype.transition = function(token, value){
     var context = this
+    function check(){
+        if(context.tree.length == 0){
+            return
+        }
+        var last = $B.last(context.tree)
+        if(context.has_default && ! last.has_default){
+            if(last.type == 'func_star_arg' ||
+                    last.type == 'end_positional'){
+                return
+            }
+            if(context.names.indexOf('*') > -1){
+                // non-default arg after default arg is allowed for
+                // keyword-only parameters, eg arg "z" in "f(x, *, y=1, z)"
+                return
+            }
+            $_SyntaxError(context,
+                ['non-default argument follows default argument'])
+        }
+        if(last.has_default){
+            context.has_default = true
+        }
+    }
+
     switch (token) {
         case 'id':
             if(context.has_kw_arg){
@@ -5357,12 +5944,14 @@ $FuncArgs.prototype.transition = function(token, value){
             return new $FuncArgIdCtx(context, value)
         case ',':
             if(context.expect == ','){
+                check()
                 context.expect = 'id'
                 return context
             }
             $_SyntaxError(context, 'token ' + token + ' after ' +
                 context)
         case ')':
+            check()
             var last = $B.last(context.tree)
             if(last && last.type == "func_star_arg"){
                 if(last.name == "*"){
@@ -5413,10 +6002,14 @@ $FuncArgs.prototype.to_js = function(){
     return $to_js(this.tree)
 }
 
-var $FuncArgIdCtx = $B.parser.$FuncArgIdCtx = function(context,name){
+var $FuncArgIdCtx = $B.parser.$FuncArgIdCtx = function(context, name){
     // id in function arguments
     // may be followed by = for default value
     this.type = 'func_arg_id'
+    if(["None", "True", "False"].indexOf(name) > -1){
+        $_SyntaxError(context, 'invalid name')
+    }
+
     this.name = name
     this.parent = context
 
@@ -5526,6 +6119,9 @@ $FuncStarArgCtx.prototype.transition = function(token, value){
                          ' in function definition'])
                }
             }
+            if(["None", "True", "False"].indexOf(value) > -1){
+                $_SyntaxError(context, 'invalid name')
+            }
             context.set_name(value)
             context.parent.names.push(value)
             return context
@@ -5592,11 +6188,40 @@ var $GlobalCtx = $B.parser.$GlobalCtx = function(context){
         this.module = this.module.parent_block
     }
     this.module.binding = this.module.binding || {}
-
+    this.$pos = $pos
 }
 
 $GlobalCtx.prototype.toString = function(){
     return 'global ' + this.tree
+}
+
+function check_global_nonlocal(context, value, type){
+    var scope = context.scope
+    if(type == 'nonlocal' && scope.globals && scope.globals.has(value)){
+        $_SyntaxError(context,
+         [`name '${value}' is nonlocal and global`])
+    }
+    if(type == 'global' && scope.nonlocals && scope.nonlocals.has(value)){
+        $_SyntaxError(context,
+         [`name '${value}' is nonlocal and global`])
+    }
+
+    if(['def', 'generator'].indexOf(scope.ntype) > -1){
+        var params = scope.context.tree[0]
+        if(params.locals && params.locals.indexOf(value) > -1){
+            $_SyntaxError(context,
+             [`name '${value}' is parameter and ${type}`])
+        }
+        if(scope.binding[value]){
+            console.log('scope ntype', scope)
+            $_SyntaxError(context,
+             [`name '${value}' is assigned to before ${type} declaration`])
+        }
+        if(scope.referenced && scope.referenced[value]){
+            $_SyntaxError(context,
+             [`name '${value}' is used prior to ${type} declaration`])
+        }
+    }
 }
 
 $GlobalCtx.prototype.transition = function(token, value){
@@ -5604,6 +6229,7 @@ $GlobalCtx.prototype.transition = function(token, value){
     switch(token) {
         case 'id':
             if(context.expect == 'id'){
+               check_global_nonlocal(context, value, 'global')
                new $IdCtx(context, value)
                context.add(value)
                context.expect = ','
@@ -5630,14 +6256,23 @@ $GlobalCtx.prototype.add = function(name){
         $_SyntaxError(this, ["annotated name '" + name +
             "' can't be global"])
     }
+    if(this.scope.type == "module"){
+        // "global x" at module level does nothing
+        return
+    }
+    if(this.scope.binding && this.scope.binding[name]){
+        console.log('error globals, scope', this.scope)
+        $pos = this.$pos - 1
+        $_SyntaxError(this, [`name '${name}' is parameter and global`])
+    }
     this.scope.globals.add(name)
     // Remove bindings between scope and module
     var mod = this.scope.parent_block
     if(this.module.module.startsWith("$exec")){
         while(mod && mod.parent_block !== this.module){
             // Set attribute _globals for intermediate scopes
-            mod._globals = mod._globals || {}
-            mod._globals[name] = this.module.id
+            mod._globals = mod._globals || new Map()
+            mod._globals.set(name, this.module.id)
             // Delete possibly existing binding below module level
             delete mod.binding[name]
             mod = mod.parent_block
@@ -5666,9 +6301,12 @@ var $IdCtx = $B.parser.$IdCtx = function(context, value){
 
     // Store variables referenced in scope
     if(["def", "generator"].indexOf(scope.ntype) > -1){
-        scope.referenced = scope.referenced || {}
-        if(! $B.builtins[this.value]){
-            scope.referenced[this.value] = true
+        if((! (context instanceof $GlobalCtx)) &&
+                ! (context instanceof $NonlocalCtx)){
+            scope.referenced = scope.referenced || {}
+            if(! $B.builtins[this.value]){
+                scope.referenced[this.value] = true
+            }
         }
     }
     if(context.parent.type == 'call_arg') {
@@ -5698,8 +6336,6 @@ var $IdCtx = $B.parser.$IdCtx = function(context, value){
     }
 
     if($parent_match(context, {type: 'target_list'})){
-            // ||
-            //(context.type == 'expr' && context.parent.type == 'target_list')){
         // An id defined as a target in a "for" loop is bound in the scope,
         // but *not* in the node bindings, because if the iterable is empty
         // the name has no value (cf. issue 1233)
@@ -5732,26 +6368,55 @@ var $IdCtx = $B.parser.$IdCtx = function(context, value){
     }
 }
 
+$IdCtx.prototype.ast = function(){
+    if(['True', 'False', 'None'].indexOf(this.value) > -1){
+        return new ast.Constant(this.value)
+    }
+    return new ast.Name(this.value)
+}
+
 $IdCtx.prototype.toString = function(){
     return '(id) ' + this.value + ':' + (this.tree || '')
 }
 
 $IdCtx.prototype.transition = function(token, value){
     var context = this
-    if(context.value == '$$case' && context.parent.parent.type == "node"){
+    if(context.value == 'case' && context.parent.parent.type == "node"){
         // case at the beginning of a line : if the line ends with a colon
-        // (:), and the parent node is a "match", $NodeCtx has set the
-        // attribute "is_case" of node to true
-        if(context.parent.parent.node.is_case){
+        // (:), it is the "soft keyword" `case` for pattern matching
+        var start = context.parent.$pos,
+            src = $get_module(this).src
+        try{
+            var flag = line_ends_with_comma(src.substr(start))
+        }catch(err){
+            $pos = start + err.offset
+            $_SyntaxError(context, [err.message])
+        }
+        if(flag){
+            var node = $get_node(context),
+                parent = node.parent
+            if((! node.parent) || !(node.parent.is_match)){
+                $_SyntaxError(context, '"case" not inside "match"')
+            }else{
+                if(node.parent.irrefutable){
+                    // "match" statement already has an irrefutable pattern
+                    var name = node.parent.irrefutable,
+                        msg = name == '_' ? 'wildcard' :
+                            `name capture '${name}'`
+                    $_SyntaxError(context,
+                        [`${msg} makes remaining patterns unreachable`])
+                }
+            }
             return $transition(new $PatternCtx(
                 new $CaseCtx(context.parent.parent)),
                     token, value)
         }
     }else if(context.value == 'match' && context.parent.parent.type == "node"){
         // same for match
-        var start = context.parent.parent.node.pos,
-            src = $get_module(this).src
-        if(line_ends_with_comma(src.substr(start))){
+        var start = context.parent.$pos,
+            src = $get_module(this).src,
+            flag = line_ends_with_comma(src.substr(start))
+        if(flag){
             return $transition(new $AbstractExprCtx(
                 new $MatchCtx(context.parent.parent), true),
                 token, value)
@@ -5766,10 +6431,15 @@ $IdCtx.prototype.transition = function(token, value){
                     new $KwArgCtx(context.parent), false)
             }
             return $transition(context.parent, token, value)
+        case '.':
+            // If followed by ".", the id cannot be bound
+            delete this.bound
+            return $transition(context.parent, token, value)
         case 'op':
             return $transition(context.parent, token, value)
         case 'id':
         case 'str':
+        case 'JoinedStr':
         case 'int':
         case 'float':
         case 'imaginary':
@@ -5821,9 +6491,23 @@ $IdCtx.prototype.boundBefore = function(scope){
     // code tree. It will be translated to $local_search("x"), which will
     // check at run time if the name "x" exists and if not, raise an
     // UnboundLocalError.
+    function test(node, name){
+        if(node.bindings && node.bindings[name]){
+            // Exclude function arguments, which are in node.bindings
+            // if the node is a function definition
+            // cf. issue #1688
+            var ctx = node.context.tree[0]
+            if(['def', 'generator'].indexOf(ctx.type) > -1 &&
+                    ctx.locals.indexOf(name) > -1){
+                return false
+            }
+            return true
+        }
+    }
+
     var node = $get_node(this),
         found = false
-    var $test = false // this.value == "console"
+    var $test = false // this.value == "a"
     if($test){
         console.log(this.value, "bound before")
         console.log("node", node)
@@ -5831,14 +6515,14 @@ $IdCtx.prototype.boundBefore = function(scope){
 
     while(!found && node.parent){
         var pnode = node.parent
-        if(pnode.bindings && pnode.bindings[this.value]){
+        if(test(pnode, this.value)){
             if($test){console.log("bound in", pnode)}
             return pnode.bindings[this.value]
         }
         for(var i = 0; i < pnode.children.length; i++){
             var child = pnode.children[i]
             if(child === node){break}
-            if(child.bindings && child.bindings[this.value]){
+            if(test(child, this.value)){
                 if($test){console.log("bound in child", child)}
                 return child.bindings[this.value]
             }
@@ -5922,10 +6606,9 @@ $IdCtx.prototype.to_js = function(arg){
 
     var val = this.value
 
-    var $test = false // val == "myGlob"
-
+    var $test = false // val == "n"
     if($test){
-        console.log("this", this)
+        console.log("ENTER IdCtx.py2js line", $get_node(this).line_num, "this", this)
     }
 
     // Special cases
@@ -5941,12 +6624,17 @@ $IdCtx.prototype.to_js = function(arg){
 
     this.js_processed = true
 
-    if(this.scope._globals && this.scope._globals[val]){
-        this.global_module = this.scope._globals[val]
+    if(this.scope._globals && this.scope._globals.has(val)){
+        this.global_module = this.scope._globals.get(val)
     }
     if(this.global_module){
-        return '$locals_' + this.global_module.replace(/\./g, "_") +
-            '["' + val + '"]'
+        if(this.bound){
+            return '$locals_' + this.global_module.replace(/\./g, "_") +
+                '["' + val + '"]'
+        }else{
+            return '$B.$check_def_global("' + val + '", $locals_' +
+                this.global_module.replace(/\./g, "_") + ')'
+        }
     }
 
     var is_local = this.scope.binding[val] !== undefined,
@@ -5954,7 +6642,7 @@ $IdCtx.prototype.to_js = function(arg){
         bound_before = this_node.bound_before
 
     this.nonlocal = this.scope.nonlocals &&
-        this.scope.nonlocals[val] !== undefined
+        this.scope.nonlocals.has(val)
 
     // If name is bound in the scope, but not yet bound when this
     // instance of $IdCtx was created, it is resolved by a call to
@@ -6035,8 +6723,7 @@ $IdCtx.prototype.to_js = function(arg){
 
     // Build the list of scopes where the variable name is bound
     while(1){
-        if(scope.globals !== undefined &&
-                scope.globals.has(val)){
+        if(scope.globals !== undefined && scope.globals.has(val)){
             if($test){
                 console.log("in globals of", scope.id, 'globals', gs)
             }
@@ -6053,29 +6740,36 @@ $IdCtx.prototype.to_js = function(arg){
                 if(this.augm_assign){
                     return global_ns + '["' + val + '"]'
                 }else{
-                    return '$B.$global_search("' + val + '", ' +
-                        search_ids + ')'
+                    return '$B.$check_def("' + val + '", ' + global_ns +
+                        '["' + val + '"])'
                 }
             }
         }
         if($test){
-            console.log("scope", scope, "innermost", innermost,
-                scope === innermost, "bound_before", bound_before,
+            console.log("scope", scope.id, scope, "innermost", innermost,
+                "scope is innermost", scope === innermost,
+                "bound_before", bound_before,
                 "found", found.slice())
         }
         if(scope === innermost){
             // Handle the case when the same name is used at both sides
             // of an assignment and the right side is defined in an
             // upper scope, eg "range = range"
-            if(bound_before){
-                if(bound_before.indexOf(val) > -1){found.push(scope)}
-                else if(scope.context &&
+            if(bound_before && bound_before.length > 0){
+                if(bound_before.indexOf(val) > -1){
+                    found.push(scope)
+                }else if(scope.context &&
                         scope.context.tree[0].type == 'def' &&
                         scope.context.tree[0].env.indexOf(val) > -1){
                     found.push(scope)
                 }
             }else{
                 if(scope.binding[val]){
+                    if($test){
+                        console.log(val, 'in bindings of', scope.id,
+                            this_node.locals[val])
+                    }
+
                     // the name is bound somewhere in the local scope
                     if(this_node.locals[val] === undefined){
                         // the name is referenced (not bound) but it was
@@ -6111,15 +6805,18 @@ $IdCtx.prototype.to_js = function(arg){
                 found.push(scope)
             }
         }
-        if(scope.parent_block){scope = scope.parent_block}
-        else{break}
+        if(scope.parent_block){
+            scope = scope.parent_block
+        }else{
+            break
+        }
     }
     this.found = found
     if($test){
         console.log(val, "found", found)
-        found.forEach(function(item){
+        for(var item of found){
             console.log(item.id)
-        })
+        }
     }
 
     if(this.nonlocal && found[0] === innermost){found.shift()}
@@ -6379,7 +7076,7 @@ $ImportCtx.prototype.transition = function(token, value){
 $ImportCtx.prototype.bind_names = function(){
     // For "import X", set X in the list of names bound in current scope
     var scope = $get_scope(this)
-    this.tree.forEach(function(item){
+    for(var item of this.tree){
         if(item.name == item.alias){
             var name = item.name,
                 parts = name.split('.'),
@@ -6391,7 +7088,7 @@ $ImportCtx.prototype.bind_names = function(){
             bound = item.alias
         }
         $bind(bound, scope, this)
-    }, this)
+    }
 }
 
 $ImportCtx.prototype.to_js = function(){
@@ -6399,7 +7096,7 @@ $ImportCtx.prototype.to_js = function(){
     var scope = $get_scope(this),
         res = [],
         module = $get_module(this)
-    this.tree.forEach(function(item){
+    for(var item of this.tree){
         var mod_name = item.name,
             aliases = (item.name == item.alias)?
                 '{}' : ('{"' + mod_name + '" : "' +
@@ -6412,7 +7109,7 @@ $ImportCtx.prototype.to_js = function(){
         var js = '$B.$import("' + mod_name + '", [],' + aliases +
             ',' + localns + ', true);'
         res.push(js)
-    })
+    }
     // add None for interactive console
     return res.join('') + '_b_.None;'
 }
@@ -6436,6 +7133,152 @@ $ImportedModuleCtx.prototype.transition = function(token, value){
 $ImportedModuleCtx.prototype.to_js = function(){
     this.js_processed = true
     return '"' + this.name + '"'
+}
+
+var JoinedStrCtx = $B.parser.JoinedStrCtx = function(context, values){
+    // Class for f-strings. values is an Array with strings or expressions
+    this.type = 'JoinedStr'
+    this.parent = context
+    this.tree = []
+    this.scope = $get_scope(context)
+    var line_num = $get_node(context).line_num
+    for(var value of values){
+        if(typeof value == "string"){
+            new $StringCtx(this, "'" +
+                value.replace(new RegExp("'", "g"), "\\" + "'") + "'")
+        }else{
+            if(value.format !== undefined){
+                value.format = new JoinedStrCtx(this, value.format)
+                this.tree.pop()
+            }
+            var src = value.expression,
+                save_pos = $pos,
+                root = $create_root_node({src},
+                    this.scope.module, this.scope.id,
+                    this.scope.parent_block, line_num)
+
+            dispatch_tokens(root, src)
+
+            $pos = save_pos
+            var expr = root.children[0].context.tree[0]
+            this.tree.push(expr)
+            expr.parent = this
+            expr.elt = value
+        }
+    }
+    context.tree.push(this)
+    this.raw = false
+    this.$pos = $pos
+}
+
+JoinedStrCtx.prototype.ast = function(){
+    console.log('ast, values', this.tree)
+    var res = {
+        type: 'JoinedStr',
+        values: []
+    }
+    for(var item of this.tree){
+        if(item instanceof $StringCtx){
+            res.values.push(new ast.Constant(item.value))
+        }else{
+            var conv_num = {a: 97, r: 114, s: 115},
+                value = {
+                    type: 'FormattedValue',
+                    value: item,
+                    conversion: conv_num[item.conversion] || -1
+                }
+            var format = item.format
+            if(format !== undefined){
+                value.format = item.format.ast()
+            }
+            res.values.push(value)
+        }
+    }
+    return res
+}
+
+JoinedStrCtx.prototype.toString = function(){
+    return 'f-string ' + (this.tree || '')
+}
+
+JoinedStrCtx.prototype.transition = function(token, value){
+    var context = this
+    switch(token) {
+        case '[':
+            return new $AbstractExprCtx(new $SubCtx(context.parent),
+                false)
+        case '(':
+            // Strings are not callable. We replace the string by a
+            // call to an object that will raise the correct exception
+            context.parent.tree[0] = context
+            return new $CallCtx(context.parent)
+        case 'str':
+            if(context.tree.length > 0 &&
+                    typeof $B.last(context.tree) == "string"){
+                context.tree[context.tree.length - 1] =
+                    $B.last(context.tree) + eval(value)
+            }else{
+                new $StringCtx(this, value)
+            }
+            return context
+        case 'JoinedStr':
+            // create new JoinedStr
+            var joined_expr = new JoinedStrCtx(context.parent, value)
+            context.parent.tree.pop()
+            if(context.tree.length > 0 &&
+                    $B.last(context.tree) instanceof $StringCtx &&
+                    joined_expr.tree[0] instanceof $StringCtx){
+                // merge last string in context and first in value
+                $B.last(context.tree).value += ' + ' + joined_expr.tree[0].value
+                context.tree = context.tree.concat(joined_expr.tree.slice(1))
+            }else{
+                context.tree = context.tree.concat(joined_expr.tree)
+            }
+            return context
+    }
+    return $transition(context.parent, token, value)
+}
+
+JoinedStrCtx.prototype.to_js = function(){
+    this.js_processed = true
+    var res = '',
+        elts = []
+    for(var value of this.tree){
+        if(value instanceof $StringCtx){
+            elts.push(value.to_js())
+        }else{
+            // elt is an expression
+            var elt = value.elt,
+                js = value.to_js()
+            // search specifier
+            var pos = 0,
+                br_stack = []
+
+            switch(elt.conversion){
+                case "a":
+                    js = '_b_.ascii(' + js + ')'
+                    break
+                case "r":
+                    js = '_b_.repr(' + js + ')'
+                    break
+                case "s":
+                    js = '_b_.str.$factory(' + js + ')'
+                    break
+            }
+
+            var fmt = elt.format
+            if(fmt !== undefined){
+                js = "_b_.str.format('{0:' + " +
+                        fmt.to_js() + " + '}', " + js + ")"
+            }else{
+                if(elt.conversion === null){
+                    js = '_b_.str.$factory(' + js + ')'
+                }
+            }
+            elts.push(js)
+        }
+    }
+    return "$B.String(" + (elts.join(' + ') || "''") + ")"
 }
 
 var $JSCode = $B.parser.$JSCode = function(js){
@@ -6487,7 +7330,6 @@ $KwArgCtx.prototype.transition = function(token, value){
 $KwArgCtx.prototype.to_js = function(){
     this.js_processed = true
     var key = this.tree[0].value
-    if(key.substr(0,2) == '$$'){key = key.substr(2)}
     var res = '{$nat:"kw",name:"' + key + '",'
     return res + 'value:' +
         $to_js(this.tree.slice(1, this.tree.length)) + '}'
@@ -6559,7 +7401,6 @@ $LambdaCtx.prototype.to_js = function(){
     var lambda_name = 'lambda' + rand,
         module_name = module.id.replace(/\./g, '_')
 
-    node.line_num-- // issue #1645
     var root = $B.py2js(py, module_name, lambda_name, scope, node.line_num)
     var js = root.to_js()
 
@@ -6584,7 +7425,7 @@ $LambdaCtx.prototype.to_js = function(){
     return js
 }
 
-var $ListOrTupleCtx = $B.parser.$ListOrTupleCtx = function(context,real){
+var $ListOrTupleCtx = $B.parser.$ListOrTupleCtx = function(context, real){
     // Class for literal lists or tuples
     // The real type (list or tuple) is set inside $transition
     // as attribute 'real'
@@ -6596,6 +7437,17 @@ var $ListOrTupleCtx = $B.parser.$ListOrTupleCtx = function(context,real){
     this.parent = context
     this.tree = []
     context.tree[context.tree.length] = this
+}
+
+$ListOrTupleCtx.prototype.ast = function(){
+    var elts = []
+    for(var item of this.tree){
+        elts.push(ast_or_obj(item))
+    }
+    return {
+        type: 'List',
+        elts
+    }
 }
 
 $ListOrTupleCtx.prototype.toString = function(){
@@ -6720,6 +7572,7 @@ $ListOrTupleCtx.prototype.transition = function(token, value){
                              }
                          }
                          context.intervals.push($pos)
+                         context.src = $get_module(context).src
                          return $transition(context.parent, token)
                     }
                     break
@@ -6737,12 +7590,14 @@ $ListOrTupleCtx.prototype.transition = function(token, value){
                     if(context.real == 'list'){
                         if(this.tree.length > 1){
                             // eg [x, y for x in A for y in B]
-                            $_SyntaxError(context, "unparenthesized " +
-                                "expression before 'for'")
+                            $_SyntaxError(context, ["did you forget " +
+                                "parentheses around the comprehension target?"])
                         }
                         context.real = 'list_comp'
                     }
-                    else{context.real = 'gen_expr'}
+                    else{
+                        context.real = 'gen_expr'
+                    }
                     // remove names already referenced in list from
                     // the function references
                     context.intervals = [context.start + 1]
@@ -6814,7 +7669,7 @@ $ListOrTupleCtx.prototype.transition = function(token, value){
                 default:
                     context.expect = ','
                     var expr = new $AbstractExprCtx(context, false)
-                    return $transition(expr,token, value)
+                    return $transition(expr, token, value)
             }
 
         }else{
@@ -6825,6 +7680,7 @@ $ListOrTupleCtx.prototype.transition = function(token, value){
 
 $ListOrTupleCtx.prototype.close = function(){
     this.closed = true
+    this.src = $get_module(this).src
     for(var i = 0, len = this.tree.length; i < len; i++){
         // Replace parenthesized expressions inside list or tuple
         // by the expression itself, eg (x, (y)) by (x, y).
@@ -6857,19 +7713,19 @@ $ListOrTupleCtx.prototype.get_src = function(){
     // replace comments by whitespace, cf. issue #658
     var scope = $get_scope(this)
     if(scope.comments === undefined){return src}
-    scope.comments.forEach(function(comment){
+    for(var comment of scope.comments){
         var start = comment[0],
             len = comment[1]
         src = src.substr(0, start) + ' '.repeat(len + 1) +
             src.substr(start + len + 1)
-    })
+    }
     return src
 }
 
 $ListOrTupleCtx.prototype.bind_ids = function(scope){
     // Used by $AssignCtx for assignments to a list or tuple
     // Binds all the "simple" ids (not the calls, subscriptions, etc.)
-    this.tree.forEach(function(item){
+    for(var item of this.tree){
         if(item.type == 'id'){
             $bind(item.value, scope, this)
             item.bound = true
@@ -6888,7 +7744,7 @@ $ListOrTupleCtx.prototype.bind_ids = function(scope){
             if(item.type == "expr"){item = item.tree[0]}
             item.bind_ids(scope)
         }
-    }, this)
+    }
 }
 
 $ListOrTupleCtx.prototype.packed_indices = function(){
@@ -6939,26 +7795,33 @@ $ListOrTupleCtx.prototype.to_js = function(){
         case 'list_comp':
         case 'gen_expr':
         case 'dict_or_set_comp':
-            var src = this.get_src()
+            if(this.src === undefined){
+                console.log('no src', this)
+                console.log($B.frames_stack.slice())
+            }
+            var src = this.src
             var res1 = [], items = []
 
             var qesc = new RegExp('"', "g") // to escape double quotes in arguments
 
-            var comments = root.comments
+            var comments = root.comments,
+                in_joined_str = $parent_match(this, {type: 'JoinedStr'})
             for(var i = 1; i < this.intervals.length; i++){
                 var start = this.intervals[i - 1],
                     end = this.intervals[i],
                     txt = src.substring(start, end)
 
-                for(var j = comments.length - 1; j >= 0; j--){
-                    var comment = comments[j]
-                    if(comment[0] > start && comment[0] < end){
-                        // If there is a comment inside the interval,
-                        // replace it by spaces. Cf issue #776
-                        var pos = comment[0] - start
-                        txt = txt.substr(0, pos) +
-                            ' '.repeat(comment[1]) +
-                            txt.substr(pos + comment[1] + 1)
+                if(! in_joined_str){
+                    for(var j = comments.length - 1; j >= 0; j--){
+                        var comment = comments[j]
+                        if(comment[0] > start && comment[0] < end){
+                            // If there is a comment inside the interval,
+                            // replace it by spaces. Cf issue #776
+                            var pos = comment[0] - start
+                            txt = txt.substr(0, pos) +
+                                ' '.repeat(comment[1]) +
+                                txt.substr(pos + comment[1] + 1)
+                        }
                     }
                 }
 
@@ -6967,7 +7830,7 @@ $ListOrTupleCtx.prototype.to_js = function(){
                 items.push(txt)
                 var lines = txt.split('\n')
                 var res2 = []
-                lines.forEach(function(txt){
+                for(var txt of lines){
                     // ignore empty lines
                     if(txt.replace(/ /g, '').length != 0){
                         txt = txt.replace(/\n/g, ' ')
@@ -6975,7 +7838,7 @@ $ListOrTupleCtx.prototype.to_js = function(){
                         txt = txt.replace(qesc, '\\"')
                         res2.push('"' + txt + '"')
                     }
-                })
+                }
                 res1.push('[' + res2.join(',') + ']')
             }
 
@@ -6990,7 +7853,7 @@ $ListOrTupleCtx.prototype.to_js = function(){
                         save_pos = $pos,
                         line_info = line_num + ',' + module_name
                     var root = $B.py2js(
-                        {src: py, is_comp: true, line_info: line_info},
+                        {src: py, is_comp: 'listcomp', line_info: line_info},
                         module_name, listcomp_name, scope, 1)
                     var has_yield = root.yields_func_check !== undefined
 
@@ -7019,7 +7882,7 @@ $ListOrTupleCtx.prototype.to_js = function(){
 
                     js += 'return ' + listcomp_name
                     js = "function" + (has_yield ? "*" : "") +
-                        `(expr){${js}})(${outer_most})`
+                        `(_expr){${js}})(${outer_most})`
                     if(this.is_await){
                         js = 'async ' + js
                     }
@@ -7064,7 +7927,6 @@ var $MatchCtx = $B.parser.$MatchCtx = function(node_ctx){
 
 $MatchCtx.prototype.transition = function(token, value){
     var context = this
-    console.log('transition on match', token, value)
     switch(token){
         case 'as':
             return new $AbstractExprCtx(new $AliasCtx(context))
@@ -7123,122 +7985,28 @@ $NodeCtx.prototype.toString = function(){
 
 $NodeCtx.prototype.transition = function(token, value){
     var context = this
-    if(context.node.parent.is_match && !context.node.is_body_node){
-        if(token !== 'id' || value != '$$case'){
-            $_SyntaxError(context)
-        }else{
-            // check that line ends with :
-            var start = context.node.pos,
-                src = $get_module(context).src
-            if(! line_ends_with_comma(src.substr(start))){
-                $_SyntaxError(context)
+    if(this.node.parent && this.node.parent.context){
+        var pctx = this.node.parent.context
+        if(pctx.tree && pctx.tree.length == 1 &&
+                pctx.tree[0].type == "match"){
+            if(token != 'eol' && (token !== 'id' || value !== 'case')){
+                context.$pos = $pos
+                $_SyntaxError(context,
+                    'line does not start with "case"')
             }
-            context.node.is_case = true
+        }
+    }
+    if(this.tree.length == 0 && this.node.parent){
+        var rank = this.node.parent.children.indexOf(this.node)
+        if(rank > 0){
+            var previous = this.node.parent.children[rank - 1]
+            if(previous.context.tree[0].type == 'try' &&
+                    ['except', 'finally'].indexOf(token) == -1){
+                $_SyntaxError(context, ["expected 'except' or 'finally' block"])
+            }
         }
     }
     switch(token) {
-        case 'id':
-        case 'imaginary':
-        case 'int':
-        case 'float':
-        case 'str':
-        case 'bytes':
-        case '[':
-        case '(':
-        case '{':
-        case 'not':
-        case 'lambda':
-        case '.':
-            var expr = new $AbstractExprCtx(context,true)
-            return $transition(expr,token,value)
-        case 'op':
-            switch(value) {
-                case '*':
-                case '+':
-                case '-':
-                case '~':
-                    var expr = new $AbstractExprCtx(context, true)
-                    return $transition(expr, token, value)
-            }
-            break
-        case 'async':
-            return new $AsyncCtx(context)
-        case 'await':
-            return new $AbstractExprCtx(new $AwaitCtx(context), true)
-        case 'class':
-            return new $ClassCtx(context)
-        case 'continue':
-            return new $ContinueCtx(context)
-        case '__debugger__':
-            return new $DebuggerCtx(context)
-        case 'break':
-            return new $BreakCtx(context)
-        case 'def':
-            return new $DefCtx(context)
-        case 'for':
-            return new $TargetListCtx(new $ForExpr(context))
-        case 'if':
-        case 'while':
-            return new $AbstractExprCtx(
-                new $ConditionCtx(context, token), false)
-        case 'elif':
-            var previous = $previous(context)
-            if(['condition'].indexOf(previous.type) == -1 ||
-                    previous.token == 'while'){
-                $_SyntaxError(context, 'elif after ' + previous.type)
-            }
-            return new $AbstractExprCtx(
-                new $ConditionCtx(context, token), false)
-        case 'else':
-            var previous = $previous(context)
-            if(['condition', 'except', 'for'].
-                    indexOf(previous.type) == -1){
-                $_SyntaxError(context, 'else after ' + previous.type)
-            }
-            return new $SingleKwCtx(context,token)
-        case 'finally':
-            var previous = $previous(context)
-            if(['try', 'except'].indexOf(previous.type) == -1 &&
-                    (previous.type != 'single_kw' ||
-                        previous.token != 'else')){
-                $_SyntaxError(context, 'finally after ' + previous.type)
-            }
-            return new $SingleKwCtx(context,token)
-        case 'try':
-            return new $TryCtx(context)
-        case 'except':
-            var previous = $previous(context)
-            if(['try', 'except'].indexOf(previous.type) == -1){
-                $_SyntaxError(context, 'except after ' + previous.type)
-            }
-            return new $ExceptCtx(context)
-        case 'assert':
-            return new $AbstractExprCtx(
-                new $AssertCtx(context), false, true)
-        case 'from':
-            return new $FromCtx(context)
-        case 'import':
-            return new $ImportCtx(context)
-        case 'global':
-            return new $GlobalCtx(context)
-        case 'nonlocal':
-            return new $NonlocalCtx(context)
-        case 'lambda':
-            return new $LambdaCtx(context)
-        case 'pass':
-            return new $PassCtx(context)
-        case 'raise':
-            return new $AbstractExprCtx(new $RaiseCtx(context), true)
-        case 'return':
-            return new $AbstractExprCtx(new $ReturnCtx(context),true)
-        case 'with':
-            return new $AbstractExprCtx(new $WithCtx(context),false)
-        case 'yield':
-            return new $AbstractExprCtx(new $YieldCtx(context),true)
-        case 'del':
-            return new $AbstractExprCtx(new $DelCtx(context),true)
-        case '@':
-            return new $DecoratorCtx(context)
         case ',':
             if(context.tree && context.tree.length == 0){
                 $_SyntaxError(context,
@@ -7253,6 +8021,113 @@ $NodeCtx.prototype.transition = function(token, value){
             implicit_tuple.tree.push(first)
             first.parent = implicit_tuple
             return implicit_tuple
+        case '[':
+        case '(':
+        case '{':
+        case '.':
+        case 'bytes':
+        case 'float':
+        case 'id':
+        case 'imaginary':
+        case 'int':
+        case 'str':
+        case 'JoinedStr':
+        case 'not':
+        case 'lambda':
+            var expr = new $AbstractExprCtx(context,true)
+            return $transition(expr,token,value)
+        case 'assert':
+            return new $AbstractExprCtx(
+                new $AssertCtx(context), false, true)
+        case 'async':
+            return new $AsyncCtx(context)
+        case 'await':
+            return new $AbstractExprCtx(new $AwaitCtx(context), true)
+        case 'break':
+            return new $BreakCtx(context)
+        case 'class':
+            return new $ClassCtx(context)
+        case 'continue':
+            return new $ContinueCtx(context)
+        case '__debugger__':
+            return new $DebuggerCtx(context)
+        case 'def':
+            return new $DefCtx(context)
+        case 'del':
+            return new $AbstractExprCtx(new $DelCtx(context),true)
+        case 'elif':
+            var previous = $previous(context)
+            if(['condition'].indexOf(previous.type) == -1 ||
+                    previous.token == 'while'){
+                $_SyntaxError(context, 'elif after ' + previous.type)
+            }
+            return new $AbstractExprCtx(
+                new $ConditionCtx(context, token), false)
+        case 'ellipsis':
+            var expr = new $AbstractExprCtx(context, true)
+            return $transition(expr, token, value)
+        case 'else':
+            var previous = $previous(context)
+            if(['condition', 'except', 'for'].
+                    indexOf(previous.type) == -1){
+                $_SyntaxError(context, 'else after ' + previous.type)
+            }
+            return new $SingleKwCtx(context,token)
+        case 'except':
+            var previous = $previous(context)
+            if(['try', 'except'].indexOf(previous.type) == -1){
+                $_SyntaxError(context, 'except after ' + previous.type)
+            }
+            return new $ExceptCtx(context)
+        case 'finally':
+            var previous = $previous(context)
+            if(['try', 'except'].indexOf(previous.type) == -1 &&
+                    (previous.type != 'single_kw' ||
+                        previous.token != 'else')){
+                $_SyntaxError(context, 'finally after ' + previous.type)
+            }
+            return new $SingleKwCtx(context,token)
+        case 'for':
+            return new $TargetListCtx(new $ForExpr(context))
+        case 'from':
+            return new $FromCtx(context)
+        case 'global':
+            return new $GlobalCtx(context)
+        case 'if':
+        case 'while':
+            return new $AbstractExprCtx(
+                new $ConditionCtx(context, token), false)
+        case 'import':
+            return new $ImportCtx(context)
+        case 'lambda':
+            return new $LambdaCtx(context)
+        case 'nonlocal':
+            return new $NonlocalCtx(context)
+        case 'op':
+            switch(value) {
+                case '*':
+                    var expr = new $AbstractExprCtx(context, true)
+                    return $transition(expr, token, value)
+                case '+':
+                case '-':
+                case '~':
+                    return new $UnaryCtx(context, value)
+                case '@':
+                    return new $DecoratorCtx(context)
+            }
+            break
+        case 'pass':
+            return new $PassCtx(context)
+        case 'raise':
+            return new $AbstractExprCtx(new $RaiseCtx(context), true)
+        case 'return':
+            return new $AbstractExprCtx(new $ReturnCtx(context),true)
+        case 'try':
+            return new $TryCtx(context)
+        case 'with':
+            return new $AbstractExprCtx(new $WithCtx(context),false)
+        case 'yield':
+            return new $AbstractExprCtx(new $YieldCtx(context),true)
         case 'eol':
             if(context.tree.length == 0){ // might be the case after a :
                 context.node.parent.children.pop()
@@ -7260,6 +8135,7 @@ $NodeCtx.prototype.transition = function(token, value){
             }
             return context
     }
+    console.log('token', token, value)
     $_SyntaxError(context, 'token ' + token + ' after ' + context)
 }
 
@@ -7287,9 +8163,8 @@ $NodeCtx.prototype.to_js = function(){
                     // Evaluate annotation
                     this.js = this.tree[0].annotation.to_js() + ";"
                 }else{
-                    // Ignore
+                    // Don't evaluate
                     this.js = ""
-                    this.tree = []
                 }
             }else if(["def", "generator"].indexOf(this.tree[0].type) == -1){
                 // Avoid evaluation
@@ -7363,7 +8238,7 @@ var $NonlocalCtx = $B.parser.$NonlocalCtx = function(context){
     this.expect = 'id'
 
     this.scope = $get_scope(this)
-    this.scope.nonlocals = this.scope.nonlocals || {}
+    this.scope.nonlocals = this.scope.nonlocals || new Set()
 
     if(this.scope.context === undefined){
         $_SyntaxError(context,
@@ -7381,7 +8256,7 @@ $NonlocalCtx.prototype.add = function(name){
           ["name '" + name + "' is parameter and nonlocal"])
     }
     this.names[name] = [false, $pos]
-    this.scope.nonlocals[name] = true
+    this.scope.nonlocals.add(name)
 }
 
 $NonlocalCtx.prototype.transition = function(token, value){
@@ -7389,6 +8264,7 @@ $NonlocalCtx.prototype.transition = function(token, value){
     switch(token) {
         case 'id':
             if(context.expect == 'id'){
+               check_global_nonlocal(context, value, 'nonlocal')
                new $IdCtx(context, value)
                context.add(value)
                context.expect = ','
@@ -7450,6 +8326,10 @@ var $NotCtx = $B.parser.$NotCtx = function(context){
     context.tree[context.tree.length] = this
 }
 
+$NotCtx.prototype.ast = function(){
+    return new ast.UnaryOp(new ast.Not(), ast_or_obj(this.tree[0]))
+}
+
 $NotCtx.prototype.toString = function(){
     return 'not (' + this.tree + ')'
 }
@@ -7467,6 +8347,7 @@ $NotCtx.prototype.transition = function(token, value){
         case 'int':
         case 'float':
         case 'str':
+        case 'JoinedStr':
         case 'bytes':
         case '[':
         case '(':
@@ -7503,27 +8384,23 @@ var $NumberCtx = $B.parser.$NumberCtx = function(type, context, value){
     context.tree[context.tree.length] = this
 }
 
+$NumberCtx.prototype.ast = function(){
+    var value = this.value
+    if(Array.isArray(value)){
+        value = parseInt(value[1], value[0])
+    }
+    if(this.type == 'imaginary'){
+        value += 'j'
+    }
+    return new ast.Constant(value)
+}
+
 $NumberCtx.prototype.toString = function(){
     return this.type + ' ' + this.value
 }
 
 $NumberCtx.prototype.transition = function(token, value){
     var context = this
-    switch(token) {
-        case 'id':
-        case 'imaginary':
-        case 'int':
-        case 'float':
-        case 'str':
-        case 'bytes':
-        case '[':
-        case '(':
-        case '{':
-        case 'not':
-        case 'lambda':
-            $_SyntaxError(context, 'token ' + token + ' after ' +
-                context)
-    }
     return $transition(context.parent, token, value)
 }
 
@@ -7584,6 +8461,22 @@ var $OpCtx = $B.parser.$OpCtx = function(context, op){
     context.parent.tree.push(this)
 }
 
+$OpCtx.prototype.ast = function(){
+    var op = binary_ops[this.op]
+    if(op){
+        return new ast.BinaryOp(
+            ast_or_obj(this.tree[0]), ast[op], ast_or_obj(this.tree[1]))
+    }
+    op = boolean_ops[this.op]
+    if(op){
+        return new ast.BooleanOp(
+            ast_or_obj(this.tree[0]), ast[op], ast_or_obj(this.tree[1]))
+    }
+    op = comparions_ops[this.op]
+    return new ast.BooleanOp(
+        ast_or_obj(this.tree[0]), ast[op], ast_or_obj(this.tree[1]))
+}
+
 $OpCtx.prototype.toString = function(){
     return '(op ' + this.op + ') [' + this.tree + ']'
 }
@@ -7622,6 +8515,7 @@ $OpCtx.prototype.transition = function(token, value){
         case 'int':
         case 'float':
         case 'str':
+        case 'JoinedStr':
         case 'bytes':
         case '[':
         case '(':
@@ -7694,7 +8588,10 @@ $OpCtx.prototype.to_js = function(){
               case 'str':
                   switch(t0.type){
                       case 'str':
-                          return js0 + this.op + js1
+                          // use .valueOf() in case the string has
+                          // surrogate pair: in Javascript,
+                          // "new String('a') == new String('a')" is false...
+                          return js0 + '.valueOf() ' + this.op + js1 + '.valueOf()'
                       case 'int':
                           switch(this.op){
                               case "==":
@@ -7790,7 +8687,8 @@ $OpCtx.prototype.to_js = function(){
             return '$B.$is(' + this.tree[0].to_js() + ', ' +
                 this.tree[1].to_js() + ')'
         case 'is_not':
-            return this.tree[0].to_js() + '!==' + this.tree[1].to_js()
+            return '! $B.$is(' + this.tree[0].to_js() + ', ' +
+                this.tree[1].to_js() + ')'
         case '+':
             return '$B.add(' + this.tree[0].to_js() + ', ' +
                 this.tree[1].to_js() + ')'
@@ -7873,13 +8771,13 @@ $OpCtx.prototype.to_js = function(){
 
                     var tests = [],
                         tests1 = [], pos = 0
-                    vars.forEach(function(_var){
+                    for(var _var of vars){
                         // Test if all variables are numbers
-                        tests.push('typeof ' + _var +
+                        tests.push(_var + '.valueOf && typeof ' + _var +
                             '.valueOf() == "number"')
                         // Test if all variables are integers
                         tests1.push('typeof ' + _var + ' == "number"')
-                    })
+                    }
                     var res = [tests.join(' && ') + ' ? ']
 
                     res.push('(' + tests1.join(' && ') + ' ? ')
@@ -7892,7 +8790,7 @@ $OpCtx.prototype.to_js = function(){
 
                     // Close integers test
                     res.push(')')
-                   // If at least one variable is not a number
+                    // If at least one variable is not a number
 
                     // For addition, test if both arguments are strings
                     var t0 = this.tree[0].to_js(),
@@ -8005,6 +8903,9 @@ $PackedCtx.prototype.transition = function(token, value){
         case 'str':
             context.parent.expect = ","
             return new $StringCtx(context, value)
+        case 'JoinedStr':
+            context.parent.expect = ","
+            return new JoinedStrCtx(context, value)
         case "]":
             return $transition(context.parent, token, value)
         case "{":
@@ -8036,6 +8937,10 @@ var $PassCtx = $B.parser.$PassCtx = function(context){
     this.parent = context
     this.tree = []
     context.tree[context.tree.length] = this
+}
+
+$PassCtx.prototype.ast = function(){
+    return new ast.Pass()
 }
 
 $PassCtx.prototype.toString = function(){
@@ -8077,8 +8982,11 @@ $PatternCtx.prototype.transition = function(token, value){
                     switch(value){
                         case '-':
                         case '+':
-                            context.expect = 'number'
-                            context.sign = value
+                            context.expect = ','
+                            return new $PatternLiteralCtx(context,
+                                {sign: value})
+                        case '*':
+                            context.expect = 'starred_id'
                             return context
                         default:
                             $_SyntaxError(context)
@@ -8092,13 +9000,23 @@ $PatternCtx.prototype.transition = function(token, value){
                     }
                     break
                 case '[':
-                case '(':
                     return new $PatternCtx(
                         new $PatternSequenceCtx(context.parent, token))
+                case '(':
+                    return new $PatternCtx(
+                        new $PatternGroupCtx(context.parent, token))
                 case '{':
-                    return new $PatternMappingItemCtx(
-                        new $PatternMappingCtx(context.parent, token))
+                    return new $PatternMappingCtx(context.parent, token)
             }
+            break
+        case 'starred_id':
+            if(token == 'id'){
+                var capture = new $PatternCaptureCtx(context, value)
+                capture.starred = true
+                return capture
+            }
+            console.log('context expects starred id', context)
+            $_SyntaxError(context, 'expected id after *')
         case 'number':
             // if pattern starts with unary - or +
             switch(token){
@@ -8126,6 +9044,33 @@ $PatternCtx.prototype.transition = function(token, value){
     return context.parent.transition(token, value)
 }
 
+function as_pattern(context, token, value){
+    // common to all patterns
+    if(context.expect == 'as'){
+        if(token == 'as'){
+            context.expect = 'alias'
+            return context
+        }else{
+            return $transition(context.parent, token, value)
+        }
+    }else if(context.expect == 'alias'){
+        if(token == 'id'){
+            if(value == '_'){
+                $_SyntaxError(context, ["alias cannot be _"])
+            }
+            if(context.bindings().indexOf(value) > -1){
+                $_SyntaxError(context,
+                    [`multiple assignments to name '${value}' in pattern`])
+            }
+            context.alias = value
+            return context.parent
+        }else{
+            $_SyntaxError(context, 'bad alias')
+        }
+    }
+}
+
+
 var $PatternCaptureCtx = function(context, value){
     // Class for capture patterns in a "case" statement
     // context is a $PatternCtx
@@ -8135,6 +9080,15 @@ var $PatternCaptureCtx = function(context, value){
     context.parent.tree.push(this)
     this.tree = [value]
     this.expect = '.'
+    this.$pos = $pos
+}
+
+$PatternCaptureCtx.prototype.bindings = function(){
+    var bindings = this.tree[0] == '_' ? [] : this.tree.slice()
+    if(this.alias){
+        bindings.push(this.alias)
+    }
+    return bindings
 }
 
 $PatternCaptureCtx.prototype.transition = function(token, value){
@@ -8143,41 +9097,117 @@ $PatternCaptureCtx.prototype.transition = function(token, value){
         case '.':
             if(token == '.'){
                 context.type = "value_pattern"
-                context.tree.push('.')
                 context.expect = 'id'
+                if(context.tree.length == 1){
+                    // create an $IdCtx to resolve the name correctly
+                    new $IdCtx(context, context.tree.pop())
+                }else{
+                    context.tree.push('.')
+                }
                 return context
             }else if(token == '('){
                 // open class pattern
                 return new $PatternCtx(new $PatternClassCtx(context))
+            }else if(context.parent instanceof $PatternMappingCtx){
+                return context.parent.transition(token, value)
+            }else{
+                context.expect = 'as'
+                return context.transition(token, value)
             }
+        case 'as':
+        case 'alias':
+            var res = as_pattern(context, token, value)
+            return res
         case 'id':
             if(token == 'id'){
                 context.tree.push(value)
                 context.expect = '.'
                 return context
             }
+
     }
     return $transition(context.parent, token, value)
 }
 
 $PatternCaptureCtx.prototype.to_js = function(){
+    var js
     if(this.tree.length == 1){
-        return '{capture: "' + this.tree[0] + '"}'
+        js = '{capture'
+        if(this.starred == true){
+            js += '_starred'
+        }
+        js += `: '${this.tree[0]}'`
+    }else{
+        js = this.tree[0].to_js()
+        for(var i = 1, len = this.tree.length; i < len; i += 2){
+            js = '$B.$getattr(' + js + ', "' + this.tree[i] + '")'
+        }
+        js = `{value: ${js}`
     }
-    return '{value: "' + this.tree.join('') + '"}'
+    if(this.alias){
+        js += `, alias: '${this.alias}'`
+    }
+    return js + '}'
 }
 
 $PatternClassCtx = function(context){
     this.type = "class_pattern"
     this.tree = []
     this.parent = context.parent
-    this.class_name = context.tree.pop()
+    // create an id for class name
+    this.class_id = new $IdCtx(context, context.tree[0])
+    // remove this instance of $dCtx from tree
+    context.tree.pop()
+    // get possible attributes of id
+    this.attrs = context.tree.slice(2)
     context.parent.tree.pop()
     context.parent.tree.push(this)
     this.expect = ','
+    this.keywords = []
+    this.positionals = []
+    this.bound_names = []
+}
+
+$PatternClassCtx.prototype.bindings = function(){
+    var bindings = this.bound_names
+    if(this.alias){
+        bindings.push(this.alias)
+    }
+    return bindings
 }
 
 $PatternClassCtx.prototype.transition = function(token, value){
+    var context = this
+
+    function check_last_arg(){
+        var last = $B.last(context.tree),
+            bound
+        if(last instanceof $PatternCaptureCtx){
+            if(! last.is_keyword &&
+                    context.keywords.length > 0){
+                $_SyntaxError(context,
+                        'positional argument after keyword')
+            }
+            if(last.is_keyword){
+                if(context.keywords.indexOf(last.tree[0]) > -1){
+                    $_SyntaxError(context,
+                        [`keyword argument repeated: ${last.tree[0]}`])
+                }
+                context.keywords.push(last.tree[0])
+                bound = last.tree[1].bindings()
+            }else{
+                bound = last.bindings()
+            }
+            for(var b of bound){
+                if(context.bound_names.indexOf(b) > -1){
+                    $_SyntaxError(context, ['multiple assignments ' +
+                        `to name '${b}' in pattern`])
+                }
+            }
+            context.bound_names = context.bound_names.concat(bound)
+        }
+    }
+
     switch(this.expect){
         case ',':
             switch(token){
@@ -8185,35 +9215,141 @@ $PatternClassCtx.prototype.transition = function(token, value){
                     // check that current argument is a capture
                     var current = $B.last(this.tree)
                     if(current instanceof $PatternCaptureCtx){
-                        this.tree[this.tree.length - 1] = current.tree[0]
-                        return new $PatternCtx(this)
+                        // check duplicate
+                        if(this.keywords.indexOf(current.tree[0]) > -1){
+                            $_SyntaxError(context,
+                                ['attribute name repeated in class pattern: ' +
+                                 current.tree[0]])
+                        }
+                        current.is_keyword = true
+                        return new $PatternCtx(current)
                     }
-                    $_SyntaxError(this)
+                    $_SyntaxError(this, '= after non-capture')
                 case ',':
+                    check_last_arg()
                     return new $PatternCtx(this)
                 case ')':
-                    return this.parent
+                    check_last_arg()
+                    if($B.last(this.tree).tree.length == 0){
+                        this.tree.pop()
+                    }
+                    context.expect = 'as'
+                    return context
                 default:
                     $_SyntaxError(this)
             }
+        case 'as':
+        case 'alias':
+            return as_pattern(context, token, value)
     }
+    return $transition(context.parent, token, value)
+
 }
 
 $PatternClassCtx.prototype.to_js = function(){
     var i = 0,
-        args = []
-    while(i < this.tree.length){
-        var item = this.tree[i]
-        if(typeof item == "string"){
-            // keyword
-            args.push('{' + item + ': ' + this.tree[i + 1].to_js() + '}')
-            i++
+        args = [],
+        kwargs = []
+    var klass = this.class_id.to_js()
+    for(var i = 0, len = this.attrs.length; i < len; i += 2){
+        klass = '$B.$getattr(' + klass + ', "' + this.attrs[i] + '")'
+    }
+    for(var arg of this.positionals){
+        // args.push(`'${arg}'`)
+    }
+    i = 0
+    for(item of this.tree){
+        if(item instanceof $PatternCaptureCtx && item.tree.length > 1){
+            kwargs.push(item.tree[0] + ': ' + item.tree[1].to_js())
         }else{
             args.push(item.to_js())
         }
-        i++
     }
-    return '{class: [' + args.join(', ') + ']}'
+    var js = '{class: ' + klass + ', args: [' + args.join(', ') + '], ' +
+        'keywords: {' + kwargs.join(', ') + '}'
+    if(this.alias){
+        js += `, alias: "${this.alias}"`
+    }
+    return js + '}'
+}
+
+var $PatternGroupCtx = function(context){
+    // Class for group patterns, delimited by (), in a "case" statement
+    this.type = "group_pattern"
+    this.parent = context
+    this.tree = []
+    var first_pattern = context.tree.pop()
+    this.expect = ',|'
+    context.tree.push(this)
+}
+
+function remove_empty_pattern(context){
+    var last = $B.last(context.tree)
+    if(last && last instanceof $PatternCtx &&
+            last.tree.length == 0){
+        context.tree.pop()
+    }
+}
+
+$PatternGroupCtx.prototype.bindings = function(){
+    var bindings = []
+    for(var item of this.tree){
+        bindings = bindings.concat(item.bindings())
+    }
+    if(this.alias){
+        bindings.push(this.alias)
+    }
+    return bindings
+}
+
+$PatternGroupCtx.prototype.transition = function(token, value){
+    var context = this
+    switch(context.expect){
+        case ',|':
+            if(token == ")"){
+                // close group
+                remove_empty_pattern(context)
+                context.expect = 'as'
+                return context
+            }else if(token == ','){
+                context.expect = 'id'
+                context.is_tuple = true
+                return context
+            }else if(token == 'op' && value == '|'){
+                var opctx = new $PatternOrCtx(context.parent)
+                opctx.parenthese = true
+                return new $PatternCtx(opctx)
+            }else if(this.token === undefined){
+                return $transition(context.parent, token, value)
+            }
+            $_SyntaxError(context)
+        case 'as':
+        case 'alias':
+            return as_pattern(context, token, value)
+        case 'id':
+            if(token == ')'){
+                // case (x,)
+                remove_empty_pattern(context)
+                context.expect ='as'
+                return context
+            }
+            context.expect = ',|'
+            return $transition(new $PatternCtx(context), token, value)
+    }
+    console.log('error', this, token, value)
+    $_SyntaxError(context, 'token ' + token + ' after ' + context)
+}
+
+$PatternGroupCtx.prototype.to_js = function(){
+    if(this.is_tuple){
+        var js = '{sequence: [' + $to_js(this.tree) + ']'
+    }else{
+        var js = '{group: [' + $to_js(this.tree) + ']'
+    }
+    if(this.alias){
+        js += `, alias: "${this.alias}"`
+    }
+    return js + '}'
 }
 
 var $PatternLiteralCtx = function(context, token, value, sign){
@@ -8223,8 +9359,28 @@ var $PatternLiteralCtx = function(context, token, value, sign){
     this.parent = context.parent
     context.parent.tree.pop()
     context.parent.tree.push(this)
-    this.tree = [{token, value, sign}]
-    this.expect = 'op'
+    if(token.sign){
+        this.tree = [{sign: token.sign}]
+        this.expect = 'number'
+    }else{
+        if(token == 'str'){
+            if(Array.isArray(value)){ // f-string
+                $_SyntaxError(this, ["patterns cannot include f-strings"])
+            }
+            this.tree = []
+            new $StringCtx(this, value)
+        }else{
+            this.tree = [{token, value, sign}]
+        }
+        this.expect = 'op'
+    }
+}
+
+$PatternLiteralCtx.prototype.bindings = function(){
+    if(this.alias){
+        return [this.alias]
+    }
+    return []
 }
 
 $PatternLiteralCtx.prototype.transition = function(token, value){
@@ -8236,19 +9392,36 @@ $PatternLiteralCtx.prototype.transition = function(token, value){
                     case '+':
                     case '-':
                         if(['int', 'float'].indexOf(this.tree[0].token) > -1){
-                            context.expect = 'number'
+                            context.expect = 'imaginary'
                             this.tree.push(value)
                             context.num_sign = value
                             return context
                         }
-                        $_SyntaxError(context, value + 'sign only after ' +
-                            'int or float')
+                        $_SyntaxError(context,
+                            ['patterns cannot include operators'])
                     default:
                         return $transition(context.parent, token, value)
                 }
             }
             break
         case 'number':
+            switch(token){
+                case 'int':
+                case 'float':
+                case 'imaginary':
+                    var last = $B.last(context.tree)
+                    if(this.tree.token === undefined){
+                        // if pattern starts with unary - or +
+                        last.token = token
+                        last.value = value
+                        context.expect = 'op'
+                        return context
+                    }
+                default:
+                    $_SyntaxError(context)
+            }
+
+        case 'imaginary':
             switch(token){
                 case 'imaginary':
                     context.tree.push({token, value, sign: context.num_sign})
@@ -8257,6 +9430,13 @@ $PatternLiteralCtx.prototype.transition = function(token, value){
                     $_SyntaxError(context, 'expected imaginary')
 
             }
+        case 'as':
+        case 'alias':
+            return as_pattern(context, token, value)
+    }
+    if(token == 'as' && context.tree.length == 1){
+        context.expect = 'as'
+        return context.transition(token, value)
     }
     return $transition(context.parent, token, value)
 }
@@ -8267,30 +9447,46 @@ $PatternLiteralCtx.prototype.to_js = function(){
         return item.sign == '-' ? -v : v
     }
     var res = '',
-        first = this.tree[0]
-    switch(first.token){
-        case 'id':
-            res = '_b_.' + first.value
-            break
-        case 'str':
-            res = first.value
-            break
-        case 'int':
-            res = int_to_num(first)
-            break
-        case 'float':
-            res = (first.sign == '-' ? '-' : '') + first.value
-            break
-        case 'imaginary':
-            res += '$B.make_complex(0, ' + first.value + ')'
-            break
+        first = this.tree[0],
+        num_value
+    if(first instanceof $StringCtx){
+        res = first.to_js()
+    }else{
+        switch(first.token){
+            case 'id':
+                res = '_b_.' + first.value
+                num_value = first.value == 'True' ? 1 : 0
+                break
+            case 'str':
+                res = first.value
+                break
+            case 'int':
+                res = int_to_num(first)
+                break
+            case 'float':
+                res = (first.sign == '-' ? '-' : '') + first.value
+                break
+            case 'imaginary':
+                res += '$B.make_complex(0, ' +
+                    (first.sign == '-' ? '-' : '') + first.value + ')'
+                if(first.value == 0){
+                    num_value = 0
+                }
+                break
+        }
     }
     if(this.tree.length > 1){
         res = '$B.make_complex(' + res + ',' +
             (this.tree[1] == '-' ? '-' : '') +
             this.tree[2].value + ')'
     }
-    return res
+    this.js_value = res
+    this.num_value = num_value === undefined ? res : num_value
+    var js = '{literal: ' + res
+    if(this.alias){
+        js += `, alias: '${this.alias}'`
+    }
+    return js + '}'
 }
 
 var $PatternMappingCtx = function(context){
@@ -8300,83 +9496,338 @@ var $PatternMappingCtx = function(context){
     context.tree.pop()
     this.tree = []
     context.tree.push(this)
+    this.expect = 'key_value_pattern'
+    // store duplicate literal keys
+    this.duplicate_keys = []
+    this.bound_names = []
+}
+
+$PatternMappingCtx.prototype.bindings = function(){
+    var bindings = []
+    for(var item of this.tree){
+        bindings = bindings.concat(item.bindings())
+    }
+    if(this.rest){
+        bindings = bindings.concat(this.rest.bindings())
+    }
+    if(this.alias){
+        bindings.push(this.alias)
+    }
+    return bindings
 }
 
 $PatternMappingCtx.prototype.transition = function(token, value){
     var context = this
-    switch(token){
-        case ',':
-            return new $PatternMappingItemCtx(context)
-        case '}':
-            return context.parent
-        default:
-            $_SyntaxError(context)
+    function check_duplicate_names(){
+        var last = $B.last(context.tree),
+            bindings
+        if(last instanceof $PatternKeyValueCtx){
+            if(context.double_star){
+                // key-value after double star is not allowed
+                context.$pos = context.double_star.$pos
+                $_SyntaxError(context,
+                    ["can't use starred name here (consider moving to end)"])
+            }
+            if(last.tree[0].type == 'value_pattern'){
+                bindings = last.tree[2].bindings()
+            }else{
+                bindings = last.tree[1].bindings()
+            }
+            for(var binding of bindings){
+                if(context.bound_names.indexOf(binding) > -1){
+                    $_SyntaxError(context,
+                        [`multiple assignments to name '${binding}'` +
+                         ' in pattern'])
+                }
+            }
+            context.bound_names = context.bound_names.concat(bindings)
+        }
     }
-}
-
-$PatternMappingCtx.prototype.to_js = function(){
-    return '{mapping: ' + $to_js(this.tree) + '}'
-}
-
-var $PatternMappingItemCtx = function(context){
-    this.type = "mapping_pattern_item"
-    this.parent = context
-    this.tree = []
-    this.expect = 'literal'
-    context.tree.push(this)
-}
-
-$PatternMappingItemCtx.prototype.transition = function(token, value){
-    var context = this
     switch(context.expect){
-        case 'literal':
-            switch(token){
-                case 'str':
-                    this.tree.push(value)
-                    this.expect = ':'
-                    return this
-                default:
-                    $_SyntaxError(this, 'expected a literal')
+        case 'key_value_pattern':
+            if(token == '}' || token == ','){
+                // If there are only literal values, raise SyntaxError if
+                // there are duplicate keys
+                check_duplicate_names()
+                if(context.double_star){
+                    var ix = context.tree.indexOf(context.double_star)
+                    if(ix != context.tree.length - 1){
+                        context.$pos = context.double_star.$pos
+                        $_SyntaxError(context,
+                            ["can't use starred name here (consider moving to end)"])
+                    }
+                    context.rest = context.tree.pop()
+                }
+                return token == ',' ? context : context.parent
             }
-        case ':':
-            switch(token){
-                case ':':
-                    this.expect = 'pattern'
-                    return new $PatternCtx(this)
-                default:
-                    $_SyntaxError('expected :')
+            if(token == 'op' && value == '**'){
+                context.expect = 'capture_pattern'
+                return context
             }
-        case 'pattern':
-            console.log(token, value)
+            var p = new $PatternCtx(context)
+            var lit_or_val = p.transition(token, value)
+            if(lit_or_val instanceof $PatternLiteralCtx){
+                context.tree.pop() // remove PatternCtx
+                // check duplicates
+                for(var kv of context.tree){
+                    if(kv instanceof $PatternKeyValueCtx){
+                        var key = kv.tree[0]
+                        if(key instanceof $PatternLiteralCtx){
+                            var old_lit = key.tree[0],
+                                new_lit = lit_or_val.tree[0]
+                            key.to_js()
+                            lit_or_val.to_js()
+                            key_value = key.num_value
+                            lit_or_val_value = lit_or_val.num_value
+                            if(key_value == lit_or_val_value){
+                                $_SyntaxError(context,
+                                    ["duplicate literal key " +
+                                    lit_or_val_value])
+                            }
+                        }
+                    }
+                }
+                new $PatternKeyValueCtx(context, lit_or_val)
+                return lit_or_val
+            }else if(lit_or_val instanceof $PatternCaptureCtx){
+                context.has_value_pattern_keys = true
+                // expect a dotted name (value pattern)
+                context.tree.pop()
+                new $PatternKeyValueCtx(context, lit_or_val)
+                context.expect = '.'
+                return this
+            }else{
+                console.log('lit_or_val', lit_or_val)
+                $_SyntaxError(context, 'expected key or **')
+            }
+        case 'capture_pattern':
+            var p = new $PatternCtx(context)
+            var capture = $transition(p, token, value)
+            if(capture instanceof $PatternCaptureCtx){
+                if(context.double_star){
+                    context.$pos = capture.$pos
+                    $_SyntaxError(context,
+                     ["only one double star pattern is accepted"])
+                }
+                if(value == '_'){
+                    $_SyntaxError(context, '**_ is not valid')
+                }
+                if(context.bound_names.indexOf(value) > -1){
+                    $_SyntaxError(context, ['duplicate binding: ' + value])
+                }
+                context.bound_names.push(value)
+                capture.double_star = true
+                context.double_star = capture
+                context.expect = ','
+                return context
+            }else{
+                $_SyntaxError(this, 'expected identifier')
+            }
+        case ',':
+            // after a **rest item
+            if(token == ','){
+                context.expect = 'key_value_pattern'
+                return context
+            }else if(token == '}'){
+                context.expect = 'key_value_pattern'
+                return context.transition(token, value)
+            }
+            $_SyntaxError(context, 'token ' + token + 'after context ' +context)
+        case '.':
+            // value pattern
+            if(context.tree.length > 0){
+                var last = $B.last(context.tree)
+                if(last instanceof $PatternKeyValueCtx){
+                    // create an id with the first name in value pattern
+                    new $IdCtx(last, last.tree[0].tree[0])
+                    context.expect = 'key_value_pattern'
+                    return $transition(last.tree[0], token, value)
+                }
+            }
+            $_SyntaxError(context, 'token ' + token + 'after ' + context)
     }
     return $transition(context.parent, token, value)
 }
 
-$PatternMappingItemCtx.prototype.to_js = function(){
-    console.log('pattern mapping to js', this)
-    return '[' + this.tree[0] + ',' + this.tree[1].to_js() + ']'
+$PatternMappingCtx.prototype.to_js = function(){
+    var js = '{mapping: [' + $to_js(this.tree) + ']'
+    if(this.rest){
+        js += ", rest: '" + this.rest.tree[0] + "'"
+    }
+    return js + '}'
+}
+
+var $PatternKeyValueCtx = function(context, literal_or_value){
+    this.type = "pattern_key_value"
+    this.parent = context
+    this.tree = [literal_or_value]
+    literal_or_value.parent = this
+    this.expect = ':'
+    context.tree.push(this)
+}
+
+$PatternKeyValueCtx.prototype.bindings = $PatternMappingCtx.prototype.bindings
+
+$PatternKeyValueCtx.prototype.transition = function(token, value){
+    var context = this
+    switch(context.expect){
+        case ':':
+            switch(token){
+                case ':':
+                    this.expect = ','
+                    return new $PatternCtx(this)
+                default:
+                console.log('keyvalue', context, 'expected :, got', token, value)
+                    $_SyntaxError(context, 'expected :')
+            }
+        case ',':
+            switch(token){
+                case '}':
+                    return $transition(context.parent, token, value)
+                case ',':
+                    context.parent.expect = 'key_value_pattern'
+                    return $transition(context.parent, token, value)
+                case 'op':
+                    if(value == '|'){
+                        // value is an alternative
+                        return new $PatternCtx(new $PatternOrCtx(context))
+                    }
+            }
+            $_SyntaxError(context, 'expected , or }')
+    }
+    return $transition(context.parent, token, value)
+}
+
+$PatternKeyValueCtx.prototype.to_js = function(){
+    var key,
+        value
+    if(this.tree[0].type == 'value_pattern'){
+        // second item in this.tree is an id
+        key = this.tree[1].to_js()
+        for(var i = 2, len = this.tree[0].tree.length; i < len; i += 2){
+            key = '$B.$getattr(' + key + ', "' + this.tree[0].tree[i] + '")'
+        }
+        key = '{value: ' + key + '}'
+        value = this.tree[2].to_js()
+    }else{
+        key = this.tree[0].to_js()
+        value = this.tree[1].to_js()
+    }
+    return '[' + key + ',' + value + ']'
 }
 
 var $PatternOrCtx = function(context){
     // Class for "or patterns" in a "case" statement
+    // context already has a pattern as its first child
     this.type = "or_pattern"
     this.parent = context
     var first_pattern = context.tree.pop()
+    if(first_pattern instanceof $PatternGroupCtx &&
+            first_pattern.expect != 'as'){
+        // eg "case (a, ...)"
+        first_pattern = first_pattern.tree[0]
+    }
     this.tree = [first_pattern]
+    first_pattern.parent = this
     this.expect = '|'
     context.tree.push(this)
+    this.check_reachable()
+}
+
+$PatternOrCtx.prototype.bindings = function(){
+    var names
+    for(var subpattern of this.tree){
+        if(subpattern.bindings === undefined){
+            console.log('no binding', subpattern)
+        }
+        var subbindings = subpattern.bindings()
+        if(names === undefined){
+            names = subbindings
+        }else{
+            for(var item of names){
+                if(subbindings.indexOf(item) == -1){
+                    $_SyntaxError(this,
+                        ["alternative patterns bind different names"])
+                }
+            }
+            for(var item of subbindings){
+                if(names.indexOf(item) == -1){
+                    $_SyntaxError(this,
+                        ["alternative patterns bind different names"])
+                }
+            }
+        }
+    }
+    if(this.alias){
+        return names.concat(this.alias)
+    }
+    return names
+}
+
+$PatternOrCtx.prototype.check_reachable = function(){
+    // Called before accepting a new alternative. If the last one is a
+    // capture or wildcard, raise SyntaxError
+    var item = $B.last(this.tree)
+    var capture
+    if(item.type == 'capture_pattern'){
+        capture = item.tree[0]
+    }else if(item.type == 'group_pattern' && item.tree.length == 1 &&
+        item.tree[0].type == 'capture_pattern'){
+            capture = item.tree[0].tree[0]
+    }else if(item instanceof $PatternOrCtx){
+        item.check_reachable()
+    }
+    if(capture){
+        var msg = capture == '_' ? 'wildcard' :
+            `name capture '${capture}'`
+        $_SyntaxError(this,
+            [`${msg} makes remaining patterns unreachable`])
+    }
 }
 
 $PatternOrCtx.prototype.transition = function(token, value){
-    var context = this
-    if(token == 'op' && value == "|"){
-        return new $PatternCtx(context)
+    function set_alias(){
+        // If last item has an alias, it is the alias of the whole "or pattern"
+        var last = $B.last(context.tree)
+        if(last.alias){
+            context.alias = last.alias
+            delete last.alias
+        }
     }
+
+    var context = this
+
+    if(['as', 'alias'].indexOf(context.expect) > -1){
+        return as_pattern(context, token, value)
+    }
+    if(token == 'op' && value == "|"){
+        // items cannot be aliased
+        for(var item of context.tree){
+            if(item.alias){
+                $_SyntaxError(context, 'no as pattern inside or pattern')
+            }
+        }
+        context.check_reachable()
+        return new $PatternCtx(context)
+    }else if(token == ')' && context.parenthese){
+        set_alias()
+        context.bindings()
+        delete context.parenthese
+        context.expect = 'as'
+        return context
+    }
+    set_alias()
+    context.bindings()
     return $transition(context.parent, token, value)
 }
 
+
 $PatternOrCtx.prototype.to_js = function(){
-    return '{or : [' + $to_js(this.tree) + ']}'
+    var res = '{or : [' + $to_js(this.tree) + ']'
+    if(this.alias){
+        res += `, alias: '${this.alias}'`
+    }
+    return res + '}'
 }
 
 var $PatternSequenceCtx = function(context, token){
@@ -8384,11 +9835,16 @@ var $PatternSequenceCtx = function(context, token){
     this.type = "sequence_pattern"
     this.parent = context
     this.tree = []
+    this.bound_names = []
     var first_pattern = context.tree.pop()
     if(token === undefined){
         // implicit sequence : form "case x, y:"
         // context.parent already has a pattern
+        this.bound_names = first_pattern.bindings()
         this.tree = [first_pattern]
+        if(first_pattern.starred){
+            this.has_star = true
+        }
         first_pattern.parent = this
     }else{
         // explicit sequence with token '[' or '('
@@ -8398,19 +9854,76 @@ var $PatternSequenceCtx = function(context, token){
     context.tree.push(this)
 }
 
+$PatternSequenceCtx.prototype.bindings = $PatternMappingCtx.prototype.bindings
+
 $PatternSequenceCtx.prototype.transition = function(token, value){
+    function check_duplicate_names(){
+        var last = $B.last(context.tree)
+        if(! (last instanceof $PatternCtx)){
+            // check duplicate bindings
+            var last_bindings = last.bindings()
+            for(var b of last_bindings){
+                if(context.bound_names.indexOf(b) > -1){
+                    $_SyntaxError(context, ["multiple assignments to name '" +
+                        b + "' in pattern"])
+                }
+            }
+            if(last.starred){
+                if(context.has_star){
+                    $_SyntaxError(context,
+                        ['multiple starred names in sequence pattern'])
+                }
+                context.has_star = true
+            }
+            context.bound_names = context.bound_names.concat(last_bindings)
+        }
+    }
+
     var context = this
     if(context.expect == ','){
-        if((this.token == '[' && token == ']') ||
-                (this.token == '(' && token == ")")){
-            return context.parent
+        if((context.token == '[' && token == ']') ||
+                (context.token == '(' && token == ")")){
+            // check if there are more than 1 starred subpattern
+            var nb_starred = 0
+            for(var item of context.tree){
+                if(item instanceof $PatternCaptureCtx && item.starred){
+                    nb_starred++
+                    if(nb_starred > 1){
+                        $_SyntaxError(context,
+                            ['multiple starred names in sequence pattern'])
+                    }
+                }
+            }
+            context.expect = 'as'
+            check_duplicate_names()
+            remove_empty_pattern(context)
+            return context
         }else if(token == ','){
+            check_duplicate_names()
             context.expect = 'id'
             return context
+        }else if(token == 'op' && value == '|'){
+            // alternative on last element
+            remove_empty_pattern(context)
+            return new $PatternCtx(new $PatternOrCtx(context))
         }else if(this.token === undefined){
+            // implicit tuple
+            check_duplicate_names()
             return $transition(context.parent, token, value)
         }
         $_SyntaxError(context)
+    }else if(context.expect == 'as'){
+        if(token == 'as'){
+            this.expect = 'alias'
+            return context
+        }
+        return $transition(context.parent, token, value)
+    }else if(context.expect == 'alias'){
+        if(token =  'id'){
+            context.alias = value
+            return context.parent
+        }
+        $_SyntaxError(context, 'expected alias')
     }else if(context.expect == 'id'){
         context.expect = ','
         return $transition(new $PatternCtx(context), token, value)
@@ -8418,8 +9931,13 @@ $PatternSequenceCtx.prototype.transition = function(token, value){
 }
 
 $PatternSequenceCtx.prototype.to_js = function(){
-    return '[' + $to_js(this.tree) + ']'
+    var js = '{sequence: [' + $to_js(this.tree) + ']'
+    if(this.alias){
+        js += `, alias: '${this.alias}'`
+    }
+    return js + '}'
 }
+
 
 var $RaiseCtx = $B.parser.$RaiseCtx = function(context){
     // Class for keyword "raise"
@@ -8513,25 +10031,34 @@ var $ReturnCtx = $B.parser.$ReturnCtx = function(context){
     }
 }
 
+$ReturnCtx.prototype.ast = function(){
+    var res = new ast.Return()
+    if(this.tree.length > 0){
+        res.expr = ast_or_obj(this.tree[0])
+    }
+    return res
+}
+
 $ReturnCtx.prototype.toString = function(){
     return 'return ' + this.tree
 }
 
 $ReturnCtx.prototype.transition = function(token, value){
     var context = this
-    return $transition(context.parent,token)
+    if(token == 'eol' && this.tree.length == 1 &&
+             this.tree[0].type == 'abstract_expr'){
+        // "return" must be transformed into "return None"
+        this.tree.pop()
+    }
+    return $transition(context.parent, token)
 }
 
 $ReturnCtx.prototype.to_js = function(){
     this.js_processed = true
-    if(this.tree.length == 1 && this.tree[0].type == 'abstract_expr'){
-        // "return" must be transformed into "return None"
-        this.tree.pop()
-        new $IdCtx(new $ExprCtx(this, 'rvalue', false), 'None')
-    }
+    var expr = this.tree.length == 0 ? '_b_.None' : $to_js(this.tree)
     var scope = this.scope
     if(scope.ntype == 'generator'){
-        return 'var $res = ' + $to_js(this.tree) + '; $B.leave_frame({$locals});' +
+        return 'var $res = ' + expr + '; $B.leave_frame({$locals});' +
             'return $B.generator_return($res)'
     }
 
@@ -8539,11 +10066,17 @@ $ReturnCtx.prototype.to_js = function(){
     // If the return is in a try block with a finally block, the frames
     // will be restored when entering "finally"
     var indent = '    '.repeat(this.node.indent - 1)
-    var js = 'var $res = ' + $to_js(this.tree) + ';\n' + indent +
+    var js = 'var $res = ' + expr + ';\n' + indent +
     'if($locals.$f_trace !== _b_.None){$B.trace_return($res)}\n' + indent +
     '$B.leave_frame'
-    if(scope.id.substr(0, 6) == '$exec_'){js += '_exec'}
-    js += '({$locals});\n' + indent + 'return $res'
+    if(scope.id.substr(0, 6) == '$exec_'){
+        js += '_exec'
+    }
+    js += '({$locals});\n'
+    if(this.is_await){
+        js += indent + '$B.restore_stack(save_stack, $locals)\n'
+    }
+    js += indent + 'return $res'
     return js
 }
 
@@ -8558,12 +10091,10 @@ var $SingleKwCtx = $B.parser.$SingleKwCtx = function(context,token){
     // If token is "else" inside a "for" loop, set the flag "has_break"
     // on the loop, to force the creation of a boolean "$no_break"
     if(token == "else"){
-        var node = context.node
-        var pnode = node.parent
-        for(var rank = 0; rank < pnode.children.length; rank++){
-            if(pnode.children[rank] === node){break}
-        }
-        var pctx = pnode.children[rank - 1].context
+        var node = context.node,
+            rank = node.parent.children.indexOf(node),
+            pctx = node.parent.children[rank - 1].context
+        pctx.tree[0].orelse = this
         if(pctx.tree.length > 0){
             var elt = pctx.tree[0]
             if(elt.type == 'for' ||
@@ -8636,6 +10167,18 @@ var $SliceCtx = $B.parser.$SliceCtx = function(context){
     context.tree.push(this)
 }
 
+$SliceCtx.prototype.ast = function(){
+    var slice = new ast.Slice()
+    var attrs = ['lower', 'upper', 'step']
+    for(var i = 0; i < this.tree.length; i++){
+        var item = this.tree[i]
+        if(item.type !== 'abstract_expr'){
+            slice[attrs[i]] = ast_or_obj(item)
+        }
+    }
+    return slice
+}
+
 $SliceCtx.prototype.transition = function(token, value){
     var context = this
     if(token == ":"){
@@ -8680,6 +10223,7 @@ $StarArgCtx.prototype.transition = function(token, value){
         case 'int':
         case 'float':
         case 'str':
+        case 'JoinedStr':
         case 'bytes':
         case '[':
         case '(':
@@ -8709,15 +10253,34 @@ $StarArgCtx.prototype.to_js = function(){
 
 var $StringCtx = $B.parser.$StringCtx = function(context, value){
     // Class for literal strings
+    // value is the string with quotes, eg 'a', "b\"c" etc.
     this.type = 'str'
     this.parent = context
-    this.tree = [value] // may be extended if consecutive strings eg 'a' 'b'
-    context.tree[context.tree.length] = this
+
+    function prepare(value){
+        value = value.replace(/\n/g,'\\n\\\n')
+        value = value.replace(/\r/g,'\\r\\\r')
+        return value
+    }
+
+    this.is_bytes = value.charAt(0) == 'b'
+    if(! this.is_bytes){
+        this.value = prepare(value)
+    }else{
+        this.value = prepare(value.substr(1))
+    }
+    context.tree.push(this)
+    this.tree = [this.value]
     this.raw = false
+    this.$pos = $pos
+}
+
+$StringCtx.prototype.ast = function(){
+    return new ast.Constant(eval(this.value))
 }
 
 $StringCtx.prototype.toString = function(){
-    return 'string ' + (this.tree || '')
+    return 'string ' + (this.value || '')
 }
 
 $StringCtx.prototype.transition = function(token, value){
@@ -8732,165 +10295,35 @@ $StringCtx.prototype.transition = function(token, value){
             context.parent.tree[0] = context
             return new $CallCtx(context.parent)
         case 'str':
-            context.tree.push(value)
+            if((this.is_bytes && ! value.startsWith('b')) ||
+                    (! this.is_bytes && value.startsWith('b'))){
+                context.$pos = $pos
+                $_SyntaxError(context,
+                    ["cannot mix bytes and nonbytes literals"])
+            }
+            context.value += ' + ' + (this.is_bytes ? value.substr(1) : value)
             return context
+        case 'JoinedStr':
+            // replace by a new JoinedStr where the first value is this
+            context.parent.tree.pop()
+            var joined_str = new JoinedStrCtx(context.parent, value)
+            if(typeof joined_str.tree[0] == "string"){
+                joined_str.tree[0] = eval(this.value) + joined_str.tree[0]
+            }else{
+                joined_str.tree.splice(0, 0, this)
+            }
+            return joined_str
     }
     return $transition(context.parent, token, value)
 }
 
 $StringCtx.prototype.to_js = function(){
     this.js_processed = true
-    var res = '',
-        type = null,
-        scope = $get_scope(this)
-
-    function fstring(parsed_fstring){
-        // generate code for a f-string
-        // parsed_fstring is an array, the result of $B.parse_fstring()
-        // in py_string.js
-        var elts = []
-        for(var i = 0; i < parsed_fstring.length; i++){
-            if(parsed_fstring[i].type == 'expression'){
-                var expr = parsed_fstring[i].expression
-                // search specifier
-                var pos = 0,
-                    br_stack = [],
-                    parts = [expr]
-
-                while(pos < expr.length){
-                    var car = expr.charAt(pos)
-                    if(car == ":" && br_stack.length == 0){
-                        parts = [expr.substr(0, pos),
-                            expr.substr(pos + 1)]
-                        break
-                    }else if("{[(".indexOf(car) > -1){
-                        br_stack.push(car)
-                    }else if(")]}".indexOf(car) > -1){
-                        br_stack.pop()
-                    }
-                    pos++
-                }
-                expr = parts[0]
-                // We transform the source code of the expression using py2js.
-                // This gives us a node whose structure is always the same.
-                // The Javascript code matching the expression is the first
-                // child of the first "try" block in the node's children.
-                var save_pos = $pos
-                var expr_node = $B.py2js(expr, scope.module, scope.id, scope)
-                expr_node.to_js()
-                $pos = save_pos
-                for(var j = 0; j < expr_node.children.length; j++){
-                    var node = expr_node.children[j]
-                    if(node.context.tree && node.context.tree.length == 1 &&
-                            node.context.tree[0] == "try"){
-                        // node is the first "try" node
-                        for(var k = 0; k < node.children.length; k++){
-                            // Ignore line num children if any
-                            if(node.children[k].is_line_num){continue}
-                            // This is the node with the translation of the
-                            // f-string expression. It has the attribute js
-                            // set to the Javascript translation
-                            var expr1 = node.children[k].js
-                            // Remove trailing newline and ;
-                            if(expr1.length > 0){
-                                while("\n;".indexOf(expr1.charAt(expr1.length - 1)) > -1){
-                                    expr1 = expr1.substr(0, expr1.length - 1)
-                                }
-                            }else{
-                                console.log("f-string: empty expression not allowed")
-                            }
-                            break
-                        }
-                        break
-                    }
-                }
-                switch(parsed_fstring[i].conversion){
-                    case "a":
-                        expr1 = '_b_.ascii(' + expr1 + ')'
-                        break
-                    case "r":
-                        expr1 = '_b_.repr(' + expr1 + ')'
-                        break
-                    case "s":
-                        expr1 = '_b_.str.$factory(' + expr1 + ')'
-                        break
-                }
-
-                var fmt = parts[1]
-                if(fmt !== undefined){
-                    // Format specifier can also contain expressions
-                    var parsed_fmt = $B.parse_fstring(fmt)
-                    if(parsed_fmt.length > 1){
-                        fmt = fstring(parsed_fmt)
-                    }else{
-                        fmt = "'" + fmt + "'"
-                    }
-                    var res1 = "_b_.str.format('{0:' + " +
-                        fmt + " + '}', " + expr1 + ")"
-                    elts.push(res1)
-                }else{
-                    if(parsed_fstring[i].conversion === null){
-                        expr1 = '_b_.str.$factory(' + expr1 + ')'
-                    }
-                    elts.push(expr1)
-                }
-            }else{
-                var re = new RegExp("'", "g")
-                var elt = parsed_fstring[i].replace(re, "\\'")
-                                           .replace(/\n/g, "\\n")
-                elts.push("'" + elt + "'")
-            }
-        }
-        return elts.join(' + ')
+    if(! this.is_bytes){
+        return "$B.String(" + this.value + ")"
+    }else{
+        return '_b_.bytes.$new(_b_.bytes, ' + this.value + ", 'ISO-8859-1')"
     }
-
-    function prepare(value){
-        value = value.replace(/\n/g,'\\n\\\n')
-        value = value.replace(/\r/g,'\\r\\\r')
-        return value
-    }
-
-    for(var i = 0; i < this.tree.length; i++){
-        if(this.tree[i].type == "call"){
-            // syntax like "hello"(*args, **kw) raises TypeError
-            // cf issue 335
-            var js = '(function(){throw _b_.TypeError.$factory("' + "'str'" +
-                ' object is not callable")}())'
-            return js
-        }else{
-            var value = this.tree[i],
-                is_fstring = Array.isArray(value),
-                is_bytes = false
-
-            if(!is_fstring){
-                is_bytes = value.charAt(0) == 'b'
-            }
-
-            if(type == null){
-                type = is_bytes
-                if(is_bytes){res += '_b_.bytes.$new(_b_.bytes, '}
-            }else if(type != is_bytes){
-                return '$B.$TypeError("can\'t concat bytes to str")'
-            }
-            if(!is_bytes){
-                if(is_fstring){
-                    res += fstring(value)
-                }else{
-                    res += prepare(value)
-                }
-            }else{
-                res += prepare(value.substr(1))
-            }
-            if(i < this.tree.length - 1){res += '+'}
-        }
-    }
-    if(is_bytes){
-        res += ',"ISO-8859-1")'
-    }
-    if(res.length == 0){
-        res = '""'
-    }
-    return res
 }
 
 var $SubCtx = $B.parser.$SubCtx = function(context){
@@ -8902,6 +10335,11 @@ var $SubCtx = $B.parser.$SubCtx = function(context){
     context.tree[context.tree.length] = this
     this.parent = context
     this.tree = []
+}
+
+$SubCtx.prototype.ast = function(){
+    var slice = ast_or_obj(this.tree[0])
+    return new ast.Subscript(ast_or_obj(this.value), slice)
 }
 
 $SubCtx.prototype.toString = function(){
@@ -8917,6 +10355,7 @@ $SubCtx.prototype.transition = function(token, value){
         case 'int':
         case 'float':
         case 'str':
+        case 'JoinedStr':
         case 'bytes':
         case '[':
         case '(':
@@ -9001,10 +10440,10 @@ $SubCtx.prototype.to_js = function(){
         res += this.tree[0].to_js() + ')'
     }else{
         var res1 = []
-        this.tree.forEach(function(elt){
+        for(var elt of this.tree){
             if(elt.type == 'abstract_expr'){res1.push('_b_.None')}
             else{res1.push(elt.to_js())}
-        })
+        }
         res += '_b_.tuple.$factory([' + res1.join(',') + ']))'
     }
     return shortcut ? res + ')' : res
@@ -9048,7 +10487,9 @@ $TargetListCtx.prototype.transition = function(token, value){
             }
         case ')':
         case ']':
-            if(context.expect == ','){return context.parent}
+            if(context.expect == ','){
+                return context.parent
+            }
         case ',':
             if(context.expect == ','){
                 context.expect = 'id'
@@ -9137,20 +10578,7 @@ $TryCtx.prototype.transition = function(token, value){
 
 $TryCtx.prototype.transform = function(node, rank){
     if(node.parent.children.length == rank + 1){
-        $_SyntaxError(context, ["unexpected EOF while parsing"])
-    }else{
-        var next_ctx = node.parent.children[rank + 1].context.tree[0]
-        switch(next_ctx.type) {
-            case 'except':
-            case 'finally':
-            case 'single_kw':
-                break
-            default:
-                // Restore $pos
-                $pos = node.parent.children[rank + 1].pos
-                $_SyntaxError(node.parent.children[rank + 1].context.tree[0],
-                    "no clause after try")
-        }
+        $_SyntaxError(node.context, ["unexpected EOF while parsing"])
     }
     var scope = $get_scope(this)
 
@@ -9257,9 +10685,9 @@ $TryCtx.prototype.transform = function(node, rank){
         var else_node = new $Node()
         else_node.module = scope.module
         new $NodeJSCtx(else_node, 'if(!'+failed_name+ ')')
-        else_body.children.forEach(function(elt){
+        for(var elt of else_body.children){
             else_node.add(elt)
-        })
+        }
         // If the try block has a "finally" node, the "else" node must
         // be put in it, because the "else" block must be executed
         // before finally - cf issue #500
@@ -9284,7 +10712,13 @@ var $UnaryCtx = $B.parser.$UnaryCtx = function(context, op){
     this.type = 'unary'
     this.op = op
     this.parent = context
-    context.tree[context.tree.length] = this
+    this.tree = []
+    context.tree.push(this)
+}
+
+$UnaryCtx.prototype.ast = function(){
+    var op = {'+': ast.UAdd, '-': ast.USub, '~': ast.Invert}[this.op]
+    return new ast.UnaryOp(new op(), ast_or_obj(this.tree[0]))
 }
 
 $UnaryCtx.prototype.toString = function(){
@@ -9294,62 +10728,44 @@ $UnaryCtx.prototype.toString = function(){
 $UnaryCtx.prototype.transition = function(token, value){
     var context = this
     switch(token) {
+        case 'op':
+            if('+' == value || '-' == value){
+               if(context.op === value){
+                   context.op = '+'
+               }else{
+                   context.op = '-'
+               }
+               return context
+            }
         case 'int':
         case 'float':
         case 'imaginary':
-            // replace by real value of integer or float
-            // parent of context is a $ExprCtx
-            // grand-parent is a $AbstractExprCtx
-            // we remove the $ExprCtx and trigger a transition
-            // from the $AbstractExpCtx with an integer or float
-            // of the correct value
             if(context.parent.type == "packed"){
                 $_SyntaxError(context,
                     ["can't use starred expression here"])
             }
-            var expr = context.parent
-            context.parent.parent.tree.pop()
-            if(context.op == '-'){value = "-" + value}
-            else if(context.op == '~'){value = ~value}
-            return $transition(context.parent.parent, token, value)
+            return $transition(new $AbstractExprCtx(context, false),
+                token, value)
         case 'id':
-            // replace by x.__neg__(), x.__invert__ or x.__pos__
-            var p = context.parent.parent.tree.pop()
-            if(p.type == "packed"){
-                // keep PackedCtx object
-                context.parent.parent.tree.push(p)
-                // remove packed child, replace by new expression
-                p.tree.pop()
-                var expr = new $ExprCtx(p, 'call', false)
-            }else{
-                var expr = new $ExprCtx(context.parent.parent, 'call',
-                    false)
-            }
-            var expr1 = new $ExprCtx(expr, 'id', false)
-            new $IdCtx(expr1, value) // create id
-            var repl = new $AttrCtx(expr)
-            if(context.op == '+'){
-                repl.name = '__pos__'
-            }else if(context.op == '-'){
-                repl.name = '__neg__'
-            }else{
-                repl.name = '__invert__'
-            }
-            // new context is the expression above the id
-            return expr1
-        case 'op':
-            if('+' == value || '-' == value){
-               if(context.op === value){context.op = '+'}
-               else{context.op = '-'}
-               return context
-            }
+            return $transition(new $AbstractExprCtx(context, false),
+                token, value)
     }
     return $transition(context.parent, token, value)
 }
 
 $UnaryCtx.prototype.to_js = function(){
     this.js_processed = true
-    return this.op
+    var operand = this.tree[0].tree[0]
+    switch(operand.type){
+        case 'float':
+            return eval(this.op + operand.value)
+        case 'int':
+            operand.value[1] = eval(this.op + operand.value[1])
+            return operand.to_js()
+    }
+    var method = {'-': 'neg', '+': 'pos', '~': 'invert'}[this.op]
+    return '$B.$call($B.$getattr(' + operand.to_js() + ', "__' +
+        method + '__"))()'
 }
 
 var $WithCtx = $B.parser.$WithCtx = function(context){
@@ -9427,11 +10843,11 @@ $WithCtx.prototype.set_alias = function(ctx){
         ids = [ctx]
     }else if(ctx.type == "list_or_tuple"){
         // Form "with manager as (x, y)"
-        ctx.tree.forEach(function(expr){
+        for(var expr of ctx.tree){
             if(expr.type == "expr" && expr.tree[0].type == "id"){
                 ids.push(expr.tree[0])
             }
-        })
+        }
     }
     for(var i = 0, len = ids.length; i < len; i++){
         var id_ctx = ids[i]
@@ -9465,9 +10881,9 @@ $WithCtx.prototype.transform = function(node, rank){
         item.parent = with_ctx
         with_ctx.tree = [item]
         with_ctx.async = this.async
-        suite.forEach(function(elt){
+        for(var elt of suite){
             new_node.add(elt)
-        })
+        }
         node.children = [new_node]
     }
 
@@ -9522,9 +10938,9 @@ $WithCtx.prototype.transform = function(node, rank){
         var wc = new $WithCtx(ctx)
         wc.async = this.async
         wc.tree = this.tree.slice(1)
-        node.children.forEach(function(elt){
+        for(var elt of node.children){
             nw.add(elt)
-        })
+        }
         node.children = [nw]
         this.transformed = true
 
@@ -9596,7 +11012,9 @@ $WithCtx.prototype.transform = function(node, rank){
     }
 
     // place block inside a try clause
-    block.forEach(function(elt){try_node.add(elt)})
+    for(var elt of block){
+        try_node.add(elt)
+    }
 
     var catch_node = new $Node()
     new $NodeJSCtx(catch_node, 'catch(' + this.err_name + ')')
@@ -9717,9 +11135,9 @@ $WithCtx.prototype.transform_async = function(node, rank){
     // try:
     //     BLOCK
     var try_node = new $NodeJS('try')
-    node.children.forEach(function(child){
+    for(var child of node.children){
         try_node.add(child)
-    })
+    }
     new_nodes.push(try_node)
 
     // except:
@@ -10037,7 +11455,7 @@ var $bind = $B.parser.$bind = function(name, scope, context){
     // - add it to the attribute "bindings" of the node, except if no_bindings
     //   is set, which is the case for "for x in A" : if A is empty the name
     //   has no value (issue #1233)
-    if(scope.nonlocals && scope.nonlocals[name]){
+    if(scope.nonlocals && scope.nonlocals.has(name)){
         // name is declared nonlocal in the scope : don't bind
         return
     }
@@ -10058,6 +11476,10 @@ var $bind = $B.parser.$bind = function(name, scope, context){
     scope.binding = scope.binding || {}
     if(scope.binding[name] === undefined){
         scope.binding[name] = true
+    }
+    scope.varnames = scope.varnames || {}
+    if(scope.varnames[name] === undefined){
+        scope.varnames[name] = true
     }
 }
 
@@ -10188,10 +11610,14 @@ var $to_js_map = $B.parser.$to_js_map = function(tree_element) {
     throw Error('no to_js() for ' + tree_element)
 }
 
-var $to_js = $B.parser.$to_js = function(tree,sep){
+var $to_js = $B.parser.$to_js = function(tree, sep){
     if(sep === undefined){sep = ','}
-
-    return tree.map($to_js_map).join(sep)
+    try{
+        return tree.map($to_js_map).join(sep)
+    }catch(err){
+        console.log('error', err, '\ntree', tree)
+        throw err
+    }
 }
 
 var $mangle = $B.parser.$mangle = function(name, context){
@@ -10220,20 +11646,19 @@ var $mangle = $B.parser.$mangle = function(name, context){
 // Function called in function $tokenize for each token found in the
 // Python source code
 
+$B.nb_debug_lines = 0
+
 var $transition = $B.parser.$transition = function(context, token, value){
-    //console.log("context", context, "token", token, value)
+    if($B.nb_debug_lines > 100){
+        alert('too many debug lines')
+        $B.nb_debug_lines = 0
+    }
+    //console.log("context", context, "token", token, value, '$pos', $pos); $B.nb_debug_lines++
     return context.transition(token, value)
 }
 
-// Names that can't be given to variable names or attributes
-$B.forbidden = ["alert", "arguments", "case", "catch", "const", "constructor",
-    "Date", "debugger", "delete", "default", "do", "document", "enum",
-    "export", "eval", "extends", "Error", "history", "function", "instanceof",
-    "keys", "length", "location", "Math", "message","new", "null", "Number",
-    "RegExp", "String", "super", "switch", "this", "throw", "typeof", "var",
-    "window", "toLocaleString", "toString", "void"]
-    //enum, export, extends, import, and super
-$B.aliased_names = $B.list2obj($B.forbidden)
+$B.forbidden = []
+$B.aliased_names = Object.create(null)
 
 var s_escaped = 'abfnrtvxuU"0123456789' + "'" + '\\',
     is_escaped = {}
@@ -10249,64 +11674,7 @@ function SurrogatePair(value){
         String.fromCharCode(0xDC00 | (value & 0x3FF))
 }
 
-function test_escape(context, text, string_start, antislash_pos){
-    // Test if the escape sequence starting at position "pos" in text is
-    // is valid
-    // $pos is set at the position before the string quote
-    var seq_start = antislash_pos - string_start - 1,
-        seq_end,
-        mo
-    // 1 to 3 octal digits = Unicode char
-    mo = /^[0-7]{1,3}/.exec(text.substr(antislash_pos + 1))
-    if(mo){
-        return [String.fromCharCode(parseInt(mo[0], 8)), 1 + mo[0].length]
-    }
-    switch(text[antislash_pos + 1]){
-        case "x":
-            var mo = /^[0-9A-F]{0,2}/i.exec(text.substr(antislash_pos + 2))
-            if(mo[0].length != 2){
-                seq_end = seq_start + mo[0].length + 1
-                $_SyntaxError(context,
-                     ["(unicode error) 'unicodeescape' codec can't decode " +
-                     `bytes in position ${seq_start}-${seq_end}: truncated ` +
-                     "\\xXX escape"])
-            }else{
-                return [String.fromCharCode(parseInt(mo[0], 16)), 2 + mo[0].length]
-            }
-        case "u":
-            var mo = /^[0-9A-F]{0,4}/i.exec(text.substr(antislash_pos + 2))
-            if(mo[0].length != 4){
-                seq_end = seq_start + mo[0].length + 1
-                $_SyntaxError(context,
-                     ["(unicode error) 'unicodeescape' codec can't decode " +
-                     `bytes in position ${seq_start}-${seq_end}: truncated ` +
-                     "\\uXXXX escape"])
-            }else{
-                return [String.fromCharCode(parseInt(mo[0], 16)), 2 + mo[0].length]
-            }
-        case "U":
-            var mo = /^[0-9A-F]{0,8}/i.exec(text.substr(antislash_pos + 2))
-            if(mo[0].length != 8){
-                seq_end = seq_start + mo[0].length + 1
-                $_SyntaxError(context,
-                     ["(unicode error) 'unicodeescape' codec can't decode " +
-                     `bytes in position ${seq_start}-${seq_end}: truncated ` +
-                     "\\uXXXX escape"])
-            }else{
-                var value = parseInt(mo[0], 16)
-                if(value > 0x10FFFF){
-                    $_SyntaxError('invalid unicode escape ' + mo[0])
-                }else if(value >= 0x10000){
-                    return [SurrogatePair(value), 2 + mo[0].length]
-                }else{
-                    return [String.fromCharCode(value), 2 + mo[0].length]
-                }
-            }
-    }
-
-}
-
-function test_num(context, num_lit){
+function test_num(num_lit){
     var len = num_lit.length,
         pos = 0,
         char,
@@ -10469,40 +11837,431 @@ function* basic_tokenizer(src){
     }
 }
 
+var opening = {')': '(', '}': '{', ']': '['}
+
 function line_ends_with_comma(src){
     // used to check if 'match' or 'case' are the "soft keywords" for pattern
     // matching, or ordinary ids
     var expect = ':',
-        braces = 0
-    for(token of basic_tokenizer(src)){
+        braces = []
+    for(token of $B.tokenizer(src)){
         if(expect == ':'){
-            if(token == ':' && braces == 0){
+            if(token.type == 'OP' && token.string == ':' && braces.length == 0){
                 expect = 'eol'
-            }else if(token == '\n' && braces == 0){
+            }else if(token.type == 'OP'){
+                if('([{'.indexOf(token.string) > -1){
+                    braces.push(token)
+                }else if(')]}'.indexOf(token.string) > -1){
+                    if(braces.length == 0){
+                        var err = SyntaxError(
+                            `unmatched '${token.string}'`)
+                        err.offset = token.start[1]
+                        throw err
+                    }else if($B.last(braces).string != opening[token.string]){
+                        var err = SyntaxError("closing parenthesis " +
+                            `'${token.string}' does not match opening ` +
+                            `parenthesis '${$B.last(braces).string}'`)
+                        err.offset = token.start[1]
+                        throw err
+                    }else{
+                        braces.pop()
+                    }
+                }
+            }else if(token.type == 'NEWLINE'){
                 return false
-            }else if('([{'. indexOf(token) > -1){
-                braces++
-            }else if(')]}'.indexOf(token) > -1){
-                braces--
             }
         }else{
-            return token == '\n'
+            return token.type == 'NEWLINE'
         }
     }
     return false
 }
 
-var $tokenize = $B.parser.$tokenize = function(root, src) {
-    var br_close = {")": "(", "]": "[", "}": "{"},
-        br_stack = "",
-        br_pos = []
-    var kwdict = [
-        "class", "return", "break", "for", "lambda", "try", "finally",
-        "raise", "def", "from", "nonlocal", "while", "del", "global",
-        "with", "as", "elif", "else", "if", "yield", "assert", "import",
-        "except", "raise", "in", "pass", "with", "continue", "__debugger__",
-        "async", "await"
-        ]
+function prepare_number(n){
+    // n is a numric literal
+    // return an object {type: <int | float | imaginary>, value}
+    n = n.replace(/_/g, "")
+    if(n.startsWith('.')){
+        if(n.endsWith("j")){
+            return {type: 'imaginary', value: n.substr(0, n.length - 1)}
+        }else{
+            return {type: 'float', value: n}
+        }
+        pos = j
+    }else if(n.startsWith('0') && n != '0'){
+        // octal, hexadecimal, binary
+        var num = test_num(n),
+            base
+        if(num.imaginary){
+            return {type: 'imaginary', value: num.value}
+        }
+        if(num.subtype == 'float'){
+            return {type: num.subtype, value: num.value}
+        }
+        if(num.subtype === undefined){
+            base = 10
+        }else{
+            base = {'b': 2, 'o': 8, 'x': 16}[num.subtype]
+        }
+        if(base !== undefined){
+            return{type: 'int', value: [base, num.value]}
+        }
+    }else{
+        var num = test_num(n)
+        if(num.subtype == "float"){
+           return {
+               type: num.imaginary ? 'imaginary' : 'float',
+               value: num.value
+           }
+        }else{
+            return {
+               type: num.imaginary ? 'imaginary' : 'int',
+               value: num.imaginary ? num.value : [10, num.value]
+           }
+       }
+    }
+}
+
+function test_escape(context, text, string_start, antislash_pos){
+    // Test if the escape sequence starting at position "antislah_pos" in text
+    // is is valid
+    // $pos is set at the position before the string quote in original string
+    // string_start is the position of the first character after the quote
+    // text is the content of the string between quotes
+    // antislash_pos is the position of \ inside text
+    var seq_end,
+        mo
+    // 1 to 3 octal digits = Unicode char
+    mo = /^[0-7]{1,3}/.exec(text.substr(antislash_pos + 1))
+    if(mo){
+        return [String.fromCharCode(parseInt(mo[0], 8)), 1 + mo[0].length]
+    }
+    switch(text[antislash_pos + 1]){
+        case "x":
+            var mo = /^[0-9A-F]{0,2}/i.exec(text.substr(antislash_pos + 2))
+            if(mo[0].length != 2){
+                seq_end = antislash_pos + mo[0].length + 1
+                $pos = string_start + seq_end + 2
+                $_SyntaxError(context,
+                     ["(unicode error) 'unicodeescape' codec can't decode " +
+                     `bytes in position ${antislash_pos}-${seq_end}: truncated ` +
+                     "\\xXX escape"])
+            }else{
+                return [String.fromCharCode(parseInt(mo[0], 16)), 2 + mo[0].length]
+            }
+        case "u":
+            var mo = /^[0-9A-F]{0,4}/i.exec(text.substr(antislash_pos + 2))
+            if(mo[0].length != 4){
+                seq_end = antislash_pos + mo[0].length + 1
+                $pos = string_start + seq_end + 2
+                $_SyntaxError(context,
+                     ["(unicode error) 'unicodeescape' codec can't decode " +
+                     `bytes in position ${antislash_pos}-${seq_end}: truncated ` +
+                     "\\uXXXX escape"])
+            }else{
+                return [String.fromCharCode(parseInt(mo[0], 16)), 2 + mo[0].length]
+            }
+        case "U":
+            var mo = /^[0-9A-F]{0,8}/i.exec(text.substr(antislash_pos + 2))
+            if(mo[0].length != 8){
+                seq_end = antislash_pos + mo[0].length + 1
+                $pos = string_start + seq_end + 2
+                $_SyntaxError(context,
+                     ["(unicode error) 'unicodeescape' codec can't decode " +
+                     `bytes in position ${antislash_pos}-${seq_end}: truncated ` +
+                     "\\uXXXX escape"])
+            }else{
+                var value = parseInt(mo[0], 16)
+                if(value > 0x10FFFF){
+                    $_SyntaxError('invalid unicode escape ' + mo[0])
+                }else if(value >= 0x10000){
+                    return [SurrogatePair(value), 2 + mo[0].length]
+                }else{
+                    return [String.fromCharCode(value), 2 + mo[0].length]
+                }
+            }
+    }
+}
+
+function prepare_string(context, s, position){
+    var len = s.length,
+        pos = 0,
+        string_modifier,
+        _type = "string"
+    while(pos < len){
+        if(s[pos] == '"' || s[pos] == "'"){
+            quote = s[pos]
+            string_modifier = s.substr(0, pos)
+            if(s.substr(pos, 3) == quote.repeat(3)){
+                _type = "triple_string"
+                inner = s.substring(pos + 3, s.length - 3)
+            }else{
+                inner = s.substring(pos + quote.length,
+                    len - quote.length)
+            }
+            break
+        }
+        pos++
+    }
+    var result = {quote}
+    var mods = {r: 'raw', f: 'fstring', b: 'bytes'}
+    for(var mod of string_modifier){
+        result[mods[mod]] = true
+    }
+
+    var raw = context.type == 'str' && context.raw,
+        string_start = $pos + pos + 1,
+        bytes = false,
+        fstring = false,
+        sm_length, // length of string modifier
+        end = null;
+    if(string_modifier){
+        switch(string_modifier) {
+            case 'r': // raw string
+                raw = true
+                break
+            case 'u':
+                // in string literals, '\U' and '\u' escapes in raw strings
+                // are not treated specially.
+                break
+            case 'b':
+                bytes = true
+                break
+            case 'rb':
+            case 'br':
+                bytes = true
+                raw = true
+                break
+            case 'f':
+                fstring = true
+                sm_length = 1
+                break
+            case 'fr':
+            case 'rf':
+                fstring = true
+                sm_length = 2
+                raw = true
+                break
+        }
+        string_modifier = false
+    }
+
+    var escaped = false,
+        zone = '',
+        end = 0,
+        src = inner
+    while(end < src.length){
+        if(escaped){
+            if(src.charAt(end) == "a"){
+                zone = zone.substr(0, zone.length - 1) + "\u0007"
+            }else{
+                zone += src.charAt(end)
+                if(raw && src.charAt(end) == '\\'){zone += '\\'}
+            }
+            escaped = false
+            end++
+        }else if(src.charAt(end) == "\\"){
+            if(raw){
+                if(end < src.length - 1 &&
+                        src.charAt(end + 1) == quote){
+                    zone += '\\\\' + quote
+                    end += 2
+                }else{
+                    zone += '\\\\'
+                    end++
+                }
+                escaped = true
+            }else{
+                if(src.charAt(end + 1) == '\n'){
+                    // explicit line joining inside strings
+                    end += 2
+                }else if(src.substr(end + 1, 2) == 'N{'){
+                    // Unicode literal ?
+                    var end_lit = end + 3,
+                        re = new RegExp("[-a-zA-Z0-9 ]+"),
+                        search = re.exec(src.substr(end_lit))
+                    if(search === null){
+                        $_SyntaxError(context,"(unicode error) " +
+                            "malformed \\N character escape", pos)
+                    }
+                    var end_lit = end_lit + search[0].length
+                    if(src.charAt(end_lit) != "}"){
+                        $_SyntaxError(context, "(unicode error) " +
+                            "malformed \\N character escape")
+                    }
+                    var description = search[0].toUpperCase()
+                    // Load unicode table if not already loaded
+                    if($B.unicodedb === undefined){
+                        var xhr = new XMLHttpRequest
+                        xhr.open("GET",
+                            $B.brython_path + "unicode.txt", false)
+                        xhr.onreadystatechange = function(){
+                            if(this.readyState == 4){
+                                if(this.status == 200){
+                                    $B.unicodedb = this.responseText
+                                }else{
+                                    console.log("Warning - could not " +
+                                        "load unicode.txt")
+                                }
+                            }
+                        }
+                        xhr.send()
+                    }
+                    if($B.unicodedb !== undefined){
+                        var re = new RegExp("^([0-9A-F]+);" +
+                            description + ";.*$", "m")
+                        search = re.exec($B.unicodedb)
+                        if(search === null){
+                            $_SyntaxError(context, "(unicode error) " +
+                                "unknown Unicode character name")
+                        }
+                        var cp = "0x" + search[1] // code point
+                        zone += String.fromCodePoint(eval(cp))
+                        end = end_lit + 1
+                    }else{
+                        end++
+                    }
+                }else{
+                    var esc = test_escape(context, src, string_start,
+                                          end)
+                    if(esc){
+                        if(esc[0] == '\\'){
+                            zone += '\\\\'
+                        }else{
+                            zone += esc[0]
+                        }
+                        end += esc[1]
+                    }else{
+                        if(end < src.length - 1 &&
+                            is_escaped[src.charAt(end + 1)] === undefined){
+                                zone += '\\'
+                        }
+                        zone += '\\'
+                        escaped = true
+                        end++
+                    }
+                }
+            }
+        }else if(src.charAt(end) == '\n' && _type != 'triple_string'){
+            // In a string with single quotes, line feed not following
+            // a backslash raises SyntaxError
+            console.log(pos, end, src.substring(pos, end))
+            $_SyntaxError(context, ["EOL while scanning string literal"])
+        }else{
+            zone += src.charAt(end)
+            end++
+        }
+    }
+    var $string = zone,
+        string = ''
+
+    // Escape quotes inside string, except if they are
+    // already escaped.
+    // In raw mode, always escape.
+    for(var i = 0; i < $string.length; i++){
+        var $car = $string.charAt(i)
+        if($car == quote){
+            if(raw || (i == 0 ||
+                    $string.charAt(i - 1) != '\\')){
+                string += '\\'
+            }else if(_type == "triple_string"){
+                // Unescaped quotes in triple string are allowed
+                var j = i - 1
+                while($string.charAt(j) == '\\'){
+                    j--
+                }
+                if((i - j - 1) % 2 == 0){
+                    string += '\\'
+                }
+            }
+        }
+        string += $car
+    }
+
+    if(fstring){
+        try{
+            var re = new RegExp("\\\\" + quote, "g"),
+                string_no_bs = string.replace(re, quote)
+            var elts = $B.parse_fstring(string_no_bs) // in py_string.js
+        }catch(err){
+            if(err.position){
+                $pos += err.position
+            }
+            $_SyntaxError(context, [err.message])
+        }
+    }
+
+    if(bytes){
+        result.value = 'b' + quote + string + quote
+    }else if(fstring){
+        result.value = elts
+    }else{
+        result.value = quote + string + quote
+    }
+    context.raw = raw;
+    return result
+}
+
+function unindent(src){
+    // Brython supports scripts that don't start at column 0
+    // Return unindented source, or raise SyntaxError if a line starts at a
+    // column lesser than the first line.
+    var lines = src.split('\n'),
+        line,
+        global_indent,
+        indent,
+        unindented_lines = []
+
+    for(var line_num = 0, len = lines.length; line_num < len; line_num++){
+        line = lines[line_num]
+        indent = line.match(/^\s*/)[0]
+        if(indent != line){ // non whitespace-only line
+            if(global_indent === undefined){
+                // The indentation of the first non-whitespace line sets the
+                // "global indentation" for the whole script.
+                if(indent.length == 0){
+                    // Return source code unchanged if no global indentation
+                    return src
+                }
+                global_indent = indent
+                var start = global_indent.length
+                unindented_lines.push(line.substr(start))
+            }else if(line.startsWith(global_indent)){
+                unindented_lines.push(line.substr(start))
+            }else{
+                throw SyntaxError("first line starts at " +
+                   `column ${start}, line ${line_num} at column ` +
+                   line.match(/\s*/).length + '\n    ' + line)
+            }
+        }else{
+            unindented_lines.push('')
+        }
+    }
+    return unindented_lines.join('\n')
+}
+
+function handle_errortoken(context, token){
+    if(token.string == "'" || token.string == '"'){
+        $_SyntaxError(context, ['unterminated string literal ' +
+            `(detected at line ${token.start[0]})`])
+    }
+    $_SyntaxError(context, 'invalid token ' + token[1] + _b_.ord(token[1]))
+}
+
+var python_keywords = [
+    "class", "return", "break", "for", "lambda", "try", "finally",
+    "raise", "def", "from", "nonlocal", "while", "del", "global",
+    "with", "as", "elif", "else", "if", "yield", "assert", "import",
+    "except", "raise", "in", "pass", "with", "continue", "__debugger__",
+    "async", "await"
+]
+
+var dispatch_tokens = $B.parser.dispatch_tokens = function(root, src){
+    var tokenizer = $B.tokenizer(src)
+    var braces_close = {")": "(", "]": "[", "}": "{"},
+        braces_open = "([{",
+        braces_stack = []
+
     var unsupported = []
     var $indented = [
         "class", "def", "for", "condition", "single_kw", "try", "except",
@@ -10510,699 +12269,236 @@ var $tokenize = $B.parser.$tokenize = function(root, src) {
         "match", "case" // PEP 622 (pattern matching)
     ]
 
-    var context = null
-    var new_node = new $Node(),
-        current = root,
-        name = "",
-        _type = null,
-        pos = 0,
-        indent = null,
-        string_modifier = false
-
     var module = root.module
 
     var lnum = root.line_num === undefined ? 1 : root.line_num
-    while(pos < src.length){
-        var car = src.charAt(pos)
-        // build tree structure from indentation
-        if(indent === null){
-            var indent = 0
-            while(pos < src.length){
-                var _s = src.charAt(pos)
-                if(_s == " "){indent++; pos++}
-                else if(_s == "\t"){
-                    // tab : fill until indent is multiple of 8
-                    indent++; pos++
-                    if(indent % 8 > 0){indent += 8 - indent % 8}
-                }else{break}
+
+    var node = new $Node()
+    node.line_num = lnum
+    root.add(node)
+    var context = null,
+        expect_indent = false,
+        indent = 0
+
+    // line2pos maps line numbers to position of first character in line
+    var line2pos = {0: 0, 1: 0},
+        line_num = 1
+    for(var pos = 0, len = src.length; pos < len; pos++){
+        if(src[pos] == '\n'){
+            line_num++
+            line2pos[line_num] = pos + 1
+        }
+    }
+
+    while(true){
+        try{
+            var token = tokenizer.next()
+        }catch(err){
+            if(err.type == 'IndentationError'){
+                context = context || new $NodeCtx(node)
+                $pos = line2pos[err.line_num]
+                $_SyntaxError(context, err.message, 1)
+            }else if(err instanceof SyntaxError){
+                if(braces_stack.length > 0){
+                    var last_brace = $B.last(braces_stack),
+                        start = last_brace.start
+                    context.$pos = line2pos[start[0]] + start[1]
+                    $_SyntaxError(context, [`'${last_brace.string}' was ` +
+                       'never closed'])
+                }
+                $_SyntaxError(context, err.message)
             }
-            // ignore empty lines
-            var _s = src.charAt(pos)
-            if(_s == '\n'){
-                pos++; lnum++; indent = null;
+            throw err
+        }
+        if(token.done){
+            throw Error('token done without ENDMARKER.')
+        }
+        token = token.value
+        if(token[2] === undefined){
+            console.log('token incomplet', token, 'module', module, root)
+            console.log('src', src)
+        }
+        if(token.start === undefined){
+            console.log('no start', token)
+        }
+        lnum = token.start[0]
+        $pos = line2pos[lnum] + token.start[1]
+        //console.log(token, 'lnum', lnum)
+        //console.log('context', context)
+        if(expect_indent &&
+                ['INDENT', 'COMMENT', 'NL'].indexOf(token.type) == -1){
+            context = context || new $NodeCtx(node)
+            $_SyntaxError(context, "expected an indented block", expect_indent)
+        }
+
+        switch(token.type){
+            case 'ENDMARKER':
+                // Check that all "yield"s are in a function
+                if(root.yields_func_check){
+                    var save_pos = $pos
+                    for(const _yield of root.yields_func_check){
+                        $pos = _yield[1]
+                        _yield[0].check_in_function()
+                    }
+                    $pos = save_pos
+                }
+                if(indent != 0){
+                    $_SyntaxError(node.context, 'expected an indented block',
+                        1)
+                }
+                if(node.context === undefined || node.context.tree.length == 0){
+                    node.parent.children.pop()
+                }
+                return
+            case 'ENCODING':
+            case 'TYPE_COMMENT':
                 continue
-            }
-            else if(_s == '#'){ // comment
-                var offset = src.substr(pos).search(/\n/)
-                if(offset == -1){break}
-                pos += offset + 1
-                lnum++
-                indent = null
+            case 'NL':
+                if((! node.context) || node.context.tree.length == 0){
+                    node.line_num++
+                }
                 continue
-            }
-            new_node.indent = indent
-            new_node.line_num = lnum
-            new_node.module = module
-            new_node.pos = pos
-
-            if(current.is_body_node){
-                // eg in "def f(): yield from A"
-                // A "body node" starts after the ":" and has no indent
-                // initially set, so we take the number of spaces after the ":"
-                current.indent = indent
-            }
-
-            // attach new node to node with indentation immediately smaller
-            if(indent > current.indent){
-                // control that parent ended with ':'
-                if(context !== null){
-                    if($indented.indexOf(context.tree[0].type) == -1){
-                        $pos = pos
-                        console.log('type not indented', context.tree[0].type)
-                        $_SyntaxError(context, 'unexpected indent', pos)
-                    }
+            case 'COMMENT':
+                var end = line2pos[token.end[0]] + token.end[1]
+                root.comments.push([$pos, end - $pos])
+                continue
+            case 'ERRORTOKEN':
+                context = context || new $NodeCtx(node)
+                if(token.string != ' '){
+                    handle_errortoken(context, token)
                 }
-                // add a child to current node
-                current.add(new_node)
-            }else if(indent <= current.indent && context && context.tree[0] &&
-                    $indented.indexOf(context.tree[0].type) > -1 &&
-                    context.tree.length < 2){
-                $pos = pos
-                $_SyntaxError(context, 'expected an indented block',pos)
-            }else{ // same or lower level
-                while(indent !== current.indent){
-                    current = current.parent
-                    if(current === undefined || indent > current.indent){
-                        $pos = pos
-                        $_SyntaxError(context, 'unexpected indent', pos)
-                    }
-                }
-                current.parent.add(new_node)
-            }
-            current = new_node
-            context = new $NodeCtx(new_node)
-            continue
+                continue
         }
-        // comment
-        if(car == "#"){
-            var end = src.substr(pos + 1).search('\n')
-            if(end == -1){end = src.length - 1}
-            // Keep track of comment positions
-            root.comments.push([pos, end])
-            pos += end + 1
-            continue
+        // create context if needed
+        switch(token[0]){
+            case 'NAME':
+            case 'NUMBER':
+            case 'OP':
+            case 'STRING':
+                context = context || new $NodeCtx(node)
         }
-        // string
-        if(car == '"' || car == "'"){
-            var raw = context.type == 'str' && context.raw,
-                string_start = pos,
-                bytes = false,
-                fstring = false,
-                sm_length, // length of string modifier
-                end = null;
-            if(string_modifier){
-                switch(string_modifier) {
-                    case 'r': // raw string
-                        raw = true
-                        break
-                    case 'u':
-                        // in string literals, '\U' and '\u' escapes in raw strings
-                        // are not treated specially.
-                        break
-                    case 'b':
-                        bytes = true
-                        break
-                    case 'rb':
-                    case 'br':
-                        bytes = true; raw = true
-                        break
-                    case 'f':
-                        fstring = true
-                        sm_length = 1
-                        break
-                    case 'fr':
-                    case 'rf':
-                        fstring = true
-                        sm_length = 2
-                        raw = true
-                        break
-                }
-                string_modifier = false
-            }
-            if(src.substr(pos, 3) == car + car + car){
-                _type = "triple_string"
-                end = pos + 3
-            }else{
-                _type = "string"
-                end = pos + 1
-            }
-            var escaped = false,
-                zone = car,
-                found = false
-            while(end < src.length){
-                if(escaped){
-                    if(src.charAt(end) == "a"){
-                        zone = zone.substr(0, zone.length - 1) + "\u0007"
-                    }else{
-                        zone += src.charAt(end)
-                        if(raw && src.charAt(end) == '\\'){zone += '\\'}
-                    }
-                    escaped = false
-                    end++
-                }else if(src.charAt(end) == "\\"){
-                    if(raw){
-                        if(end < src.length - 1 &&
-                                src.charAt(end + 1) == car){
-                            zone += '\\\\' + car
-                            end += 2
-                        }else{
-                            zone += '\\\\'
-                            end++
-                        }
-                        escaped = true
-                    }else{
-                        if(src.charAt(end + 1) == '\n'){
-                            // explicit line joining inside strings
-                            end += 2
-                            lnum++
-                        }else if(src.substr(end + 1, 2) == 'N{'){
-                            // Unicode literal ?
-                            var end_lit = end + 3,
-                                re = new RegExp("[-a-zA-Z0-9 ]+"),
-                                search = re.exec(src.substr(end_lit))
-                            if(search === null){
-                                $_SyntaxError(context,"(unicode error) " +
-                                    "malformed \\N character escape", pos)
-                            }
-                            var end_lit = end_lit + search[0].length
-                            if(src.charAt(end_lit) != "}"){
-                                $_SyntaxError(context, "(unicode error) " +
-                                    "malformed \\N character escape")
-                            }
-                            var description = search[0].toUpperCase()
-                            // Load unicode table if not already loaded
-                            if($B.unicodedb === undefined){
-                                var xhr = new XMLHttpRequest
-                                xhr.open("GET",
-                                    $B.brython_path + "unicode.txt", false)
-                                xhr.onreadystatechange = function(){
-                                    if(this.readyState == 4){
-                                        if(this.status == 200){
-                                            $B.unicodedb = this.responseText
-                                        }else{
-                                            console.log("Warning - could not " +
-                                                "load unicode.txt")
-                                        }
-                                    }
-                                }
-                                xhr.send()
-                            }
-                            if($B.unicodedb !== undefined){
-                                var re = new RegExp("^([0-9A-F]+);" +
-                                    description + ";.*$", "m")
-                                search = re.exec($B.unicodedb)
-                                if(search === null){
-                                    $_SyntaxError(context, "(unicode error) " +
-                                        "unknown Unicode character name")
-                                }
-                                var cp = "0x" + search[1] // code point
-                                zone += String.fromCodePoint(eval(cp))
-                                end = end_lit + 1
-                            }else{
-                                end++
-                            }
-                        }else{
-                            var esc = test_escape(context, src, string_start,
-                                                  end)
-                            if(esc){
-                                if(esc[0] == '\\'){
-                                    zone += '\\\\'
-                                }else{
-                                    zone += esc[0]
-                                }
-                                end += esc[1]
-                            }else{
-                                if(end < src.length - 1 &&
-                                    is_escaped[src.charAt(end + 1)] === undefined){
-                                        zone += '\\'
-                                }
-                                zone += '\\'
-                                escaped = true
-                                end++
-                            }
-                        }
-                    }
-                }else if(src.charAt(end) == '\n' && _type != 'triple_string'){
-                    // In a string with single quotes, line feed not following
-                    // a backslash raises SyntaxError
-                    console.log(pos, end, src.substring(pos, end))
-                    $pos = end
-                    $_SyntaxError(context, ["EOL while scanning string literal"])
-                }else if(src.charAt(end) == car){
-                    if(_type == "triple_string" &&
-                            src.substr(end, 3) != car + car + car){
-                        zone += src.charAt(end)
-                        end++
-                    }else{
-                        found = true
-                        // end of string
-                        $pos = pos
-                        var $string = zone.substr(1),
-                            string = ''
 
-                        // Escape quotes inside string, except if they are
-                        // already escaped.
-                        // In raw mode, always escape.
-                        for(var i = 0; i < $string.length; i++){
-                            var $car = $string.charAt(i)
-                            if($car == car){
-                                if(raw || (i == 0 ||
-                                        $string.charAt(i - 1) != '\\')){
-                                    string += '\\'
-                                }else if(_type == "triple_string"){
-                                    // Unescaped quotes in triple string are allowed
-                                    var j = i - 1
-                                    while($string.charAt(j) == '\\'){
-                                        j--
-                                    }
-                                    if((i - j - 1) % 2 == 0){
-                                        string += '\\'
-                                    }
-                                }
-                            }
-                            string += $car
-                        }
-
-                        if(fstring){
-                            try{
-                                var re = new RegExp("\\\\" + car, "g"),
-                                    string_no_bs = string.replace(re, car)
-                                var elts = $B.parse_fstring(string_no_bs) // in py_string.js
-                            }catch(err){
-                                if(err.position){
-                                    $pos += err.position
-                                }
-                                $_SyntaxError(context, [err.message])
-                            }
-                        }
-
-                        if(bytes){
-                            context = $transition(context, 'str',
-                                'b' + car + string + car)
-                        }else if(fstring){
-                            $pos -= sm_length
-                            context = $transition(context, 'str', elts)
-                            $pos += sm_length
-                        }else{
-                            context = $transition(context, 'str',
-                                car + string + car)
-                        }
-                        context.raw = raw;
-                        pos = end + 1
-                        if(_type == "triple_string"){
-                            pos = end + 3
-                        }
-                        break
-                    }
-                }else{
-                    zone += src.charAt(end)
-                    if(src.charAt(end) == '\n'){lnum++}
-                    end++
-                }
-            }
-            if(!found){
-                if(_type === "triple_string"){
-                    $_SyntaxError(context, "Triple string end not found")
-                }else{
-                    $_SyntaxError(context, "String end not found")
-                }
-            }
-            continue
-        }
-        // identifier ?
-        if(name == "" && car != '$'){
-            // $B.unicode_tables is defined in unicode_data.js. Its attributes
-            // XID_Start and XID_Continue are objects with keys = the code
-            // points of valid characters for identifiers.
-            // Cf. https://docs.python.org/3/reference/lexical_analysis.html#identifiers
-            var cp = src.charCodeAt(pos),
-                name = ''
-            if(cp >= 0xD800 && cp <= 0xDBFF){
-                cp = _b_.ord(src.substr(pos, 2))
-                car = src.substr(pos, 2)
-                pos++
-            }
-            if($B.unicode_tables.XID_Start[cp]){
-                name = car
-                var p0 = pos
-                pos++
-                while(pos < src.length){
-                    car = src[pos]
-                    cp = src.charCodeAt(pos)
-                    if(cp >= 0xD800 && cp <= 0xDBFF){
-                        cp = _b_.ord(src.substr(pos, 2))
-                        car = src.substr(pos, 2)
-                        pos++
-                    }
-                    if($B.unicode_tables.XID_Continue[cp]){
-                        name += car
-                        pos++
-                    }else{
-                        break
-                    }
-                }
-            }
-            if(name){
-                if(kwdict.indexOf(name) > -1){
-                    $pos = pos - name.length
+        switch(token[0]){
+            case 'NAME':
+                var name = token[1]
+                if(python_keywords.indexOf(name) > -1){
                     if(unsupported.indexOf(name) > -1){
                         $_SyntaxError(context,
                             "Unsupported Python keyword '" + name + "'")
                     }
                     context = $transition(context, name)
-                }else if(typeof $operators[name] == 'string' &&
-                        ['is_not', 'not_in'].indexOf(name) == -1){
-                    // Literal operators : "and", "or", "is", "not"
-                    // The additional test is to exclude the name "constructor"
-                    if(name == 'is'){
-                        // if keyword is "is", see if it is followed by "not"
-                        var re = /^\s+not\s+/
-                        var res = re.exec(src.substr(pos))
-                        if(res !== null){
-                            pos += res[0].length
-                            $pos = pos - name.length
-                            context = $transition(context, 'op', 'is_not')
-                        }else{
-                            $pos = pos - name.length
-                            context = $transition(context, 'op', name)
-                        }
-                    }else if(name == 'not'){
-                        // if keyword is "not", see if it is followed by "in"
-                        var re = /^\s+in\s+/
-                        var res = re.exec(src.substr(pos))
-                        if(res !== null){
-                            pos += res[0].length
-                            $pos = pos - name.length
-                            context = $transition(context, 'op', 'not_in')
-                        }else{
-                            $pos = pos - name.length
-                            context = $transition(context, name)
-                        }
-                    }else{
-                        $pos = pos - name.length
-                        context = $transition(context, 'op', name)
-                    }
-                }else if((src.charAt(pos) == '"' || src.charAt(pos) == "'")
-                        && ['r', 'b', 'u', 'rb', 'br', 'f', 'fr', 'rf'].
-                            indexOf(name.toLowerCase()) !== -1){
-                    string_modifier = name.toLowerCase()
-                    name = ""
-                    continue
+                }else if(name == 'not'){
+                    context = $transition(context, 'not')
+                }else if(typeof $operators[name] == 'string'){
+                    // Literal operators : "and", "or", "is"
+                    context = $transition(context, 'op', name)
                 }else{
-                    if($B.forbidden.indexOf(name) > -1){name = '$$' + name}
-                    $pos = pos - name.length
                     context = $transition(context, 'id', name)
                 }
-                name = ""
                 continue
-            }
-        }
-
-        function rmu(numeric_literal){
-            return numeric_literal.replace(/_/g, "")
-        }
-
-        switch(car) {
-            case ' ':
-            case '\t':
-                pos++
-                break
-            case '.':
-                // point, ellipsis (...)
-                if(pos < src.length - 1 && /^\d$/.test(src.charAt(pos + 1))){
-                    // number starting with . : add a 0 before the point
-                    var j = pos + 1
-                    while(j < src.length &&
-                        src.charAt(j).search(/\d|e|E|_/) > -1){j++}
-                    if(src.charAt(j) == "j"){
-                        context = $transition(context, 'imaginary',
-                            '0' + rmu(src.substr(pos, j - pos)))
-                        j++
-                    }else{
-                        context = $transition(context, 'float',
-                            '0' + rmu(src.substr(pos, j - pos)))
+            case 'OP':
+                var op = token[1]
+                if((op.length == 1 && '()[]{}.,='.indexOf(op) > -1) ||
+                        [':='].indexOf(op) > -1){
+                    if(braces_open.indexOf(op) > -1){
+                        braces_stack.push(token)
+                    }else if(braces_close[op]){
+                        if(braces_stack.length == 0){
+                            $_SyntaxError(context, "unmatched '" + op + "'")
+                        }else{
+                            var last_brace = $B.last(braces_stack)
+                            if(last_brace.string == braces_close[op]){
+                                braces_stack.pop()
+                            }else{
+                                $_SyntaxError(context,
+                                    [`closing parenthesis '${op}' does not ` +
+                                    `match opening parenthesis '` +
+                                    `${last_brace.string}'`])
+                           }
+                       }
                     }
-                    pos = j
-                    break
-                }
-                $pos = pos
-                context = $transition(context, '.')
-                pos++
-                break
-            case '0':
-              // octal, hexadecimal, binary
-              var num = test_num(context, src.substr(pos)),
-                  base
-              if(num.subtype === undefined){
-                  if(num.value != "0"){
-                      base = 10
-                  }
-              }else{
-                  base = {'b': 2, 'o': 8, 'x': 16}[num.subtype]
-              }
-              if(base !== undefined){
-                  context = $transition(context, 'int',
-                      [base, num.value])
-                  pos += num.length
-                  break
-              }
-
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
-            case '9':
-                // digit
-                $pos = pos
-                var num = test_num(context, src.substr(pos))
-                if(num.subtype == "float"){
-                   context = $transition(context,
-                       num.imaginary ? 'imaginary' : 'float',
-                       num.value)
-                }else{
-                    context = $transition(context,
-                       num.imaginary ? 'imaginary' : 'int',
-                       num.imaginary ? num.value :
-                           [10, num.value])
-               }
-               pos += num.length
-               break
-            case '\n':
-                // line end
-               lnum++
-                if(br_stack.length > 0){
-                    // implicit line joining inside brackets
-                    pos++
-                }else{
-                    if(current.context.tree.length > 0 || current.context.async){
-                        $pos = pos
-                        context = $transition(context, 'eol')
-                        indent = null
-                        new_node = new $Node()
-                    }else{
-                        new_node.line_num = lnum
+                    context = $transition(context, token[1])
+                }else if(op == ':'){
+                    context = $transition(context, ':')
+                    if(context.node && context.node.is_body_node){
+                        node = context.node
                     }
-                    pos++
-                }
-                break
-            case '(':
-            case '[':
-            case '{':
-                br_stack += car
-                br_pos[br_stack.length - 1] = [context, pos]
-                $pos = pos
-                context = $transition(context, car)
-                pos++
-                break
-            case ')':
-            case ']':
-            case '}':
-                if(br_stack == ""){
-                    $pos = pos
-                    $_SyntaxError(context, "Unexpected closing bracket")
-                }else if(br_close[car] !=
-                        br_stack.charAt(br_stack.length - 1)){
-                    $pos = pos
-                    $_SyntaxError(context, "Unbalanced bracket")
-                }else{
-                    br_stack = br_stack.substr(0, br_stack.length - 1)
-                    $pos = pos
-                    context = $transition(context, car)
-                    pos++
-                }
-                break
-            case '=':
-                if(src.charAt(pos + 1) != "="){
-                    $pos = pos
-                    context = $transition(context, '=')
-                    pos++
-                }else{
-                    $pos = pos
-                    context = $transition(context, 'op', '==')
-                    pos += 2
-                }
-                break
-            case ',':
-            case ':':
-                $pos = pos
-                if(src.substr(pos, 2) == ":="){
-                    // PEP 572 : assignment expression
-                    context = $transition(context, ":=")
-                    pos++
-                }else{
-                    context = $transition(context, car)
-                }
-                pos++
-                break
-            case ';':
-                $transition(context, 'eol') // close previous instruction
-                // create a new node, at the same level as current's parent
-                if(current.context.tree.length == 0){
-                    // consecutive ; are not allowed
-                    $pos = pos
-                    $_SyntaxError(context, 'invalid syntax')
-                }
-                // if ; ends the line, ignore it
-                var pos1 = pos + 1
-                var ends_line = false
-                while(pos1 < src.length){
-                    var _s = src.charAt(pos1)
-                    if(_s == '\n' || _s == '#'){ends_line = true; break}
-                    else if(_s == ' '){pos1++}
-                    else{break}
-                }
-                if(ends_line){pos++; break}
-
-                new_node = new $Node()
-                new_node.indent = $get_node(context).indent
-                new_node.line_num = lnum
-                new_node.module = module
-                $get_node(context).parent.add(new_node)
-                current = new_node
-                context = new $NodeCtx(new_node)
-                pos++
-                break
-            case '/':
-            case '%':
-            case '&':
-            case '>':
-            case '<':
-            case '-':
-            case '+':
-            case '*':
-            case '@':
-            case '/':
-            case '^':
-            case '=':
-            case '|':
-            case '~':
-            case '!':
-                // Operators
-
-                // Special case for annotation syntax
-                if(car == '-' && src.charAt(pos + 1) == '>'){
+                }else if(op == '...'){
+                    context = $transition(context, 'ellipsis')
+                }else if(op == '->'){
                     context = $transition(context, 'annotation')
-                    pos += 2
-                    continue
-                }
-
-                // Special case for @ : decorator if it's the first character
-                // in the instruction
-                if(car == '@' && context.type == "node"){
-                    $pos = pos
-                    context = $transition(context, car)
-                    pos++
-                    break
-                }
-
-                // find longest match
-                var op_match = ""
-                for(var op_sign in $operators){
-                    if(op_sign == src.substr(pos, op_sign.length)
-                            && op_sign.length > op_match.length){
-                        op_match = op_sign
+                }else if(op == ';'){
+                    if(context.type == 'node' && context.tree.length == 0){
+                        $_SyntaxError(context, 'statement cannot start with ;')
                     }
-                }
-                $pos = pos
-                if(op_match.length > 0){
-                    if(op_match in $augmented_assigns){
-                        context = $transition(context, 'augm_assign', op_match)
-                    }else{
-                        context = $transition(context, 'op', op_match)
-                    }
-                    pos += op_match.length
+                    // same as NEWLINE
+                    $transition(context, 'eol')
+                    var new_node = new $Node()
+                    new_node.line_num = token[2][0] + 1
+                    context = new $NodeCtx(new_node)
+                    node.parent.add(new_node)
+                    node = new_node
+                }else if($augmented_assigns[op]){
+                    context = $transition(context, 'augm_assign', op)
                 }else{
-                    $_SyntaxError(context, 'invalid character: ' + car)
+                    context = $transition(context, 'op', op)
                 }
-                break
-            case '\\':
-                if(src.charAt(pos + 1) == '\n'){
-                  lnum++
-                  pos += 2
-                  if(pos == src.length){
-                      $_SyntaxError(context,
-                          ["unexpected EOF while parsing"])
-                  }else if(context.type == "node"){
-                      $_SyntaxError(context, 'nothing before \\')
-                  }
-                  break
+                continue
+            case 'STRING':
+                var prepared = prepare_string(context, token[1], token[2])
+                if(prepared.value instanceof Array){
+                    context = $transition(context, 'JoinedStr', prepared.value)
                 }else{
-                    $pos = pos
-                    $_SyntaxError(context,
-                        ['unexpected character after line continuation character'])
+                    context = $transition(context, 'str', prepared.value)
                 }
-            case String.fromCharCode(12): // Form Feed : ignore
-                pos += 1
-                break
-            default:
-                $pos = pos
-                $_SyntaxError(context, 'unknown token [' + car + ']')
-        }
-    }
-
-    if(br_stack.length != 0){
-        var br_err = br_pos[0]
-        $pos = br_err[1]
-        var lines = src.split("\n"),
-            id = root.id,
-            fname = id.startsWith("$") ? '<string>' : id
-        $_SyntaxError(br_err[0],
-            ["unexpected EOF while parsing (" + fname + ", line " +
-                (lines.length - 1) + ")"])
-    }
-    if(context !== null){
-        if(context.type == "async"){
-            // issue 941
-            console.log("error with async", pos, src, src.substr(pos))
-            $pos = pos - 7
-            throw $_SyntaxError(context, "car " + car + "after async", pos)
-        }else if(context.tree[0] &&
-                $indented.indexOf(context.tree[0].type) > -1){
-            $pos = pos - 1
-            $_SyntaxError(context, 'expected an indented block', pos)
-
-        }else{
-            var parent = current.parent
-            if(parent.context && parent.context.tree &&
-                    parent.context.tree[0] &&
-                    parent.context.tree[0].type == "try"){
-                $pos = pos - 1
-                $_SyntaxError(context, ["unexpected EOF while parsing"])
-            }
-            // Check that all "yield"s are in a function
-            if(root.yields_func_check){
-                var save_pos = $pos
-                for(const _yield of root.yields_func_check){
-                    $pos = _yield[1]
-                    _yield[0].check_in_function()
+                continue
+            case 'NUMBER':
+                var prepared = prepare_number(token[1])
+                if(prepared === undefined){
+                    console.log('pas de prepared pour', token)
                 }
-                $pos = save_pos
-            }
+                context = $transition(context, prepared.type, prepared.value)
+                continue
+            case 'NEWLINE':
+                if(context && context.node && context.node.is_body_node){
+                    expect_indent = context.node.parent
+                }
+                context = context || new $NodeCtx(node)
+                $transition(context, 'eol')
+                // Create a new node
+                var new_node = new $Node()
+                new_node.line_num = token[2][0] + 1
+                if(node.parent.children.length > 0 &&
+                        node.parent.children[0].is_body_node){
+                    node.parent.parent.add(new_node)
+                }else{
+                    node.parent.add(new_node)
+                }
+                context = new $NodeCtx(new_node)
+                node = new_node
+                continue
+            case 'DEDENT':
+                // The last node was added after a NEWLINE. It was attached
+                // to the current node's parent.
+                // Detach it
+                indent--
+                node.parent.children.pop()
+                // Attach new_node to new "current"
+                node.parent.parent.add(node)
+                continue
+            case 'INDENT':
+                // The last node was added after a NEWLINE set the context
+                // to "null". It was attached to the current parent. Detach
+                // it
+                indent++
+                // node.parent.children.pop()
+                // Check that it supports indentation
+                if(! expect_indent){
+                    context = context || new $NodeCtx(node)
+                    $_SyntaxError(context, 'unexpected indent', $pos)
+                }
+                expect_indent = false
+                continue
         }
     }
 }
@@ -11271,9 +12567,12 @@ $B.py2js = function(src, module, locals_id, parent_scope, line_num){
             line_num = parseInt(line_info.split(",")[0])
         }
         src = src.src
+    }else if(line_num !== undefined){
+        line_info = `${line_num},${module}`
+    }else{
+        line_num = 1
     }
-
-    // Normalise line ends
+    // Normalize line ends
     src = src.replace(/\r\n/gm, "\n")
     // Remove trailing \, cf issue 970
     // but don't hide syntax error if ends with \\, cf issue 1210
@@ -11294,10 +12593,12 @@ $B.py2js = function(src, module, locals_id, parent_scope, line_num){
     var global_ns = '$locals_' + module.replace(/\./g,'_')
 
     var root = $create_root_node(
-        {src: src, is_comp: is_comp, has_annotations: has_annotations, filename: filename},
+        {src: src, is_comp: is_comp, has_annotations: has_annotations,
+            filename: filename},
         module, locals_id, parent_scope, line_num)
 
-    $tokenize(root, src)
+    dispatch_tokens(root, src)
+    //root.ast()
 
     root.is_comp = is_comp
     if(ix != undefined){
@@ -11306,24 +12607,46 @@ $B.py2js = function(src, module, locals_id, parent_scope, line_num){
     root.transform()
 
     // Create internal variables
-    var js = ['var $B = __BRYTHON__;\n'], pos = 1
-
-    //js[pos++] = 'var $bltns = __BRYTHON__.InjectBuiltins();eval($bltns);\n\n'
-
-    js[pos++] = 'var _b_ = __BRYTHON__.builtins;\n'
-
-    js[pos] = 'var $locals = ' + local_ns
-
+    var js = 'var $B = __BRYTHON__,\n' +
+             '    _b_ = __BRYTHON__.builtins,\n'
     if(is_comp){
-        js[pos] += ' = {}'
+        js += '    ' + local_ns + ' = {},\n' +
+              '    $locals = ' + local_ns +';\n'
+    }else{
+        js += '    $locals = ' + local_ns +';\n'
     }
 
     var offset = 0
 
-    root.insert(0, $NodeJS(js.join('')))
+    root.insert(0, $NodeJS(js))
     offset++
 
     // package, if available
+    root.insert(offset++,
+        $NodeJS(local_ns + '.__package__ = "' + __package__ +'"'))
+
+    // if comprehension, set closure information
+    if(is_comp){
+        var info = '{co_argcount: 1, co_firstlineno:' + root.line_num +
+            ', co_name: "<' + is_comp + '>", co_flags: ' +
+            (is_comp == 'genexpr' ? 115 : 83) +
+            ', co_freevars: $B.fast_tuple([]), co_kwonlyargcount: 0,' +
+            'co_posonlyargount: 0'
+        if(root.varnames){
+            delete root.varnames[root.id]
+            info += ", co_varnames: $B.fast_tuple(['.0', " +
+                Object.keys(root.varnames).map(x => `'${x}'`).join(',') + '])'
+        }
+        info += '}'
+        root.insert(offset++, $NodeJS(local_ns + '.$comp_code = ' +
+           info))
+        var arg = "_expr"
+        if(is_comp == "genexpr" || is_comp == "setcomp"){
+            arg = "$locals_" + root.id
+        }
+        root.insert(offset++, $NodeJS('$locals[".0"] = ' + arg))
+    }
+
     root.insert(offset++,
         $NodeJS(local_ns + '.__package__ = "' + __package__ +'"'))
 
@@ -11349,10 +12672,12 @@ $B.py2js = function(src, module, locals_id, parent_scope, line_num){
     root.insert(enter_frame_pos + 1, try_node)
 
     // Add module body to the "try" clause
-    if(children.length == 0){children = [$NodeJS('')]} // in case the script is empty
-    children.forEach(function(child){
+    if(children.length == 0){
+        children = [$NodeJS('')] // in case the script is empty
+    }
+    for(var child of children){
         try_node.add(child)
-    })
+    }
     // add node to exit frame in case no exception was raised
     try_node.add($NodeJS('$B.leave_frame({$locals, value: _b_.None})'))
 
@@ -11431,13 +12756,21 @@ $B.set_import_paths = function(){
     $B.path_hooks = path_hooks
 }
 
-var brython = $B.parser.brython = function(options){
+$B.parse_options = function(options){
     // By default, only set debug level
-    if(options === undefined){options = {'debug': 1}}
+    if(options === undefined){
+        options = {debug: 1}
+    }else if(typeof options == 'number'){
+        options = {debug: options}
+    }else if(typeof options !== 'object'){
+        console.warn('ignoring invalid argument passed to brython():',
+            options)
+        options = {debug: 1}
+    }
 
     // If the argument provided to brython() is a number, it is the debug
     // level
-    if(typeof options == 'number'){options = {'debug': options}}
+
     if(options.debug === undefined){options.debug = 1}
     $B.debug = options.debug
     // set built-in variable __debug__
@@ -11482,6 +12815,9 @@ var brython = $B.parser.brython = function(options){
     if (options.brython_path !== undefined) {
         $B.brython_path = options.brython_path
     }
+    
+    // Default extension used in imports (cf. issue #1748)
+    options.python_extension = options.python_extension || '.py'
 
     // Or it can be provided as a list of strings or path objects
     // where a path object has at least a path attribute and, optionally,
@@ -11494,7 +12830,7 @@ var brython = $B.parser.brython = function(options){
     // otherwise it should be present and false
 
     if(options.python_paths){
-        options.python_paths.forEach(function(path){
+        for(var path of options.python_paths){
             var lang, prefetch
             if(typeof path !== "string"){
                 lang = path.lang
@@ -11507,8 +12843,10 @@ var brython = $B.parser.brython = function(options){
                 $B.path_importer_cache[path + '/'] =
                     $B.imported['_importlib'].VFSPathFinder(path)
             }
-            if(lang){_importlib.optimize_import_for_path(path, lang)}
-        })
+            if(lang){
+                _importlib.optimize_import_for_path(path, lang)
+            }
+        }
     }
 
     if(!($B.isWebWorker || $B.isNode)){
@@ -11535,6 +12873,11 @@ var brython = $B.parser.brython = function(options){
     }else{
         $B.__ARGV = _b_.list.$factory([])
     }
+}
+
+
+var brython = $B.parser.brython = function(options){
+    $B.parse_options(options)
     if(!($B.isWebWorker || $B.isNode)){
         _run_scripts(options)
     }
@@ -11544,7 +12887,6 @@ var brython = $B.parser.brython = function(options){
 $B.run_script = function(src, name, url, run_loop){
     // run_loop is set to true if run_script is added to tasks in
     // ajax_load_script
-    $B.$py_module_path[name] = $B.script_path
     try{
         var root = $B.py2js(src, name, name),
             js = root.to_js(),
@@ -11568,7 +12910,7 @@ $B.run_script = function(src, name, url, run_loop){
         var imports1 = Object.keys(root.imports).slice(),
             imports = imports1.filter(function(item){
                 return $B.VFS.hasOwnProperty(item)})
-        Object.keys(imports).forEach(function(name){
+        for(var name of Object.keys(imports)){
             if($B.VFS.hasOwnProperty(name)){
                 var submodule = $B.VFS[name],
                     type = submodule[0]
@@ -11582,14 +12924,14 @@ $B.run_script = function(src, name, url, run_loop){
                         // Add stdlib modules recursively imported
                         required_stdlib_imports(subimports)
                     }
-                    subimports.forEach(function(mod){
+                    for(var mod of subimports){
                         if(imports.indexOf(mod) == -1){
                             imports.push(mod)
                         }
-                    })
+                    }
                 }
             }
-        })
+        }
         // Add task to stack
         for(var j = 0; j < imports.length; j++){
             $B.tasks.push([$B.inImported, imports[j]])
@@ -11626,7 +12968,7 @@ var _run_scripts = $B.parser._run_scripts = function(options){
             throw _b_.ValueError.$factory("ids is not a list")
         }
         var scripts = []
-        options.ids.forEach(function(id){
+        for(var id of options.ids){
             var elt = document.getElementById(id)
             if(elt === null){
                 throw _b_.KeyError.$factory(`no script with id '${id}'`)
@@ -11635,7 +12977,7 @@ var _run_scripts = $B.parser._run_scripts = function(options){
                 throw _b_.KeyError.$factory(`element ${id} is not a script`)
             }
             scripts.push(elt)
-        })
+        }
     }else{
         var scripts = document.getElementsByTagName('script')
     }
@@ -11662,10 +13004,9 @@ var _run_scripts = $B.parser._run_scripts = function(options){
     if(options.ipy_id !== undefined){
         module_name = '__main__'
         var $src = "", js, root
-        $B.$py_module_path[module_name] = $B.script_path
-        $elts.forEach(function(elt){
+        for(var elt of $elts){
             $src += (elt.innerHTML || elt.textContent)
-        })
+        }
         try{
             // Conversion of Python source code to Javascript
 
@@ -11742,6 +13083,7 @@ var _run_scripts = $B.parser._run_scripts = function(options){
             }else{
                 // Get source code inside the script element
                 src = (worker.innerHTML || worker.textContent)
+                src = unindent(src) // remove global indentation
                 // remove leading CR if any
                 src = src.replace(/^\n/, '')
                 $B.webworkers[worker.id] = src
@@ -11781,6 +13123,7 @@ var _run_scripts = $B.parser._run_scripts = function(options){
                 }else{
                     // Get source code inside the script element
                     src = (elt.innerHTML || elt.textContent)
+                    src = unindent(src) // remove global indentation
                     // remove leading CR if any
                     src = src.replace(/^\n/, '')
                     $B.tasks.push([$B.run_script, src, module_name,
@@ -11796,12 +13139,13 @@ var _run_scripts = $B.parser._run_scripts = function(options){
 
     /* Uncomment to check the names added in global Javascript namespace
     var kk1 = Object.keys(_window)
-    for (var i  =0; i < kk1.length; i++){
+    for (var i = 0; i < kk1.length; i++){
         if(kk[i] === undefined){
-            console.log(kk1[i])
+            console.log("leaking", kk1[i])
         }
     }
     */
+
 }
 
 $B.$operators = $operators
@@ -11821,3 +13165,4 @@ if (__BRYTHON__.isNode) {
     global.__BRYTHON__ = __BRYTHON__
     module.exports = { __BRYTHON__ }
 }
+

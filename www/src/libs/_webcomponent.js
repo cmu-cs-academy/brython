@@ -44,7 +44,7 @@ function define(tag_name, cls){
                         var item = _self.attributes.item(i)
                         if(attrs_before_init.indexOf(item) == -1){
                             throw _b_.TypeError.$factory("Custom element " +
-                                "must not create attributes, found: " + 
+                                "must not create attributes, found: " +
                                 item.name + '="' + item.value + '"')
                         }
                     }
@@ -55,14 +55,22 @@ function define(tag_name, cls){
         }
       }
         static get observedAttributes(){
-            try{
-                var obs_attr = $B.$getattr(cls, "observedAttributes")
-                return $B.$call(obs_attr)(cls)
-            }catch(err){
-                if(! $B.is_exc(err, [_b_.AttributeError])){
-                    throw err
-                }
+            var obs_attr = $B.$getattr(cls, "observedAttributes", null)
+            if(obs_attr === null){
                 return []
+            }else if(typeof obs_attr == "function"){
+                var warning = _b_.DeprecationWarning.$factory(
+                    "Setting observedAttributes as a method " +
+                    "is deprecated. Set it as a class attribute.")
+                // module _warning is in builtin_modules.js
+                $B.imported._warnings.warn(warning)
+                return $B.$call(obs_attr)(this)
+            }else if(Array.isArray(obs_attr)){
+                return obs_attr
+            }else{
+                throw _b_.TypeError.$factory(
+                    "wrong type for observedAttributes: " +
+                    $B.class_name(obs_attr))
             }
         }
     }

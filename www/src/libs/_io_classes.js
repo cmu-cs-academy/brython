@@ -62,7 +62,7 @@ var StringIO = $B.make_class("StringIO",
         return {
             __class__: StringIO,
             $counter: 0,
-            $string: $.value
+            $content: $.value
         }
     }
 )
@@ -71,15 +71,23 @@ StringIO.__mro__ = [$B.Reader, _b_.object]
 StringIO.getvalue = function(){
     var $ = $B.args("getvalue", 1, {self: null},
             ["self"], arguments, {}, null, null)
-    return $.self.$string
+    return $.self.$content
 }
 
 StringIO.write = function(){
     var $ = $B.args("write", 2, {self: null, data: null},
             ["self", "data"], arguments, {}, null, null)
-    $.self.$string += $.data
+    if(! _b_.isinstance($.data, _b_.str)){
+        throw _b_.TypeError.$factory('string argument expected, got ' +
+            `'${$B.class_name($.data)}'`)
+    }
+    var text = $.self.$content,
+        position = $.self.$counter
+    text = text.substr(0, position) + $.data +
+        text.substr(position + $.data.length)
+    $.self.$content = text
     $.self.$counter += $.data.length
-    return _b_.None
+    return $.data.length
 }
 $B.set_func_names(StringIO, "_io")
 
@@ -91,7 +99,7 @@ var BytesIO = $B.make_class("BytesIO",
         return {
             __class__: BytesIO,
             $binary: true,
-            $bytes: $.value,
+            $content: $.value,
             $counter: 0
         }
     }
@@ -100,18 +108,18 @@ BytesIO.__mro__ = [$B.Reader, _b_.object]
 
 BytesIO.getbuffer = function(){
     var self = get_self("getbuffer", arguments)
-    return self.$bytes
+    return self.$content
 }
 
 BytesIO.getvalue = function(){
     var self = get_self("getvalue", arguments)
-    return self.$bytes
+    return self.$content
 }
 
 BytesIO.write = function(){
     var $ = $B.args("write", 2, {self: null, data: null},
             ["self", "data"], arguments, {}, null, null)
-    $.self.$bytes.source = $.self.$bytes.source.concat(
+    $.self.$content.source = $.self.$content.source.concat(
         $.data.source)
     $.self.$counter += $.data.source.length
     return _b_.None

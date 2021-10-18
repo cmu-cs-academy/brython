@@ -603,4 +603,54 @@ assert abs(a) == 0.1
 a = 10**(-1)
 assert abs(a) == 0.1
 
+# issue 1686
+class Squared(int):
+    def __mul__(self, other):
+        return self**2 * other
+
+    def __rmul__(self, other):
+        return self**2 * other
+
+x = Squared(4)
+y = 3
+assert x * y == 48
+assert y * x == 48
+
+# augmented assignment on list item
+a = [1800]
+a[0] += -260.7
+assert a[0] == 1539.3
+
+# hash of integers
+assert hash(2 ** 61 - 2) == 2 ** 61 - 2
+assert hash(2 ** 61 - 1) == 0
+assert hash(-(2 ** 61 - 1)) == 0
+
+class Int(int):
+  pass
+
+assert hash(Int(2**61)) == 1
+
+class IntH(int):
+
+  def __hash__(self):
+     return 99
+
+assert hash(IntH(0)) == 99
+
+# issue 1784
+assert str(1 ** 1) == "1"
+assert str(pow(1, 1)) == "1"
+assert str(1 ** 0.5) == "1.0"
+assert str(pow(1, 0.5)) == "1.0"
+
+a = 2 ** 63 + 67
+assert divmod(a, 445677) == (20695194135786, 78753)
+assert divmod(a, -445677) == (-20695194135787, -366924)
+assert divmod(-a, 445677) == (-20695194135787, 366924)
+assert divmod(-a, -445677) == (20695194135786, -78753)
+
+assert str(float(a)) == "9.223372036854776e+18"
+assert str(float(-a)) == "-9.223372036854776e+18"
+
 print('passed all tests...')

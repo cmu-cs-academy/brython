@@ -115,7 +115,7 @@ bytearray.__setitem__ = function(self, arg, value){
                 if(! _b_.isinstance($temp[i], _b_.int)){
                     throw _b_.TypeError.$factory('an integer is required')
                 }else if($temp[i] > 255){
-                    throw ValueError.$factory("byte must be in range(0, 256)")
+                    throw _b_.ValueError.$factory("byte must be in range(0, 256)")
                 }
                 self.source.splice(start, 0, $temp[i])
             }
@@ -136,7 +136,7 @@ bytearray.append = function(self, b){
     if(! _b_.isinstance(b, _b_.int)){
         throw _b_.TypeError.$factory("an integer is required")
     }
-    if(b > 255){throw ValueError.$factory("byte must be in range(0, 256)")}
+    if(b > 255){throw _b_.ValueError.$factory("byte must be in range(0, 256)")}
     self.source[self.source.length] = b
 }
 
@@ -172,7 +172,7 @@ bytearray.insert = function(self, pos, b){
     if(! _b_.isinstance(b, _b_.int)){
         throw _b_.TypeError.$factory("an integer is required")
     }
-    if(b > 255){throw ValueError.$factory("byte must be in range(0, 256)")}
+    if(b > 255){throw _b_.ValueError.$factory("byte must be in range(0, 256)")}
     _b_.list.insert(self.source, pos, b)
 }
 
@@ -617,16 +617,39 @@ bytes.fromhex = function(){
 }
 
 bytes.hex = function(){
-    // Return a string object containing two hexadecimal digits for each byte
-    // in the instance.
-    var $ = $B.args('hex', 1, {self: null}, ['self'],
-            arguments, {}, null, null),
-        self = $.self,
-        res = ""
-    for(var i = 0, len = self.source.length; i < len; i++){
-        var hexa = self.source[i].toString(16)
-        if(hexa.length < 2){hexa = "0" + hexa}
-        res += hexa
+    // Return a string which is hex representation of the instance
+    // The hexstring can include a separator every specified number of bytes
+    var $ = $B.args('hex', 3, {self:null, sep:null, bytes_per_sep:null},
+            ['self','sep','bytes_per_sep'], arguments,
+            {sep: "", bytes_per_sep: 1}, null, null),
+            self = $.self,
+            sep = $.sep,
+            bytes_per_sep = $.bytes_per_sep,
+            res = "",
+            digits = "0123456789abcdef",
+            bps = bytes_per_sep,
+            jstart = bps,
+            len = self.source.length;
+    if(bytes_per_sep < 0){
+        bps = -bytes_per_sep;
+        jstart = bps
+    }else if(bytes_per_sep == 0){
+        sep = ''
+    }else{
+        jstart = len % bps
+        if(jstart == 0){
+           jstart = bps
+       }
+    }
+    for(var i = 0, j = jstart; i < len; i++){
+        var c = self.source[i]
+        if (j == 0) {
+            res += sep
+            j = bps
+        }
+        j--
+        res += digits[c >> 4]
+        res += digits[c & 0x0f]
     }
     return res
 }

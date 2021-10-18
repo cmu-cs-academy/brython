@@ -9,20 +9,8 @@ requête Ajax.
 Mots clés et fonctions intégrées
 --------------------------------
 
-Brython supporte tous les mots-clés et les fonctions de Python 3 :
-
-- mots clés : `and, as, assert, async, await, break, class, continue, def, del, elif, else, `
-  `except, False, finally, for, from, global, if, import, in, is, lambda, None, `
-  `nonlocal, not, or, pass, raise, return, True, try, while, with, yield`
-- fonctions et classes intégrées : `abs, all, any, ascii, bin, bool, breakpoint, bytes,`
-  `callable, chr, classmethod, delattr, dict, dir, divmod, `
-  `enumerate, eval, exec, filter, float, frozenset, getattr, `
-  `globals, hasattr, hash, hex, id, input, int, isinstance, `
-  `iter, len, list, locals, map, max, memoryview, min, `
-  `next, object, open, ord, pow, print, property, range, `
-  `repr, reversed, round, set, setattr, slice, sorted, str, `
-  `sum, super, tuple, type, vars, zip, __import__`
-
+Brython supporte tous les mots-clés et les fonctions intégrées de la version 
+Python de même numéro de version.
 
 Quelques particularités liées au contexte d'exécution dans un navigateur :
 
@@ -45,9 +33,7 @@ Quelques particularités liées au contexte d'exécution dans un navigateur :
 - la fonction `open()` prend comme argument l'url du fichier à ouvrir ; comme
   on utilise un appel Ajax, elle doit être dans le même domaine que le script.
   L'objet retourné par `open()` possède les méthodes de lecture et d'accès
-  habituelles : `read, readlines, seek, tell, close`. Seul le mode texte est
-  pris en compte: l'appel Ajax est bloquant et dans ce mode, on ne peut pas
-  donner de valeur à l'attribut `responseType`
+  habituelles : `read, readlines, seek, tell, close`.
 
 - par défaut, `print()` affiche sur la console du navigateur, et les messages
   d'erreur sont également affichés sur cette console. `sys.stderr` et
@@ -75,9 +61,14 @@ Bibliothèque standard
 Brython est fourni avec une partie de la bibliothèque standard de Python.
 
 Certains des modules qui sont écrits en C dans la distribution CPython ont été
-écrits en Javascript dans la distribution Brython (`math`, `random`,
-`unicodedata`...). Pour d'autres (le module `re` ou le package `json` par 
-exemple), une version en pur Python est fournie (elle est moins rapide !).
+écrits en Javascript dans la distribution Brython (`math`, `random`, `re`,
+`unicodedata`...).
+
+Le module `json` est également écrit en Javascript. Il s'appuie sur l'objet
+`JSON` de Javascript, ce qui implique quelques différences mineures avec le
+package CPython; les valeurs `NaN, Infinity, -Infinity` qui sont reconnues par
+CPython n'étant pas dans la spécification JSON produisent une `SyntaxError`
+avec le module Brython.
 
 Le package `xml` n'est pas fourni, parce que celui de la distribution
 CPython utilise un module en C (`pyexpat`) qui n'est disponible ni en

@@ -16,7 +16,7 @@ jobs:
       before_install:
         - sudo add-apt-repository -y ppa:deadsnakes/ppa
         - sudo apt-get -q update
-        - sudo apt-get -y install python3.9
+        - sudo apt-get -y install python3.10
         - python --version
         - mkdir qunit
         - wget -O qunit/qunit-1.18.0.css http://code.jquery.com/qunit/qunit-1.18.0.css
@@ -24,8 +24,8 @@ jobs:
         - npm install testem
         - ./node_modules/.bin/testem launchers
       before_script:
-        - (cd scripts && python3.9 make_doc.py)
-        - (cd scripts && python3.9 make_dist.py)
+        - (cd scripts && python3.10 make_doc.py)
+        - (cd scripts && python3.10 make_dist.py)
 
       script:
         - ./node_modules/.bin/testem --launch "Firefox,Headless Chrome" -t www/tests/qunit/run_tests.html ci

@@ -18,6 +18,8 @@ function to_simple(value){
                 return 'null'
             }else if(value instanceof Number){
                 return value.valueOf()
+            }else if(value instanceof String){
+                return value.valueOf()
             }
         default:
         console.log("erreur", value)
@@ -32,7 +34,7 @@ $B.pyobj2structuredclone = function(obj, strict){
     // If "strict" is false, dictionaries with non-string keys are supported
     strict = strict === undefined ? true : strict
     if(typeof obj == "boolean" || typeof obj == "number" ||
-            typeof obj == "string"){
+            typeof obj == "string" || obj instanceof String){
         return obj
     }else if(obj instanceof Number){
         return obj.valueOf()
@@ -72,7 +74,7 @@ $B.structuredclone2pyobj = function(obj){
     }else if(typeof obj == "boolean" || typeof obj == "number" ||
             typeof obj == "string"){
         return obj
-    }else if(obj instanceof Number){
+    }else if(obj instanceof Number || obj instanceof String){
         return obj.valueOf()
     }else if(Array.isArray(obj) || obj.__class__ === _b_.list ||
             obj.__class__ === _b_.tuple){
@@ -159,20 +161,23 @@ var jsobj2pyobj = $B.jsobj2pyobj = function(jsobj) {
         return jsobj
     }
 
-    if(jsobj === undefined){return $B.Undefined}
-    else if(jsobj === null){return _b_.None}
+    if(jsobj === undefined){
+        return $B.Undefined
+    }else if(jsobj === null){
+        return _b_.None
+    }
 
     if(Array.isArray(jsobj)){
         return _b_.list.$factory(jsobj.map(jsobj2pyobj))
-    }
-
-    if(typeof jsobj === 'number'){
-       if(jsobj.toString().indexOf('.') == -1){return _b_.int.$factory(jsobj)}
+    }else if(typeof jsobj === 'number'){
+       if(jsobj.toString().indexOf('.') == -1){
+           return _b_.int.$factory(jsobj)
+       }
        // for now, lets assume a float
        return _b_.float.$factory(jsobj)
-    }
-
-    if(typeof jsobj == "function"){
+    }else if(typeof jsobj == "string"){
+        return $B.String(jsobj)
+    }else if(typeof jsobj == "function"){
         // transform Python arguments to equivalent JS arguments
         return function(){
             var args = []
@@ -243,14 +248,16 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
         })
         return jsobj
 
-    }else if(klass === _b_.float){
+    }else if(klass === _b_.float || klass === _b_.str){
 
-        // Python floats are converted to the underlying value
+        // Python floats and strings are converted to the underlying value
         return pyobj.valueOf()
 
     }else if(klass === $B.Function || klass === $B.method){
         // Transform arguments
-        if(pyobj.prototype.constructor === pyobj && ! pyobj.$is_func){
+        if(pyobj.prototype &&
+                pyobj.prototype.constructor === pyobj &&
+                ! pyobj.$is_func){
             // pyobj is a Javascript constructor - this happens with
             // javascript.extends
             return pyobj
@@ -355,6 +362,9 @@ for(var op in ops){
 $B.JSObj.__eq__ = function(self, other){
     switch(typeof self){
         case "object":
+            if(self.__eq__ !== undefined){
+                return self.__eq__(other)
+            }
             if(Object.keys(self).length !== Object.keys(other).length){
                 return false
             }
@@ -377,7 +387,7 @@ $B.JSObj.__getattribute__ = function(self, attr){
     if(test){
         console.log("__ga__", self, attr)
     }
-    if(attr == "$$new" && typeof self == "function"){
+    if(attr == "new" && typeof self == "function"){
         // constructor
         if(self.$js_func){
             return function(){
@@ -390,9 +400,6 @@ $B.JSObj.__getattribute__ = function(self, attr){
                 return $B.JSObj.$factory(new self(...args))
             }
         }
-    }
-    if(typeof attr == "string"){
-        attr = $B.from_alias(attr)
     }
     var js_attr = self[attr]
     if(js_attr == undefined && typeof self == "function" && self.$js_func){
@@ -425,7 +432,7 @@ $B.JSObj.__getattribute__ = function(self, attr){
                 return self.addEventListener(event, callback)
             }
         }
-        throw _b_.AttributeError.$factory(attr)
+        throw $B.attr_error(attr, self)
     }
     if(typeof js_attr === 'function'){
         var res = function(){
@@ -464,9 +471,6 @@ $B.JSObj.__getattribute__ = function(self, attr){
 }
 
 $B.JSObj.__setattr__ = function(self, attr, value){
-    if(typeof attr == "string"){
-        attr = $B.from_alias(attr)
-    }
     self[attr] = $B.pyobj2structuredclone(value)
     return _b_.None
 }
@@ -531,8 +535,10 @@ $B.JSObj.__iter__ = function(self){
 }
 
 $B.JSObj.__len__ = function(self){
-    if(typeof self.length == 'number'){return self.length}
-    throw _b_.AttributeError.$factory(self + ' has no attribute __len__')
+    if(typeof self.length == 'number'){
+        return self.length
+    }
+    throw $B.attr_error('__len__', self)
 }
 
 $B.JSObj.__repr__ = $B.JSObj.__str__ = function(self){

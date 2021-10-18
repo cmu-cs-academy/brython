@@ -1,4 +1,5 @@
-var unicode_tables = __BRYTHON__.unicode_tables
+;(function($B){
+
 
 function ord(char){
     if(char.length == 1){
@@ -19,23 +20,50 @@ var ops = '.,:;+-*/%~^|&=<>[](){}@',
     augm_op = '+-*/%~^|&=<>@',
     closing = {'}': '{', ']': '[', ')': '('}
 
-function get_comment(src, pos, line_num, line_start, token_name){
+function Token(type, string, start, end, line){
+    var res = {type, string, start, end, line}
+    res[0] = type
+    res[1] = string
+    res[2] = start.slice(0, 2)
+    res[3] = end
+    res[4] = line
+    return res
+}
+
+function get_line_at(src, pos){
+    // Get the line in source code src starting at position pos
+    var end = src.substr(pos).search(/[\r\n]/)
+    return end == -1 ? src.substr(pos) : src.substr(pos, end)
+}
+
+function get_comment(src, pos, line_num, line_start, token_name, line){
     var start = pos,
         ix
     var t = []
     while(true){
         if(pos >= src.length || (ix = '\r\n'.indexOf(src[pos])) > -1){
-            t.push(['COMMENT', src.substring(start - 1, pos),
+            t.push(Token('COMMENT', src.substring(start - 1, pos),
                  [line_num, start - line_start],
-                 [line_num, pos - line_start + 1]])
+                 [line_num, pos - line_start + 1],
+                 line))
             if(ix !== undefined){
                 var nb = 1
                 if(src[pos] == '\r' && src[pos + 1] == '\n'){
                     nb++
+                }else if(src[pos] === undefined){
+                    // The comment ends the script without a NEWLINE
+                    nb = 0
                 }
-                t.push([token_name, src.substr(pos, nb),
+                t.push(Token(token_name, src.substr(pos, nb),
                     [line_num, pos - line_start + 1],
-                    [line_num, pos - line_start + nb + 1]])
+                    [line_num, pos - line_start + nb + 1],
+                    line))
+                if(src[pos] === undefined){
+                    t.push(Token('NEWLINE', '\n',
+                        [line_num, pos - line_start + 1],
+                        [line_num, pos - line_start + 2],
+                        ''))
+                }
                 pos += nb
             }
             return {t, pos}
@@ -44,8 +72,9 @@ function get_comment(src, pos, line_num, line_start, token_name){
     }
 }
 
-function* tokenizer(src){
-    var whitespace = ' \t\n',
+$B.tokenizer = function*(src){
+    var unicode_tables = $B.unicode_tables,
+        whitespace = ' \t\n',
         operators = '*+-/%&^~=<>',
         allowed_after_identifier = ',.()[]:;',
         string_prefix = /^(r|u|R|U|f|F|fr|Fr|fR|FR|rf|rF|Rf|RF)$/,
@@ -53,6 +82,7 @@ function* tokenizer(src){
     var state = "line_start",
         char,
         cp,
+        mo,
         pos = 0,
         start,
         quote,
@@ -70,14 +100,17 @@ function* tokenizer(src){
         indents = [],
         braces = [],
         line_num = 0,
-        line_start = 1
+        line_start = 1,
+        line
 
-    yield ['ENCODING', 'utf-8', [0, 0], [0, 0]]
+    yield Token('ENCODING', 'utf-8', [0, 0], [0, 0], '')
 
     while(pos < src.length){
+
         char = src[pos]
         cp = src.charCodeAt(pos)
         if(cp >= 0xD800 && cp <= 0xDBFF){
+            // code point encoded by a surrogate pair
             cp = ord(src.substr(pos, 2))
             char = src.substr(pos, 2)
             pos++
@@ -85,17 +118,19 @@ function* tokenizer(src){
         pos++
         switch(state){
             case "line_start":
+                line = get_line_at(src, pos - 1)
                 line_start = pos
                 line_num++
-                if(char == "\n"){
-                    yield ['NL', '\n', [line_num, 0], [line_num, 1]]
-                    continue
-                }else if(char == '\r' && src[pos] == '\n'){
-                    yield ['NL', '\r\n', [line_num, 0], [line_num, 2]]
-                    pos++
+                if(mo = /^\f?(\r\n|\r|\n)/.exec(src.substr(pos - 1))){
+                    // line break
+                    yield Token('NL', mo[0], [line_num, 0],
+                        [line_num, mo[0].length],
+                        line)
+                    pos += mo[0].length - 1
                     continue
                 }else if(char == '#'){
-                    comment = get_comment(src, pos, line_num, line_start, 'NL')
+                    comment = get_comment(src, pos, line_num, line_start,
+                        'NL', line)
                     for(var item of comment.t){
                         yield item
                     }
@@ -103,71 +138,73 @@ function* tokenizer(src){
                     state = 'line_start'
                     continue
                 }
-                // count number of whitespaces
+                // count number of leading whitespaces in line
                 indent = 0
                 if(char == ' '){
-                  indent = 1
+                    indent = 1
                 }else if(char == '\t'){
-                  indent = 8
+                    indent = 8
                 }
                 if(indent){
-                  while(pos < src.length){
-                    if(src[pos] == ' '){
-                      indent++
-                    }else if(src[pos] == '\t'){
-                      indent += 8
-                    }else{
-                      break
+                    while(pos < src.length){
+                        if(src[pos] == ' '){
+                            indent++
+                        }else if(src[pos] == '\t'){
+                            indent += 8
+                        }else{
+                            break
+                        }
+                        pos++
                     }
-                    pos++
-                  }
-                  if(pos == src.length){
-                      // reach eof while counting indent
-                      line_num--
-                      break
-                  }
-                  if(src[pos] == '#'){
-                      var comment = get_comment(src, pos + 1, line_num, line_start, 'NL')
-                      for(var item of comment.t){
-                          yield item
-                      }
-                      pos = comment.pos
-                      continue
-                  }else if(src[pos] == '\n'){
-                      // whitespace-only line
-                      yield ['NL', '', [line_num, pos - line_start + 1],
-                        [line_num, pos - line_start + 2]]
-                      pos++
-                      continue
-                  }else if(src[pos] == '\r' && src[pos + 1] == '\n'){
-                      yield ['NL', '', [line_num, pos - line_start + 1],
-                        [line_num, pos - line_start + 3]]
-                      pos += 2
-                      continue
-                  }
-                  if(indents.length == 0 || indent > $last(indents)){
-                    indents.push(indent)
-                    yield ['INDENT', '', [line_num, 0], [line_num, indent]]
-                  }else if(indent < $last(indents)){
-                    var ix = indents.indexOf(indent)
-                    if(ix == -1){
-                      throw Error('IndentationError line ' + line_num)
+                    if(pos == src.length){
+                        // reach eof while counting indent
+                        line_num--
+                        break
                     }
-                    for(var i = indents.length - 1; i > ix; i--){
-                      indents.pop()
-                      yield ['DEDENT', '', [line_num, indent],
-                          [line_num, indent]]
+                    if(src[pos] == '#'){
+                        // ignore leading whitespace if line is a comment
+                        var comment = get_comment(src, pos + 1, line_num,
+                            line_start, 'NL', line)
+                        for(var item of comment.t){
+                            yield item
+                        }
+                        pos = comment.pos
+                        continue
+                    }else if(mo = /^\f?(\r\n|\r|\n)/.exec(src.substr(pos))){
+                        // whitespace-only line
+                        yield Token('NL', '', [line_num, pos - line_start + 1],
+                          [line_num, pos - line_start + 1 + mo[0].length], line)
+                        pos += mo[0].length
+                        continue
                     }
-                  }
-                  state = null
+                    if(indents.length == 0 || indent > $last(indents)){
+                        indents.push(indent)
+                        yield Token('INDENT', '', [line_num, 0],
+                            [line_num, indent], line)
+                    }else if(indent < $last(indents)){
+                        var ix = indents.indexOf(indent)
+                        if(ix == -1){
+                            var error = Error('unindent does not match ' +
+                                'any outer indentation level')
+                            error.type = 'IndentationError'
+                            error.line_num = line_num
+                            throw error                      }
+                        for(var i = indents.length - 1; i > ix; i--){
+                            indents.pop()
+                            yield Token('DEDENT', '', [line_num, indent],
+                                [line_num, indent], line)
+                        }
+                    }
+                    state = null
                 }else{
-                  // dedent all
-                  while(indents.length > 0){
-                    indents.pop()
-                    yield ['DEDENT', '', [line_num, indent], [line_num, indent]]
-                  }
-                  state = null
-                  pos--
+                    // dedent all
+                    while(indents.length > 0){
+                        indents.pop()
+                        yield Token('DEDENT', '', [line_num, indent],
+                          [line_num, indent], line)
+                    }
+                    state = null
+                    pos--
                 }
                 break
 
@@ -177,9 +214,9 @@ function* tokenizer(src){
                     case "'":
                         quote = char
                         triple_quote = src[pos] == char && src[pos + 1] == char
-                        string_start = [line_num, pos - line_start]
+                        string_start = [line_num, pos - line_start, line_start]
                         if(triple_quote){
-                          pos += 2
+                            pos += 2
                         }
                         escaped = false
                         state = 'STRING'
@@ -189,7 +226,7 @@ function* tokenizer(src){
                     case '#':
                         var token_name = braces.length > 0 ? 'NL' : 'NEWLINE'
                         comment = get_comment(src, pos, line_num, line_start,
-                            token_name)
+                            token_name, line)
                         for(var item of comment.t){
                             yield item
                         }
@@ -200,6 +237,7 @@ function* tokenizer(src){
                             state = null
                             line_num++
                             line_start = pos + 1
+                            line = get_line_at(src, pos)
                         }
                         break
                     case '0':
@@ -228,53 +266,47 @@ function* tokenizer(src){
                                 pos++
                                 op += char
                             }
-                            yield ['OP', op,
-                                [line_num, pos - line_start - op.length + 1],
-                                [line_num, pos - line_start + 1]]
+                            var dot_pos = pos - line_start - op.length + 1
+                            while(op.length >= 3){
+                                // sequences of 3 consecutive dots are sent
+                                // as a single token for Ellipsis
+                                yield Token('OP', '...', [line_num, dot_pos],
+                                    [line_num, dot_pos + 3], line)
+                                op = op.substr(3)
+                            }
+                            for(var i = 0; i < op.length; i++){
+                                yield Token('OP', '.', [line_num, dot_pos],
+                                    [line_num, dot_pos + 1], line)
+                                dot_pos++
+                            }
                         }
                         break
                     case '\\':
-                        if(src[pos] == '\n'){
+                        if(mo = /^\f?(\r\n|\r|\n)/.exec(src.substr(pos))){
                             line_num++
-                            pos++
+                            pos += mo[0].length
                             line_start = pos + 1
-                        }else if(src.substr(pos, 2) == '\r\n'){
-                            line_num++
-                            pos += 2
-                            line_start = pos + 1
+                            line = get_line_at(src, pos)
                         }else{
-                            yield ['unknown', char]
-                        }
-                        break
-                    case '\r':
-                        var token_name = braces.length > 0 ? 'NL': 'NEWLINE'
-                        if(src[pos] == '\n'){
-                            yield [token_name, char + src[pos],
+                            yield Token('ERRORTOKEN', char,
                                 [line_num, pos - line_start],
-                                [line_num, pos - line_start + 2]]
-                            pos++
-                        }else{
-                            yield [token_name, char,
-                                [line_num, pos - line_start],
-                                [line_num, pos - line_start + 1]]
-                        }
-                        if(token_name == 'NEWLINE'){
-                            state = 'line_start'
-                        }else{
-                            line_num++
-                            line_start = pos + 1
+                                [line_num, pos - line_start + 1], line)
                         }
                         break
                     case '\n':
+                    case '\r':
                         var token_name = braces.length > 0 ? 'NL': 'NEWLINE'
-                        yield [token_name, char,
+                        mo = /^\f?(\r\n|\r|\n)/.exec(src.substr(pos - 1))
+                        yield Token(token_name, mo[0],
                             [line_num, pos - line_start],
-                            [line_num, pos - line_start + 1]]
+                            [line_num, pos - line_start + mo[0].length], line)
+                        pos += mo[0].length - 1
                         if(token_name == 'NEWLINE'){
                             state = 'line_start'
                         }else{
                             line_num++
                             line_start = pos + 1
+                            line = get_line_at(src, pos)
                         }
                         break
                     default:
@@ -310,20 +342,24 @@ function* tokenizer(src){
                                     braces.push(char)
                                 }
                             }
-                            yield ['OP', op,
+                            yield Token('OP', op,
                                 [line_num, pos - line_start - op.length + 1],
-                                [line_num, pos - line_start + 1]]
+                                [line_num, pos - line_start + 1],
+                                line)
                         }else if(char == '!' && src[pos] == '='){
-                          yield ['OP', '!=',
+                          yield Token('OP', '!=',
                               [line_num, pos - line_start],
-                              [line_num, pos - line_start + 2]]
+                              [line_num, pos - line_start + 2],
+                              line)
                           pos++
+                        }else if(char == ' ' || char == '\t'){
+                            // ignore
                         }else{
-                            if(char != ' '){
-                                yield ['unknown', char + '(' + ord(char) + ')']
-                            }
+                            yield Token('ERRORTOKEN', char,
+                                [line_num, pos - line_start],
+                                [line_num, pos - line_start + 1],
+                                line)
                         }
-                        break
               }
               break
 
@@ -331,29 +367,32 @@ function* tokenizer(src){
                 if(unicode_tables.XID_Continue[ord(char)]){
                     name += char
                 }else if(char == '"' || char == "'"){
-                    if(string_prefix.exec(name) ||
-                            bytes_prefix.exec(name)){
+                    if(string_prefix.exec(name) || bytes_prefix.exec(name)){
+                        // prefixed string, like r"...", b"..." etc.
                         state = 'STRING'
                         quote = char
                         triple_quote = src[pos] == quote && src[pos + 1] == quote
                         prefix = name
                         escaped = false
-                        string_start = [line_num, pos - line_start - 1]
+                        string_start = [line_num,
+                            pos - line_start - name.length, line_start]
                         if(triple_quote){
                           pos += 2
                         }
                         string = ''
                     }else{
-                        yield ['NAME', name,
+                        yield Token('NAME', name,
                             [line_num, pos - line_start - name.length],
-                            [line_num, pos - line_start]]
+                            [line_num, pos - line_start],
+                            line)
                         state = null
                         pos--
                     }
                 }else{
-                    yield ['NAME', name,
+                    yield Token('NAME', name,
                         [line_num, pos - line_start - name.length],
-                        [line_num, pos - line_start]]
+                        [line_num, pos - line_start],
+                        line)
                     state = null
                     pos--
                 }
@@ -364,18 +403,33 @@ function* tokenizer(src){
                     case quote:
                         if(! escaped){
                             // string end
+                            var string_line = line
+                            // If the string spans over several lines, "line"
+                            // is extended until the last quote
+                            if(line_num > string_start[0]){
+                                string_line = src.substring(
+                                    string_start[2] - 1, pos + 2)
+                            }
                             if(! triple_quote){
                                 var full_string = prefix + quote + string +
                                   quote
-                                yield ['STRING', full_string, string_start,
-                                  [line_num, pos - line_start + 1]]
+                                yield Token('STRING', full_string,
+                                    string_start,
+                                    [line_num, pos - line_start + 1],
+                                    string_line)
                                 state = null
                             }else if(char + src.substr(pos, 2) ==
                                     quote.repeat(3)){
-                                var full_string = prefix + quote.repeat(3) + 
-                                    string + quote.repeat(3)
-                                yield ['STRING', full_string, string_start,
-                                  [line_num, pos - line_start + 3]]
+                                var full_string = prefix + quote.repeat(3) +
+                                        string + quote.repeat(3)
+                                // For triple-quoted strings, if it spans over
+                                // several lines, "line" is extended until the
+                                // last quote
+                                triple_quote_line = line
+                                yield Token('STRING', full_string,
+                                    string_start,
+                                    [line_num, pos - line_start + 3],
+                                    string_line)
                                 pos += 2
                                 state = null
                             }else{
@@ -386,15 +440,48 @@ function* tokenizer(src){
                         }
                         escaped = false
                         break
+                    case '\r':
                     case '\n':
+                        if(! escaped && ! triple_quote){
+                            // unterminated string
+                            // go back to yield whitespace as ERRORTOKEN
+                            var quote_pos = string_start[1] + line_start - 1,
+                                pos = quote_pos
+                            while(src[pos - 1] == ' '){
+                                pos--
+                            }
+                            while(pos < quote_pos){
+                                console.log('yield ERRORTOKEN, escaped',
+                                    escaped)
+                                yield Token('ERRORTOKEN', ' ',
+                                    [line_num, pos - line_start + 1],
+                                    [line_num, pos - line_start + 2],
+                                    line)
+                                pos++
+                            }
+                            pos++
+                            yield Token('ERRORTOKEN', quote,
+                                    [line_num, pos - line_start],
+                                    [line_num, pos - line_start + 1],
+                                    line)
+                            state = null
+                            pos++
+                            break
+                        }
                         string += char
                         line_num++
                         line_start = pos + 1
+                        if(char == '\r' && src[pos] == '\n'){
+                            string += src[pos]
+                            line_start++
+                            pos++
+                        }
+                        line = get_line_at(src, pos)
                         escaped = false
                         break
                     case '\\':
                         string += char
-                        escaped = !escaped
+                        escaped = ! escaped
                         break
                     default:
                         escaped = false
@@ -415,7 +502,7 @@ function* tokenizer(src){
                     number += char
                 }else if(char == '_'){
                     if(number.endsWith('_')){
-                        throw Error('SyntaxError: consecutive _ in number')
+                        throw SyntaxError('consecutive _ in number')
                     }
                     number += char
                 }else if(char == '.' && number.indexOf(char) == -1){
@@ -426,16 +513,18 @@ function* tokenizer(src){
                 }else if((char == '+' || char == '-') &&
                         number.toLowerCase().endsWith('e')){
                     number += char
-                }else if(char.toLowerCase() == 'j'){
+                }else if(char.toLowerCase() == 'j'){ // complex number
                     number += char
-                    yield ['NUMBER', number,
+                    yield Token('NUMBER', number,
                         [line_num, pos - line_start - number.length + 1],
-                        [line_num, pos - line_start + 1]]
+                        [line_num, pos - line_start + 1],
+                        line)
                     state = null
                 }else{
-                    yield ['NUMBER', number,
+                    yield Token('NUMBER', number,
                         [line_num, pos - line_start - number.length],
-                        [line_num, pos - line_start]]
+                        [line_num, pos - line_start],
+                        line)
                     state = null
                     pos--
                 }
@@ -443,33 +532,43 @@ function* tokenizer(src){
         }
     }
 
+    if(braces.length > 0){
+        throw SyntaxError('EOF in multi-line statement')
+    }
+
     switch(state){
         case 'line_start':
             line_num++
             break
         case 'NAME':
-            yield ['NAME', name,
+            yield Token('NAME', name,
                 [line_num, pos - line_start - name.length + 1],
-                [line_num, pos - line_start + 1]]
-    
+                [line_num, pos - line_start + 1],
+                line)
+
             break
         case 'NUMBER':
-            yield ['NUMBER', number,
+            yield Token('NUMBER', number,
               [line_num, pos - line_start - number.length + 1],
-              [line_num, pos - line_start + 1]]
+              [line_num, pos - line_start + 1],
+              line)
             break
         case 'STRING':
-            throw Error("unterminated string")
+            throw SyntaxError(
+                `unterminated string literal (detected at line ${line_num})`)
     }
-    if(state != 'line_start'){
-        yield ['NEWLINE', '', [line_num, pos - line_start + 1],
-            [line_num, pos - line_start + 2]]
+
+    if(! src.endsWith('\n') && char != ' ' && state != line_start){
+        yield Token('NEWLINE', '', [line_num, pos - line_start + 1],
+            [line_num, pos - line_start + 2], '')
         line_num++
     }
+
     while(indents.length > 0){
         indents.pop()
-        yield ['DEDENT', '', [line_num, 0], [line_num, 0]]
+        yield Token('DEDENT', '', [line_num, 0], [line_num, 0], '')
     }
-    yield ['ENDMARKER', '', [line_num, 0], [line_num, 0]]
+    yield Token('ENDMARKER', '', [line_num, 0], [line_num, 0], '')
 
 }
+})(__BRYTHON__)

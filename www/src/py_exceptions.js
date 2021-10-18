@@ -1,7 +1,6 @@
 ;(function($B){
 
-var bltns = $B.InjectBuiltins()
-eval(bltns)
+var _b_ = $B.builtins
 
 $B.del_exc = function(){
     var frame = $B.last($B.frames_stack)
@@ -11,7 +10,7 @@ $B.del_exc = function(){
 $B.set_exc = function(exc){
     var frame = $B.last($B.frames_stack)
     if(frame === undefined){
-        console.log("no frame", exc)
+        console.log("no frame", exc, exc.__class__, exc.args)
     }
     frame[1].$current_exception = $B.exception(exc)
 }
@@ -29,14 +28,14 @@ $B.$raise = function(arg){
         var es = $B.get_exc()
         if(es !== undefined){throw es}
         throw _b_.RuntimeError.$factory("No active exception to reraise")
-    }else if(isinstance(arg, BaseException)){
+    }else if(_b_.isinstance(arg, BaseException)){
         if(arg.__class__ === _b_.StopIteration &&
                 $B.last($B.frames_stack)[1].$is_generator){
             // PEP 479
             arg = _b_.RuntimeError.$factory("generator raised StopIteration")
         }
         throw arg
-    }else if(arg.$is_class && issubclass(arg, BaseException)){
+    }else if(arg.$is_class && _b_.issubclass(arg, BaseException)){
         if(arg === _b_.StopIteration){
             if($B.last($B.frames_stack)[1].$is_generator){
                 // PEP 479
@@ -74,14 +73,14 @@ $B.$syntax_err_line = function(exc, module, src, pos, line_num){
             line = lines[line_num - 1],
             lpos = pos - line_pos[line_num],
             len = line.length
-        exc.text = line
+        exc.text = line + '\n'
         lpos -= len - line.length
         if(lpos < 0){lpos = 0}
         while(line.charAt(0) == ' '){
             line = line.substr(1)
             if(lpos > 0){lpos--}
         }
-        exc.offset = lpos
+        exc.offset = lpos + 1 // starts at column 1, not 0
         exc.args = $B.fast_tuple([$B.$getitem(exc.args, 0),
             $B.fast_tuple([module, line_num, lpos, line])])
     }
@@ -100,12 +99,39 @@ $B.$SyntaxError = function(module, msg, src, pos, line_num, root) {
     throw exc
 }
 
-$B.$IndentationError = function(module, msg, src, pos, line_num, root) {
+$B.$IndentationError = function(module, msg, src, pos, line_num, root,
+        indented_node) {
     $B.frames_stack.push([module, {$line_info: line_num + "," + module},
         module, {$src: src}])
     if(root !== undefined && root.line_info !== undefined){
         // this may happen for syntax errors inside a lambda
         line_num = root.line_info
+    }
+    if(indented_node){
+        var type = indented_node.context.tree[0].type
+        switch(type){
+            case 'class':
+                type = 'class definition'
+                break
+            case 'condition':
+                type = `'${indented_node.context.tree[0].token}' statement`
+                break
+            case 'def':
+                type = 'function definition'
+                break
+            case 'case':
+            case 'for':
+            case 'match':
+            case 'try':
+            case 'while':
+            case 'with':
+                type = `'${type}' statement`
+                break
+            case 'single_kw':
+                type = `'${indented_node.context.tree[0].token}' statement`
+                break
+        }
+        msg += ` after ${type} on line ${indented_node.line_num}`
     }
     var exc = _b_.IndentationError.$factory(msg)
     $B.$syntax_err_line(exc, module, src, pos, line_num)
@@ -223,7 +249,7 @@ traceback.__getattribute__ = function(self, attr){
                 }
             }
         case "tb_next":
-            if(self.$stack.length <= 1){return None}
+            if(self.$stack.length <= 1){return _b_.None}
             else{
                 return traceback.$factory(self.exc,
                     self.$stack.slice(1))
@@ -286,8 +312,8 @@ var frame = $B.make_class("frame",
             }else{
                 if(_frame[1].$name){
                     co_name = _frame[1].$name
-                }else if(_frame[1].$dict_comp){
-                    co_name = '<dictcomp>'
+                }else if(_frame[1].$comprehension){
+                    co_name = '<' + _frame[1].$comprehension + '>'
                 }else if(_frame[1].$list_comp){
                     co_name = '<listcomp>'
                 }else if(_frame.length > 4){
@@ -322,6 +348,9 @@ var frame = $B.make_class("frame",
                 res.f_code = {
                     co_name: co_name,
                     co_filename: filename
+                }
+                if(_frame[1].$comp_code){
+                    $B.update_obj(res.f_code, _frame[1].$comp_code)
                 }
             }
             res.f_code.__class__ = $B.code
@@ -401,19 +430,19 @@ BaseException.__init__ = function(self){
 BaseException.__repr__ = function(self){
     var res =  self.__class__.$infos.__name__
     if(self.args[0] !== undefined){
-        res += '(' + repr(self.args[0])
+        res += '(' + _b_.repr(self.args[0])
     }
     if(self.args.length > 1){
-        res += ', ' + repr($B.fast_tuple(self.args.slice(1)))
+        res += ', ' + _b_.repr($B.fast_tuple(self.args.slice(1)))
     }
     return res + ')'
 }
 
 BaseException.__str__ = function(self){
-    if(self.args.length > 0){
+    if(self.args.length > 0 && self.args[0] !== _b_.None){
         return _b_.str.$factory(self.args[0])
     }
-    return self.__class__.$infos.__name__
+    return ''
 }
 
 BaseException.__new__ = function(cls){
@@ -519,8 +548,7 @@ BaseException.__getattr__ = function(self, attr){
         if(self.$traceback !== undefined){return self.$traceback}
         return traceback.$factory(self)
     }else{
-        throw _b_.AttributeError.$factory(self.__class__.$infos.__name__ +
-            " has no attribute '" + attr + "'")
+        throw $B.attr_error(attr, self)
     }
 }
 
@@ -581,7 +609,7 @@ BaseException.$factory = function (){
     err.__class__ = _b_.BaseException
     err.$py_error = true
     $B.freeze(err)
-    eval("//placeholder//")
+    eval(`//placeholder//`)
     err.__cause__ = _b_.None // XXX fix me
     err.__context__ = _b_.None // XXX fix me
     err.__suppress_context__ = false // XXX fix me
@@ -616,7 +644,6 @@ $B.exception = function(js_exc, in_ctx_manager){
         }else if(js_exc.name == "ReferenceError"){
             exc.__name__ = "NameError"
             exc.__class__ = _b_.NameError
-            js_exc.message = js_exc.message.replace("$$", "")
         }else if(js_exc.name == "InternalError"){
             exc.__name__ = "RuntimeError"
             exc.__class__ = _b_.RuntimeError
@@ -660,7 +687,7 @@ $B.is_exc = function(exc, exc_list){
     for(var i = 0; i < exc_list.length; i++){
         var exc_class = exc_list[i]
         if(this_exc_class === undefined){console.log("exc class undefined", exc)}
-        if(issubclass(this_exc_class, exc_class)){return true}
+        if(_b_.issubclass(this_exc_class, exc_class)){return true}
     }
     return false
 }
@@ -680,6 +707,9 @@ $B.is_recursion_error = function(js_exc){
 function $make_exc(names, parent){
     // Creates the exception classes that inherit from parent
     // names is the list of exception names
+    if(parent === undefined){
+        console.log('pas de parent', names)
+    }
     var _str = [], pos = 0
     for(var i = 0; i < names.length; i++){
         var name = names[i],
@@ -697,6 +727,7 @@ function $make_exc(names, parent){
         $exc = $exc.replace("//placeholder//", code)
         // class dictionary
         _str[pos++] = "_b_." + name + ' = {__class__:_b_.type, ' +
+            '__bases__: [_b_.' + parent.$infos.__name__ + '], ' +
             '__mro__: [_b_.' + parent.$infos.__name__ +
             "].concat(parent.__mro__), $is_class: true," +
             "$infos: {__name__:'" + name + "'}}"
@@ -717,18 +748,16 @@ $make_exc(["SystemExit", "KeyboardInterrupt", "GeneratorExit", "Exception"],
     BaseException)
 $make_exc([["StopIteration","err.value = arguments[0]"],
     ["StopAsyncIteration","err.value = arguments[0]"],
-    "ArithmeticError", "AssertionError", "AttributeError",
-    "BufferError", "EOFError",
+    "ArithmeticError", "AssertionError", "BufferError", "EOFError",
     ["ImportError", "err.name = arguments[0]"],
     "LookupError", "MemoryError",
-    "NameError", "OSError", "ReferenceError", "RuntimeError",
+    "OSError", "ReferenceError", "RuntimeError",
     ["SyntaxError", "err.msg = arguments[0]"],
     "SystemError", "TypeError", "ValueError", "Warning"], _b_.Exception)
 $make_exc(["FloatingPointError", "OverflowError", "ZeroDivisionError"],
     _b_.ArithmeticError)
 $make_exc([["ModuleNotFoundError", "err.name = arguments[0]"]], _b_.ImportError)
 $make_exc(["IndexError","KeyError"], _b_.LookupError)
-$make_exc(["UnboundLocalError"], _b_.NameError)
 $make_exc(["BlockingIOError", "ChildProcessError", "ConnectionError",
     "FileExistsError", "FileNotFoundError", "InterruptedError",
     "IsADirectoryError", "NotADirectoryError", "PermissionError",
@@ -745,9 +774,63 @@ $make_exc(["DeprecationWarning", "PendingDeprecationWarning",
     "RuntimeWarning", "SyntaxWarning", "UserWarning", "FutureWarning",
     "ImportWarning", "UnicodeWarning", "BytesWarning", "ResourceWarning"],
     _b_.Warning)
-
 $make_exc(["EnvironmentError", "IOError", "VMSError", "WindowsError"],
     _b_.OSError)
+
+// AttributeError supports keyword-only "name" and "obj" parameters
+var js = '\nvar $ = $B.args("AttributeError", 1, {"msg": null, "name":null, "obj":null}, ' +
+    '["msg", "name", "obj"], arguments, ' +
+    '{msg: _b_.None, name: _b_.None, obj: _b_.None}, "*", null);\n' +
+    'err.args = $B.fast_tuple($.msg === _b_.None ? [] : [$.msg])\n;' +
+    'err.name = $.name\nerr.obj = $.obj\n'
+
+$make_exc([["AttributeError", js]], _b_.Exception)
+
+_b_.AttributeError.__str__ = function(self){
+    if(self.args.length > 0){
+        return self.args[0]
+    }
+    var msg = `'${$B.class_name(self.obj)}' object has no attribute '` +
+            self.name + "'",
+        suggestion = offer_suggestions_for_attribute_error(self)
+    if(suggestion){
+        msg += `. Did you mean: '${suggestion}'?`
+    }
+    return msg
+}
+
+// Shortcut to create an AttributeError
+$B.attr_error = function(name, obj){
+    return _b_.AttributeError.$factory({$nat:"kw",kw:{name, obj}})
+}
+
+// NameError supports keyword-only "name" parameter
+var js = '\nvar $ = $B.args("NameError", 1, {"msg": null, "name":null}, ' +
+    '["msg", "name"], arguments, ' +
+    '{msg: _b_.None, name: _b_.None}, "*", null);\n' +
+    'err.args = $B.fast_tuple($.msg === _b_.None ? [] : [$.msg])\n;' +
+    'err.name = $.name\n'
+
+$make_exc([["NameError", js]], _b_.Exception)
+
+_b_.NameError.__str__ = function(self){
+    if(self.args.length > 0){
+        return self.args[0]
+    }
+    var msg = `name '${self.name}' is not defined`,
+        suggestion = offer_suggestions_for_name_error(self)
+    if(suggestion){
+        msg += `. Did you mean '${suggestion}'?`
+    }
+    return msg
+}
+
+$make_exc(["UnboundLocalError"], _b_.NameError)
+
+// Shortcut to create a NameError
+$B.name_error = function(name, obj){
+    return _b_.NameError.$factory({$nat:"kw",kw:{name}})
+}
 
 $B.$TypeError = function(msg){
     throw _b_.TypeError.$factory(msg)
@@ -776,6 +859,172 @@ _b_.SyntaxError.$factory = function(){
     return exc
 }
 
-_b_.SyntaxError
+// Suggestions in case of NameError or AttributeError
+var MAX_CANDIDATE_ITEMS = 750,
+    MAX_STRING_SIZE = 40,
+    MOVE_COST = 2,
+    CASE_COST = 1,
+    SIZE_MAX = 65535
+
+function LEAST_FIVE_BITS(n){
+    return ((n) & 31)
+}
+
+function levenshtein_distance(a, b, max_cost){
+    // Compute Leveshtein distance between strings a and b
+    if(a == b){
+        return 0
+    }
+    if(a.length < b.length){
+        [a, b] = [b, a]
+    }
+
+    while(a.length && a[0] == b[0]){
+        a = a.substr(1)
+        b = b.substr(1)
+    }
+    while(a.length && a[a.length - 1] == b[b.length - 1]){
+        a = a.substr(0, a.length - 1)
+        b = b.substr(0, b.length - 1)
+    }
+    if(b.length == 0){
+        return a.length * MOVE_COST
+    }
+    if ((b.length - a.length) * MOVE_COST > max_cost){
+        return max_cost + 1
+    }
+    var buffer = []
+    for(var i = 0; i < a.length; i++) {
+        // cost from b[:0] to a[:i+1]
+        buffer[i] = (i + 1) * MOVE_COST
+    }
+    var result = 0
+    for(var b_index = 0; b_index < b.length; b_index++) {
+        var code = b[b_index]
+        // cost(b[:b_index], a[:0]) == b_index * MOVE_COST
+        var distance = result = b_index * MOVE_COST;
+        var minimum = SIZE_MAX;
+        for(var index = 0; index < a.length; index++) {
+            // 1) Previous distance in this row is cost(b[:b_index], a[:index])
+            var substitute = distance + substitution_cost(code, a[index])
+            // 2) cost(b[:b_index], a[:index+1]) from previous row
+            distance = buffer[index]
+            // 3) existing result is cost(b[:b_index+1], a[index])
+            var insert_delete = Math.min(result, distance) + MOVE_COST
+            result = Math.min(insert_delete, substitute)
+
+            buffer[index] = result
+            if (result < minimum) {
+                minimum = result
+            }
+        }
+        if (minimum > max_cost) {
+            // Everything in this row is too big, so bail early.
+            return max_cost + 1
+        }
+    }
+    return result
+}
+
+function substitution_cost(a, b){
+    if(LEAST_FIVE_BITS(a) != LEAST_FIVE_BITS(b)){
+        // Not the same, not a case flip.
+        return MOVE_COST
+    }
+    if(a == b){
+        return 0
+    }
+    if(a.toLowerCase() == b.toLowerCase()){
+        return CASE_COST
+    }
+    return MOVE_COST
+}
+function calculate_suggestions(dir, name){
+    if(dir.length >= MAX_CANDIDATE_ITEMS) {
+        return null
+    }
+
+    var suggestion_distance = 2 ** 52,
+        suggestion = null
+
+    for(var item of dir){
+        // No more than 1/3 of the involved characters should need changed.
+        var max_distance = (name.length + item.length + 3) * MOVE_COST / 6
+        // Don't take matches we've already beaten.
+        max_distance = Math.min(max_distance, suggestion_distance - 1)
+        var current_distance =
+            levenshtein_distance(name, item, max_distance)
+        if(current_distance > max_distance){
+            continue
+        }
+        if(!suggestion || current_distance < suggestion_distance){
+            suggestion = item
+            suggestion_distance = current_distance
+        }
+    }
+    return suggestion
+}
+
+function offer_suggestions_for_attribute_error(exc){
+    var name = exc.name,
+        obj = exc.obj
+    var dir = _b_.dir(obj),
+        suggestions = calculate_suggestions(dir, name)
+    return suggestions
+}
+
+function offer_suggestions_for_name_error(exc){
+    var name = exc.name,
+        frame = $B.last(exc.$stack)
+    var locals = Object.keys(frame[1]).filter(x => ! (x.startsWith('$')))
+    var suggestion = calculate_suggestions(locals, name)
+    if(suggestion){
+        return suggestion
+    }
+    if(frame[2] != frame[0]){
+        var globals = Object.keys(frame[3]).filter(x => ! (x.startsWith('$')))
+        var suggestion = calculate_suggestions(globals, name)
+        if(suggestion){
+            return suggestion
+        }
+    }
+}
+
+$B.handle_error = function(err){
+    // Print the error traceback on the standard error stream
+    if(err.$handled){
+        return
+    }
+    err.$handled = true
+    if($B.debug > 1){
+        console.log("handle error", err.__class__, err.args, 'stderr', $B.stderr)
+        console.log(err)
+    }
+    if(err.__class__ !== undefined){
+        var name = $B.class_name(err),
+            trace = $B.$getattr(err, 'info')
+        if(name == 'SyntaxError' || name == 'IndentationError'){
+            var offset = err.args[1][2]
+            trace += '\n    ' + ' '.repeat(offset) + '^' +
+                '\n' + name + ': '+ err.args[0]
+        }else{
+            trace += '\n' + name + ': ' + _b_.str.$factory(err)
+        }
+    }else{
+        console.log(err)
+        trace = err + ""
+    }
+    try{
+        $B.$getattr($B.stderr, 'write')(trace)
+        var flush = $B.$getattr($B.stderr, 'flush', _b_.None)
+        if(flush !== _b_.None){
+            flush()
+        }
+    }catch(print_exc_err){
+        console.debug(trace)
+    }
+    // Throw the error to stop execution
+    throw err
+}
 
 })(__BRYTHON__)

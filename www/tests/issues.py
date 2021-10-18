@@ -120,29 +120,6 @@ assert C.foo.abc == 1
 assert C.foo.xyz == "haha"
 assert C.foo.booh == 42
 
-# issue 118
-class A:
-
-    def toString(self):
-        return "whatever"
-
-assert A().toString() == "whatever"
-
-# issue 126
-class MyType(type):
-
-    def __getattr__(cls, attr):
-        return "whatever"
-
-class MyParent(metaclass=MyType):
-    pass
-
-class MyClass(MyParent):
-    pass
-
-assert MyClass.spam == "whatever"
-assert MyParent.spam == "whatever"
-
 # issue 121
 def recur(change_namespace=0):
     if change_namespace:
@@ -191,29 +168,6 @@ x = 7
 codeobj = compile("x + 4", "<example>", "eval")
 assert eval(codeobj) == 11
 
-# issue 154
-class MyMetaClass(type):
-
-    def __str__(cls):
-        return "Hello"
-
-class MyClass(metaclass=MyMetaClass):
-    pass
-
-assert str(MyClass) == "Hello"
-
-# issue 155
-class MyMetaClass(type):
-    pass
-
-class MyClass(metaclass=MyMetaClass):
-    pass
-
-MyOtherClass = MyMetaClass("DirectlyCreatedClass", (), {})
-
-assert isinstance(MyClass, MyMetaClass), type(MyClass)
-assert isinstance(MyOtherClass, MyMetaClass), type(MyOtherClass)
-
 # traceback objects
 import types
 
@@ -246,16 +200,6 @@ def f():
     return g()
 
 assert f() == 2
-
-# setting __class__
-class A:pass
-class B:
-    x = 1
-
-a = A()
-assert not hasattr(a, 'x')
-a.__class__ = B
-assert a.x == 1
 
 # hashable objects
 class X:
@@ -2138,7 +2082,8 @@ assertRaises(SyntaxError, exec, "x{}")
 class Class():
 
     def method(self):
-      return __class__.__name__
+        assert "__class__" not in Class.method.__code__.co_varnames
+        return __class__.__name__
 
 assert Class().method() == "Class"
 
@@ -2439,13 +2384,13 @@ try:
     exec("(x.a < 2) += 100")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "cannot assign to comparison"
+    assert exc.args[0] == "'comparison' is an illegal expression for augmented assignment"
 
 try:
     exec("(x.a * 2) += 100")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "cannot assign to operator"
+    assert exc.args[0] == "'operator' is an illegal expression for augmented assignment"
 
 # issue 1278
 import textwrap
@@ -2934,6 +2879,76 @@ def foo(a, b):
     return foo.__code__.co_varnames
 
 assert foo(1, 2) == ('a', 'b', 'c')
+
+# issue 1671
+def f():
+    global x1671
+try:
+    print(x1671)
+    raise Exception("should have raised NameError")
+except NameError:
+    pass
+
+# issue 1685
+assertRaises(TypeError, int.__str__)
+assertRaises(TypeError, int.__str__, 1, 2)
+
+assert int.__str__('a') == "'a'"
+assert int.__str__(int) == "<class 'int'>"
+
+assertRaises(TypeError, int.__repr__, 'x')
+assert int.__repr__(7) == '7'
+
+assertRaises(TypeError, float.__str__)
+assertRaises(TypeError, float.__str__, 1.1, 2.2)
+
+assert float.__str__('a') == "'a'"
+assert float.__str__(int) == "<class 'int'>"
+
+assertRaises(TypeError, float.__repr__, 'x')
+assertRaises(TypeError, float.__repr__, 7)
+assert float.__repr__(7.6) == '7.6'
+
+# issue 1688
+def f(a1688):
+    pass
+
+try:
+    for a1688 in a1688.b:
+        pass
+    raise Exception("should have raised NameError")
+except NameError:
+    pass
+
+# issue 1699
+assertRaises(IndentationError, exec, 'def f():')
+
+# issue 1703
+def get_foobar():
+    global foobar
+    return foobar
+
+global foobar
+foobar = 'foobar'
+
+assert get_foobar() == "foobar"
+
+# issue 1723
+try:
+    type()
+    raise Exception('should have raised TypeError')
+except TypeError:
+    pass
+
+# issue 1729
+assertRaises(SyntaxError, exec,
+'''for i in range(0):
+    if True:
+        f() += 1''')
+
+# issue 1767
+assertRaises(TypeError, chr, '')
+assertRaises(TypeError, chr, 'a')
 
 # ==========================================
 # Finally, report that all tests have passed

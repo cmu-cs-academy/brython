@@ -83,17 +83,20 @@ def make(package_name, package_path, exclude_dirs=None, output_path=None):
             with open(absname, encoding='utf-8') as f:
                 data = f.read()
 
-            data = python_minifier.minify(data, preserve_lines=True)
+            if ext == ".py":
+                data = python_minifier.minify(data, preserve_lines=True)
             path_elts = package[:]
             if os.path.basename(filename) != "__init__.py":
                 path_elts.append(os.path.basename(filename)[:-3])
             fqname = ".".join(path_elts)
-            with open(absname, encoding="utf-8") as f:
-                tree = ast.parse(f.read())
-                visitor = Visitor(package_path, package)
-                visitor.visit(tree)
-                imports = sorted(list(visitor.imports))
-
+            if ext == ".py":
+                with open(absname, encoding="utf-8") as f:
+                    tree = ast.parse(f.read())
+                    visitor = Visitor(package_path, package)
+                    visitor.visit(tree)
+                    imports = sorted(list(visitor.imports))
+            else:
+                imports = []
             if is_package:
                VFS[mod_name] = [ext, data, imports, 1]
             else:

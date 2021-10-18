@@ -38,7 +38,7 @@ function handle_kwargs(kw, method){
             }else{
                 if(params.__class__ !== _b_.dict){
                     throw _b_.TypeError.$factory("wrong type for data, " +
-                        "expected dict, bytes or str, got " + 
+                        "expected dict, bytes or str, got " +
                         $B.class_name(params))
                 }
                 params = params.$string_dict
@@ -70,9 +70,6 @@ function handle_kwargs(kw, method){
         // For POST requests, set default header
         if(! headers.hasOwnProperty("Content-type")){
             headers["Content-Type"] = "application/x-www-form-urlencoded"
-        }
-        if(data && !headers.hasOwnProperty("Content-Length")){
-            headers["Content-Length"] = data.length
         }
     }
     return {
@@ -113,7 +110,8 @@ function ajax(){
                     resolve(this)
                 }
             }
-            if(method == "POST" && args.body){
+            if(args.body &&
+                    ['POST', 'PUT', 'DELETE', 'PATCH'].indexOf(method) > -1){
                 xhr.send(args.body)
             }else{
                 xhr.send()
@@ -213,7 +211,6 @@ function run(coro){
         handle_error = function(err){
             // coro.$stack is a snapshot of the frames stack when the async
             // function was called. Restore it to get the correct call tree
-            console.log("Exception in asynchronous function")
             err.$stack = coro.$stack.concat([$B.last(err.$stack)])
             $B.handle_error(err)
         }

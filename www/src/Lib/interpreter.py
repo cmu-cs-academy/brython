@@ -105,7 +105,7 @@ class Interpreter:
     """Add a Python interactive interpreter in a textarea."""
 
     def __init__(self, elt_id=None, title="Interactive Interpreter",
-                 globals=None, locals=None,
+                 globals=None, locals=None, history=None,
                  rows=30, cols=84, default_css=True,
                  clear_zone=True, banner=True):
         """
@@ -113,6 +113,7 @@ class Interpreter:
         - "elt_id" is the id of a textarea in the document. If not set, a new
           popup window is added with a textarea.
         - "globals" and "locals" are the namespaces the RPEL runs in
+        - "history", if set, must be a list of strings
         """
         if default_css:
             # Insert default CSS stylesheet if not already loaded
@@ -159,8 +160,8 @@ class Interpreter:
         self.zone.value += ">>> "
         self.cursor_to_end()
         self._status = "main"
-        self.current = 0
-        self.history = []
+        self.history = history or []
+        self.current = len(self.history)
 
         self.globals = {} if globals is None else globals
         self.globals.update(editor_ns)
@@ -222,7 +223,6 @@ class Interpreter:
                     _ = self.globals['_'] = eval(currentLine,
                                               self.globals,
                                               self.locals)
-                    self.flush()
                     if _ is not None:
                         self.write(repr(_) + '\n')
                     self.flush()
@@ -232,8 +232,7 @@ class Interpreter:
                     self.zone.value += '... '
                     self._status = "block"
                 except SyntaxError as msg:
-                    if str(msg) == 'invalid syntax : triple string end not found' or \
-                            str(msg).startswith('Unbalanced bracket'):
+                    if str(msg) == 'invalid syntax : triple string end not found':
                         self.zone.value += '... '
                         self._status = "3string"
                     elif str(msg) == 'eval() argument must be an expression':
@@ -247,6 +246,9 @@ class Interpreter:
                         self.zone.value += '>>> '
                         self._status = "main"
                     elif str(msg) == 'decorator expects function':
+                        self.zone.value += '... '
+                        self._status = "block"
+                    elif str(msg).endswith('was never closed'):
                         self.zone.value += '... '
                         self._status = "block"
                     else:
@@ -337,7 +339,8 @@ class Interpreter:
     def print_tb(self):
         trace = Trace()
         traceback.print_exc(file=trace)
-        self.zone.value += trace.format()
+        self.write(trace.format())
+        self.flush()
 
     def syntax_error(self, args):
         info, [filename, lineno, offset, line] = args

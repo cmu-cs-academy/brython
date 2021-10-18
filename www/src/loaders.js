@@ -55,6 +55,7 @@ function idb_load(evt, module){
                 if($B.debug > 1){console.log("precompile", module)}
 
                 // Store Javascript translation in indexedDB
+                /*
                 var parts = module.split(".")
                 if(parts.length > 1){parts.pop()}
                 if($B.stdlib.hasOwnProperty(parts.join("."))){
@@ -63,6 +64,7 @@ function idb_load(evt, module){
                     $B.tasks.splice(0, 0, [store_precompiled,
                         module, js, source_ts, imports, is_package])
                 }
+                */
             }else{
                 console.log('bizarre', module, ext)
             }
@@ -269,7 +271,6 @@ $B.idb_open = function(obj){
 $B.ajax_load_script = function(script){
     var url = script.url,
         name = script.name
-        console.log("load script", script)
     if($B.files && $B.files.hasOwnProperty(name)){
         $B.tasks.splice(0, 0, [$B.run_script, $B.files[name],
             name, url, true])
@@ -285,7 +286,7 @@ $B.ajax_load_script = function(script){
                     if(script.is_ww){
                         $B.webworkers[name] = src
                     }else{
-                        $B.tasks.splice(0, 0, [$B.run_script, src, name, 
+                        $B.tasks.splice(0, 0, [$B.run_script, src, name,
                             url, true])
                     }
                     loop()
@@ -340,14 +341,16 @@ var loop = $B.loop = function(){
             while($B.outdated.length > 0){
                 var module = $B.outdated.pop(),
                     req = store.delete(module)
-                req.onsuccess = function(event){
-                    if($B.debug > 1){
-                        console.info("delete outdated", module)
+                req.onsuccess = (function(mod){
+                    return function(event){
+                        if($B.debug > 1){
+                            console.info("delete outdated", mod)
+                        }
+                        document.dispatchEvent(new CustomEvent('precompile',
+                            {detail: 'remove outdated ' + mod +
+                             ' from cache'}))
                     }
-                    document.dispatchEvent(new CustomEvent('precompile',
-                        {detail: 'remove outdated ' + module +
-                         ' from cache'}))
-                }
+                })(module)
             }
             document.dispatchEvent(new CustomEvent('precompile',
                 {detail: "close"}))
@@ -386,10 +389,6 @@ var loop = $B.loop = function(){
                     err = _b_.RuntimeError.$factory(err + '')
                 }
             }
-            if($B.debug > 1){
-                console.log("handle error", err.__class__, err.args, err.$stack)
-                console.log($B.frames_stack.slice())
-            }
             $B.handle_error(err)
         }
         loop()
@@ -405,41 +404,6 @@ var loop = $B.loop = function(){
 
 $B.tasks = []
 $B.has_indexedDB = self.indexedDB !== undefined
-
-$B.handle_error = function(err){
-    // Print the error traceback on the standard error stream
-    if($B.debug > 1){
-        console.log("handle error", err.__class__, err.args)
-    }
-    if(err.__class__ !== undefined){
-        var name = $B.class_name(err),
-            trace = $B.$getattr(err, 'info')
-        if(name == 'SyntaxError' || name == 'IndentationError'){
-            var offset = err.args[1][2]
-            trace += '\n    ' + ' '.repeat(offset) + '^' +
-                '\n' + name + ': '+ err.args[0]
-        }else{
-            trace += '\n' + name
-            if(err.args[0] !== undefined && err.args[0] !== _b_.None){
-                trace += ': ' + _b_.str.$factory(err.args[0])
-            }
-        }
-    }else{
-        console.log(err)
-        trace = err + ""
-    }
-    try{
-        $B.$getattr($B.stderr, 'write')(trace)
-        var flush = $B.$getattr($B.stderr, 'flush', _b_.None)
-        if(flush !== _b_.None){
-            flush()
-        }
-    }catch(print_exc_err){
-        console.debug(trace)
-    }
-    // Throw the error to stop execution
-    throw err
-}
 
 function required_stdlib_imports(imports, start){
     // Returns the list of modules from the standard library needed by

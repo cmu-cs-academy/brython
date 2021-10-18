@@ -121,7 +121,7 @@ Flag.__or__ = function(self, other){
 }
 
 Flag.__ror__ = function(self, other){
-    if(typeof other == "number" || _b_.isinstance(other, int)){
+    if(typeof other == "number" || _b_.isinstance(other, _b_.int)){
         if(other == 0){
             return Flag.$factory(self.value)
         }
@@ -215,7 +215,7 @@ var BPattern = $B.make_class("Pattern",
 )
 
 BPattern.__eq__ = function(self, other){
-    if(self.$pattern.type != other.$pattern.$type){
+    if(other.$pattern && self.$pattern.type != other.$pattern.$type){
         // warn(_b_.BytesWarning, "cannot compare str and bytes pattern", 1)
     }
     return self.pattern == other.pattern &&
@@ -256,7 +256,7 @@ BPattern.__repr__ = BPattern.__str__ = function(self){
 }
 
 BPattern.findall = function(self){
-    var iter = BPattern.finditer.apply(null, arguments),
+    var iter = BPattern.finditer.apply(null, arguments).js_gen,
         res = []
 
     while(true){
@@ -1345,7 +1345,17 @@ function validate(name){
     }
 }
 
-var chr = _b_.chr
+function chr(i){
+    if(i < 0 || i > 1114111){
+        throw _b_.ValueError.$factory('Outside valid range')
+    }else if(i >= 0x10000 && i <= 0x10FFFF){
+        var code = (i - 0x10000)
+        return String.fromCodePoint(0xD800 | (code >> 10)) +
+            String.fromCodePoint(0xDC00 | (code & 0x3FF))
+    }else{
+        return String.fromCodePoint(i)
+    }
+}
 
 var character_classes = {
     in_charset: to_codepoint_list('bdDsSwW'),
@@ -2494,7 +2504,7 @@ function from_codepoint_list(codepoints, type){
     for(const cp of codepoints){
         s += _b_.chr(cp)
     }
-    return s
+    return $B.String(s)
 }
 
 var GroupDict = $B.make_class("GroupDict")
@@ -2709,16 +2719,30 @@ function StringObj(obj){
     this.py_obj = obj
     this.codepoints = []
     this.type = "str"
-    if(typeof obj == "string"){
+    if(typeof obj == "string" ||
+            (obj instanceof String && ! obj.codepoints)){
         // Python object represented as a Javascript string
         this.string = obj
+        // Maps a position in codepoints to position in string
+        this.index_map = {}
         for(var i = 0, len = obj.length; i < len; i++){
+            this.index_map[this.codepoints.length] = i
             var cp = obj.codePointAt(i)
             this.codepoints.push(cp)
             if(cp >= 0x10000){
                 i++
             }
         }
+        if(obj instanceof String){
+            // store for next use
+            obj.codepoints = this.codepoints
+            obj.index_map = this.index_map
+        }
+    }else if(obj instanceof String){
+        // string with surrogate pairs
+        this.string = obj.string
+        this.codepoints = obj.codepoints
+        this.index_map = obj.index_map
     }else if(_b_.isinstance(obj, _b_.str)){ // str subclass
         var so = new StringObj(obj.valueOf())
         this.string = so.string
@@ -2748,6 +2772,17 @@ function StringObj(obj){
 
 StringObj.prototype.substring = function(start, end){
     // Returns a string
+    var s
+    if(this.string && this.index_map){
+        if(this.index_map[start] === undefined){
+            return ''
+        }
+        if(end === undefined){
+            return this.string.substr(this.index_map[start])
+        }
+        return this.string.substring(this.index_map[start],
+            this.index_map[end])
+    }
     var codepoints,
         res = ''
     if(end === undefined){
@@ -2804,7 +2839,7 @@ function subn(pattern, repl, string, count, flags){
         repl1 = data1.repl1
     }
     pos = 0
-    for(var bmo of $module.finditer(BPattern.$factory(pattern), string.to_str())){
+    for(var bmo of $module.finditer(BPattern.$factory(pattern), string.to_str()).js_gen){
         // finditer yields instances of BMatchObject
         var mo = bmo.mo // instance of MatchObject
         res += from_codepoint_list(string.codepoints.slice(pos, mo.start),
@@ -3484,7 +3519,7 @@ var $module = {
             }
         }
 
-        var iter = $module.finditer.apply(null, arguments),
+        var iter = $module.finditer.apply(null, arguments).js_gen,
             res = []
         while(true){
             var next = iter.next()
@@ -3592,12 +3627,16 @@ var $module = {
         }
         data.pattern = pattern
         // optimization
-        if(isFinite(pattern.$pattern.fixed_length) &&
+        if(pattern.$pattern.fixed_length !== false &&
+                isFinite(pattern.$pattern.fixed_length) &&
                 pattern.pattern.endsWith('$') &&
                 ! (pattern.flags.value & MULTILINE.value)){
-            var mo = match(pattern.$pattern, data.string,
+            var mo = match(data.pattern.$pattern, data.string,
                 data.string.length - pattern.$pattern.fixed_length)
-            return BMO.$factory(mo)
+            if(mo){
+                return BMO.$factory(mo)
+            }
+            return _b_.None
         }
         var pos = 0
         while(pos < data.string.codepoints.length){
@@ -3631,7 +3670,7 @@ var $module = {
         }else{
             data = {pattern, string}
         }
-        for(var bmo of $module.finditer(pattern, $.string)){
+        for(var bmo of $module.finditer(pattern, $.string).js_gen){
             var mo = bmo.mo, // finditer returns instances of BMO
                 groupobj = mo.$groups
             res.push(data.string.substring(pos, mo.start))

@@ -1,7 +1,5 @@
 ;(function($B){
 
-//eval($B.InjectBuiltins())
-
 var _b_ = $B.builtins,
     object = _b_.object,
     _window = self
@@ -258,7 +256,7 @@ Attributes.get = function(){
     }
 }
 
-Attributes.$$keys = function(){
+Attributes.keys = function(){
     return Attributes.__iter__.apply(null, arguments)
 }
 
@@ -427,7 +425,7 @@ function $EventsList(elt, evt, arg){
     // removes the event listener
     this.elt = elt
     this.evt = evt
-    if(isintance(arg, list)){this.callbacks = arg}
+    if(_b_.isinstance(arg, _b_.list)){this.callbacks = arg}
     else{this.callbacks = [arg]}
     this.remove = function(callback){
         var found = false
@@ -481,7 +479,7 @@ OpenFile.__setattr__ = function(self, attr, value) {
     }else if(attr in obj){
         obj[attr] = value
     }else{
-        setattr(obj, attr, value)
+        _b_.setattr(obj, attr, value)
     }
 }
 
@@ -500,10 +498,24 @@ dom.FileReader.__str__ = function(){return "<class 'FileReader'>"}
 
 var Options = {
     __class__: _b_.type,
-    __delitem__: function(self, arg){
-        self.parent.options.remove(arg.elt)
+    __delitem__: function(self, key){
+        key = $B.PyNumber_Index(key)
+        if(key < 0){
+            key += self.parent.options.length
+        }
+        if(! self.parent.options[key]){
+            throw _b_.KeyError.$factory(key)
+        }
+        self.parent.options.remove(key)
     },
     __getitem__: function(self, key){
+        key = $B.PyNumber_Index(key)
+        if(key < 0){
+            key += self.parent.options.length
+        }
+        if(! self.parent.options[key]){
+            throw _b_.KeyError.$factory(key)
+        }
         return DOMNode.$factory(self.parent.options[key])
     },
     __len__: function(self){
@@ -520,11 +532,11 @@ var Options = {
         return "<object Options wraps " + self.parent.options + ">"
     },
     append: function(self, element){
-        self.parent.options.add(element.elt)
+        self.parent.options.add(element)
     },
     insert: function(self, index, element){
-        if(index === undefined){self.parent.options.add(element.elt)}
-        else{self.parent.options.add(element.elt, index)}
+        if(index === undefined){self.parent.options.add(element)}
+        else{self.parent.options.add(element, index)}
     },
     item: function(self, index){
         return self.parent.options.item(index)
@@ -532,8 +544,8 @@ var Options = {
     namedItem: function(self, name){
         return self.parent.options.namedItem(name)
     },
-    remove: function(self, arg){
-        self.parent.options.remove(arg.elt)
+    remove: function(self, element){
+        self.parent.options.remove(element.index)
     },
     $infos: {
         __module__: "<pydom>",
@@ -561,50 +573,7 @@ var DOMNode = {
     }
 }
 
-DOMNode.$factory = function(elt, fromtag){
-    if(elt.__class__ === DOMNode){
-        return elt
-    }
-    if(typeof elt == "number" || typeof elt == "boolean" ||
-            typeof elt == "string"){
-        return elt
-    }
-
-    // if none of the above, fromtag determines if the call is made by
-    // the tag factory or by any other call to DOMNode
-    // if made by tag factory (fromtag will be defined, the value is not
-    // important), the regular plain old behavior is retained. Only the
-    // return value of a DOMNode is sought
-
-    // In other cases (fromtag is undefined), DOMNode tries to return a "tag"
-    // from the browser.html module by looking into "$tags" which is set
-    // by the  browser.html module itself (external sources could override
-    // it) and piggybacks on the tag factory by adding an "elt_wrap"
-    // attribute to the class to let it know, that special behavior
-    // is needed. i.e: don't create the element, use the one provided
-    if(elt.__class__ === undefined && fromtag === undefined) {
-        if(DOMNode.tags !== undefined) {  // tags is a python dictionary
-            var tdict = DOMNode.tags.$string_dict
-            if(tdict !== undefined && tdict.hasOwnProperty(elt.tagName)) {
-                try{
-                    var klass = tdict[elt.tagName][0]
-                }catch(err){
-                    console.log("tdict", tdict, "tag name", elt.tagName)
-                    throw err
-                }
-                if(klass !== undefined) {
-                    // all checks are good
-                    klass.$elt_wrap = elt  // tell class to wrap element
-                    return klass.$factory()  // and return what the factory wants
-                }
-            }
-        }
-        // all "else" ... default to old behavior of plain DOMNode wrapping
-    }
-    if(elt["$brython_id"] === undefined || elt.nodeType == 9){
-        // add a unique id for comparisons
-        elt.$brython_id = "DOM-" + $B.UUID()
-    }
+DOMNode.$factory = function(elt){
     return elt
 }
 
@@ -690,7 +659,6 @@ DOMNode.__eq__ = function(self, other){
 }
 
 DOMNode.__getattribute__ = function(self, attr){
-    if(attr.substr(0, 2) == "$$"){attr = attr.substr(2)}
     switch(attr) {
         case "attrs":
             return Attributes.$factory(self)
@@ -757,7 +725,7 @@ DOMNode.__getattribute__ = function(self, attr){
               return res
           }
           break
-        case "$$location":
+        case "location":
             attr = "location"
             break
     }
@@ -804,21 +772,31 @@ DOMNode.__getattribute__ = function(self, attr){
     // arena ... look for the aliased version
     var property = self[attr]
 
-    if(property === undefined && $B.aliased_names[attr]){
-        property = self["$$" + attr]
-    }
     if(property !== undefined && self.__class__ &&
-            self.__class__.__module__ != "browser.html"){
-        // cf. issue #1543
-        var from_class = $B.$getattr(self.__class__, attr, _b_.None)
-        if(from_class !== _b_.None){
-            var frame = $B.last($B.frames_stack),
-                line_info = frame[1].$line_info,
-                line = line_info.split(',')[0]
-            console.info("Warning: line " + line + ", " + self.tagName +
-                " element has instance attribute '" + attr + "' set." +
-                " Attribute of class " + $B.class_name(self) +
-                " is ignored.")
+            self.__class__.__module__ != "browser.html" &&
+            self.__class__.__module__ != "browser.svg"){
+        // cf. issue #1543 : if an element has the attribute "attr" set and
+        // its class has an attribute of the same name, show a warning that
+        // the class attribute is ignored
+        var bases = self.__class__.__bases__
+        var show_message = true
+        for(var base of bases){
+            if(base.__module__ == "browser.html"){
+                show_message = false
+                break
+            }
+        }
+        if(show_message){
+            var from_class = $B.$getattr(self.__class__, attr, _b_.None)
+            if(from_class !== _b_.None){
+                var frame = $B.last($B.frames_stack),
+                    line_info = frame[1].$line_info,
+                    line = line_info.split(',')[0]
+                console.info("Warning: line " + line + ", " + self.tagName +
+                    " element has instance attribute '" + attr + "' set." +
+                    " Attribute of class " + $B.class_name(self) +
+                    " is ignored.")
+            }
         }
     }
 
@@ -910,7 +888,7 @@ DOMNode.__getattribute__ = function(self, attr){
 
 DOMNode.__getitem__ = function(self, key){
     if(self.nodeType == 9){ // Document
-        if(typeof key == "string"){
+        if(typeof key.valueOf() == "string"){
             var res = self.getElementById(key)
             if(res){return DOMNode.$factory(res)}
             throw _b_.KeyError.$factory(key)
@@ -968,16 +946,17 @@ DOMNode.__iter__ = function(self){
 
 DOMNode.__le__ = function(self, other){
     // for document, append child to document.body
-    if(self.nodeType == 9){self = self.body}
+    if(self.nodeType == 9){
+        self = self.body
+    }
     if(_b_.isinstance(other, TagSum)){
         for(var i = 0; i < other.children.length; i++){
             self.appendChild(other.children[i])
         }
     }else if(typeof other == "string" || typeof other == "number"){
-        var $txt = document.createTextNode(other.toString())
-        self.appendChild($txt)
-    }else if(_b_.isinstance(other, DOMNode)){
-        // other is a DOMNode instance
+        var txt = document.createTextNode(other.toString())
+        self.appendChild(txt)
+    }else if(other instanceof Node){
         self.appendChild(other)
     }else{
         try{
@@ -994,7 +973,9 @@ DOMNode.__le__ = function(self, other){
     return self // to allow chained appends
 }
 
-DOMNode.__len__ = function(self){return self.length}
+DOMNode.__len__ = function(self){
+    return self.length
+}
 
 DOMNode.__mul__ = function(self,other){
     if(_b_.isinstance(other, _b_.int) && other.valueOf() > 0){
@@ -1009,7 +990,9 @@ DOMNode.__mul__ = function(self,other){
         "by " + other)
 }
 
-DOMNode.__ne__ = function(self, other){return ! DOMNode.__eq__(self, other)}
+DOMNode.__ne__ = function(self, other){
+    return ! DOMNode.__eq__(self, other)
+}
 
 DOMNode.__next__ = function(self){
    self.$counter++
@@ -1368,8 +1351,11 @@ DOMNode.getSelectionRange = function(self){ // for TEXTAREA
 DOMNode.html = function(self){
     var res = self.innerHTML
     if(res === undefined){
-        if(self.nodeType == 9){res = self.body.innerHTML}
-        else{res = _b_.None}
+        if(self.nodeType == 9 && self.body){
+            res = self.body.innerHTML
+        }else{
+            res = _b_.None
+        }
     }
     return res
 }

@@ -274,12 +274,42 @@ function RandomStream(seed) {
     var random = genrand_res53
 
     random.seed = function(seed){
-        if(seed === undefined){seed = Date.now()}
-        if(typeof seed != "number"){seed = parseInt(seed, 10)}
-        if((seed !== 0 && ! seed) || isNaN(seed)){
-            throw _b_.ValueError.$factory("Bad seed: " + _b_.str.$factory(seed))
+        if(seed === undefined){
+            seed = Date.now()
         }
-        init_genrand(seed)
+        /*
+        if(Array.isArray(seed)){ // Brython-specific, for debugging
+            init_by_array(seed, seed.length)
+            return
+        }
+        */
+        var keys = []
+        if(typeof seed == "number" || _b_.isinstance(seed, _b_.int)){
+            var int32 = Math.pow(2, 32),
+                int32_1 = int32 - 1
+            // Transform to long integer
+            seed = $B.long_int.$factory(seed)
+            // Take abs(seed)
+            seed = $B.long_int.__abs__(seed)
+            // decomposition in factors of 2 ** 32
+            while($B.long_int.__ge__(seed, int32_1)){
+                var dm = _b_.divmod(seed, int32)
+                // Rest is a JS number (< 2 ** 32)
+                keys.push(dm[1])
+                // Quotient is either a JS number or a instance of long_int
+                // but seed must be long_int
+                seed = dm[0].value === undefined ?
+                    $B.long_int.$factory(dm[0]) : dm[0]
+            }
+            keys.push(parseInt(seed.value))
+        }else if(typeof seed != "number"){
+            seed = parseInt(seed, 10)
+            if((seed !== 0 && ! seed) || isNaN(seed)){
+                throw _b_.ValueError.$factory("Bad seed: " +
+                    _b_.str.$factory(seed))
+            }
+        }
+        init_by_array(keys, keys.length)
     }
 
     random.seed(seed)
@@ -291,11 +321,15 @@ function RandomStream(seed) {
     random.res53 = genrand_res53
 
     // Added for compatibility with Python
-    random.getstate = function(){return [VERSION, mt, mti]}
+    random.getstate = function(){
+        return $B.fast_tuple([VERSION,
+            $B.fast_tuple(mt.concat([mti]))
+            , _b_.None])
+    }
 
     random.setstate = function(state){
-        mt = state[1]
-        mti = state[2]
+        mt = state[1].slice(0, state[1].length - 1)
+        mti = state[1][state[1].length - 1]
     }
 
     return random
@@ -713,7 +747,7 @@ Random.randrange = function(){
 
     if(($B.rich_comp("__gt__", step, 0) &&
             $B.rich_comp("__ge__", start, stop)) ||
-            ($B.rich_comp("__lt__", step, 0) && 
+            ($B.rich_comp("__lt__", step, 0) &&
              $B.rich_comp("__le__", start, stop))){
         throw _b_.ValueError.$factory("empty range for randrange() (" +
             start + ", " + stop + ", " + step + ")")
@@ -851,30 +885,22 @@ Random.seed = function(){
     else if(version == 2){
         if(_b_.isinstance(a, _b_.str)){
             a = _b_.int.from_bytes(_b_.bytes.$factory(a, 'utf-8'), 'big')
-        }else if(_b_.isinstance(a, [_b_.bytes, _b_.bytearray])){
+        }else if(_b_.isinstance(a, [_b_.str, _b_.bytes, _b_.bytearray])){
+            $B.$import("hashlib",["sha512"], {}, {}, true);
+            var sha512 = $B.$getattr($B.imported["hashlib"], "sha512");
+            if(_b_.isinstance(a, _b_.str)){
+                a = _b_.str.encode(a)
+            }
+            a = $B.add(a, $B.$getattr(sha512(a), 'digest')())
             a = _b_.int.from_bytes(a, 'big')
+        }else if(false && Array.isArray(a)){
+            // for debugging
         }else if(!_b_.isinstance(a, _b_.int)){
             throw _b_.TypeError.$factory('wrong argument')
-        }
-        if(a.__class__ === $B.long_int){
-            // In this implementation, seed() only accepts safe integers
-            // Generate a random one from the underlying string value,
-            // using an arbitrary seed (99) to always return the same
-            // integer
-            var numbers = a.value,
-                res = '',
-                pos
-            self._random.seed(99)
-            for(var i = 0; i < 17; i++){
-                pos = parseInt(self._random() * numbers.length)
-                res += numbers.charAt(pos)
-            }
-            a = parseInt(res)
         }
     }else{
         throw _b_.ValueError.$factory('version can only be 1 or 2')
     }
-
     self._random.seed(a)
     gauss_next = null
 }
@@ -897,7 +923,7 @@ Random.setstate = function(state){
             state.length + ")")
     }
     if($.state[0] != 3){
-        throw _b_.ValueError.$factory("ValueError: state with version " +
+        throw _b_.ValueError.$factory("state with version " +
             $.state[0] + " passed to Random.setstate() of version 3")
     }
     var second = _b_.list.$factory($.state[1])
