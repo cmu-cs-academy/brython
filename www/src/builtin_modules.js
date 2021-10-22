@@ -302,7 +302,13 @@
 
             // Module has an attribute "tags" : a dictionary that maps all tag
             // names to the matching tag class factory function.
-            html.tags = $B.empty_dict()
+            // Implemented as a wrapper around a Javascript object for
+            // performance.
+            html.tags = $B.jsobj_as_pydict.$factory(html,
+                function(attr){
+                    return tags.indexOf(attr) == -1
+                }
+            )
 
             function maketag(tagName){
                 // Create a new class associated with the custom HTML tag
@@ -317,7 +323,6 @@
                 }
                 var klass = makeTagDict(tagName)
                 klass.$factory = makeFactory(klass)
-                _b_.dict.$setitem(html.tags, tagName, klass)
                 html[tagName] = klass
                 return klass
             }
@@ -539,7 +544,7 @@
             function(){
                 return $B.obj_dict($B.lockdown ? {} : $B.imported)
             },
-            function(self, obj, value){
+            function(self, value){
                  throw _b_.TypeError.$factory("Read only property 'sys.modules'")
             }
         ),
@@ -547,7 +552,7 @@
             function(){
                 return $B.lockdown ? [] : $B.path
             },
-            function(self, obj, value){
+            function(self, value){
                 if (!$B.lockdown) {
                   $B.path = value;
                 }
@@ -557,7 +562,7 @@
             function(){
                 return $B.lockdown ? [] : $B.meta_path
             },
-            function(self, obj, value){
+            function(self, value){
                 if (!$B.lockdown) {
                     $B.meta_path = value 
                 }
@@ -567,7 +572,7 @@
             function(){
                 return $B.lockdown ? [] : $B.path_hooks
             },
-            function(self, obj, value){
+            function(self, value){
                 if (!$B.lockdown) {
                     $B.path_hooks = value
                 }
@@ -577,7 +582,7 @@
             function(){
                 return _b_.dict.$factory($B.JSObj.$factory($B.path_importer_cache))
             },
-            function(self, obj, value){
+            function(self, value){
                 throw _b_.TypeError.$factory("Read only property" +
                     " 'sys.path_importer_cache'")
             }
@@ -634,14 +639,6 @@
     }
 
     modules._sys.__breakpointhook__ = modules._sys.breakpointhook
-
-    modules._sys.stderr.write = function(data){
-        return $B.$getattr(_sys.stderr.__get__(), "write")(data)
-    }
-
-    modules._sys.stdout.write = function(data){
-        return $B.$getattr(_sys.stdout.__get__(), "write")(data)
-    }
 
     var WarningMessage = $B.make_class("WarningMessage",
         function(){
