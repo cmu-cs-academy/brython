@@ -254,7 +254,7 @@ $B.get_class = function(obj){
                         && obj instanceof Node){
                     if(obj.tagName){
                         return $B.imported['browser.html'][obj.tagName] ||
-                            $B.DOMNode
+                                   $B.DOMNode
                     }
                     return $B.DOMNode
                 }

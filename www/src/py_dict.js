@@ -192,7 +192,8 @@ function to_list(d, ix){
     if(d.$jsobj){
         items = []
         for(var attr in d.$jsobj){
-            if(attr.charAt(0) != "$"){
+            if((! attr.startsWith("$")) &&
+                    ((! d.$exclude) || ! d.$exclude(attr))){
                 var val = d.$jsobj[attr]
                 if(val === undefined){val = _b_.NotImplemented}
                 else if(val === null){val = $N}
@@ -438,6 +439,9 @@ dict.__getitem__ = function(){
 dict.$getitem = function(self, arg, ignore_missing){
     // ignore_missing is set in dict.get and dict.setdefault
     if(self.$jsobj){
+        if(self.$exclude && self.$exclude(arg)){
+            throw _b_.KeyError.$factory(arg)
+        }
         if(self.$jsobj[arg] === undefined){
             if(self.$jsobj.hasOwnProperty &&
                     self.$jsobj.hasOwnProperty(arg)){
@@ -636,7 +640,12 @@ dict.__len__ = function(self) {
     var _count = 0
 
     if(self.$jsobj){
-        for(var attr in self.$jsobj){if(attr.charAt(0) != "$"){_count++}}
+        for(var attr in self.$jsobj){
+            if(attr.charAt(0) != "$" &&
+                    ((! self.$exclude) || ! self.$exclude(attr))){
+                _count++
+            }
+        }
         return _count
     }
 
@@ -649,7 +658,9 @@ dict.__len__ = function(self) {
     return _count
 }
 
-dict.__ne__ = function(self, other){return ! dict.__eq__(self, other)}
+dict.__ne__ = function(self, other){
+    return ! dict.__eq__(self, other)
+}
 
 dict.__new__ = function(cls){
     if(cls === undefined){
@@ -701,7 +712,7 @@ dict.__reduce_ex__ = function(self, protocol){
 dict.__repr__ = function(self){
     $B.builtins_repr_check(dict, arguments) // in brython_builtins.js
     if(self.$jsobj){ // wrapper around Javascript object
-        return dict.__repr__(jsobj2dict(self.$jsobj))
+        return dict.__repr__(jsobj2dict(self.$jsobj, self.$exclude))
     }
     if($B.repr.enter(self)){
         return "{...}"
@@ -1211,10 +1222,11 @@ for(var attr in dict){
 
 $B.set_func_names(mappingproxy, "builtins")
 
-function jsobj2dict(x){
+function jsobj2dict(x, exclude){
+    exclude = exclude || function(){return false}
     var d = $B.empty_dict()
     for(var attr in x){
-        if(attr.charAt(0) != "$" && attr !== "__class__"){
+        if(attr.charAt(0) != "$" && ! exclude(attr)){
             if(x[attr] === null){
                 d.$string_dict[attr] = [_b_.None, d.$order++]
             }else if(x[attr] === undefined){
@@ -1229,15 +1241,162 @@ function jsobj2dict(x){
     return d
 }
 
-$B.obj_dict = function(obj, from_js){
+$B.obj_dict = function(obj, exclude){
     var klass = obj.__class__ || $B.get_class(obj)
     if(klass !== undefined && klass.$native){
         throw $B.attr_error("__dict__", obj)
     }
     var res = $B.empty_dict()
     res.$jsobj = obj
-    res.$from_js = from_js // set to true if
+    res.$exclude = exclude || function(){return false}
     return res
 }
+
+// Wrapper around a JS object to handle it as a Python dictionary.
+// Some keys of the original object can be ignored by passing
+// the filtering function exclude().
+// Supports adding new keys.
+
+var jsobj_as_pydict = $B.jsobj_as_pydict = $B.make_class('jsobj_as_pydict',
+    function(jsobj, exclude){
+        return {
+            __class__: jsobj_as_pydict,
+            obj: jsobj,
+            exclude: exclude ? exclude : function(){return false},
+            new_keys: []
+        }
+    }
+)
+
+jsobj_as_pydict.__contains__ = function(self, key){
+    if(self.new_keys.indexOf(key) > -1){
+        return true
+    }
+    return ! (self.exclude(key) || self.obj[key] === undefined)
+}
+
+jsobj_as_pydict.__delitem__ = function(self, key){
+    jsobj_as_pydict.__getitem__(self, key) // raises KeyError if not present
+    delete self.obj[key]
+    var ix = self.new_keys.indexOf(key)
+    if(ix > -1){
+        self.new_keys.splice(ix, 1)
+    }
+}
+
+jsobj_as_pydict.__eq__ = function(self, other){
+    if(other.__class__ !== jsobj_as_pydict){
+        return _b_.NotImplemented
+    }
+    // create true Python dicts with the items in self and other
+    var self1 = $B.empty_dict()
+        other1 = $B.empty_dict()
+
+    dict.__init__(self1, jsobj_as_pydict.items(self))
+    dict.__init__(other1, jsobj_as_pydict.items(other))
+
+    // Compare true Python dicts
+    return dict.__eq__(self1, other1)
+}
+
+jsobj_as_pydict.__getitem__ = function(self, key){
+    if(jsobj_as_pydict.__contains__(self, key)){
+        return self.obj[key]
+    }
+    throw _b_.KeyError.$factory(key)
+}
+
+jsobj_as_pydict.__iter__ = function(self){
+    return _b_.iter(jsobj_as_pydict.keys(self))
+}
+
+jsobj_as_pydict.__len__ = function(self){
+    var len = 0
+    for(var key in self.obj){
+        if(! self.exclude(key)){
+            len++
+        }
+    }
+    return len + self.new_keys.length
+}
+
+jsobj_as_pydict.__repr__ = function(self){
+    if($B.repr.enter(self)){
+        return "{...}"
+    }
+    var res = [],
+        items = _b_.list.$factory(jsobj_as_pydict.items(self))
+    for(var item of items){
+        res.push(_b_.repr(item[0]) + ": " + _b_.repr(item[1]))
+    }
+    $B.repr.leave(self)
+    return "{" + res.join(", ") + "}"
+}
+
+jsobj_as_pydict.__setitem__ = function(self, key, value){
+    if(self.exclude(key) && self.new_keys.indexOf(key) == -1){
+        self.new_keys.push(key)
+    }
+    self.obj[key] = value
+}
+
+jsobj_as_pydict.get = function(self, key, _default){
+    _default = _default === undefined ? _b_.None : _default
+    if(self.exclude(key) || self.obj[key] === undefined){
+        return _default
+    }
+    return self.obj[key]
+}
+
+jsobj_as_pydict.items = function(self){
+    var items = []
+    for(var key in self.obj){
+        if(self.exclude(key) && self.new_keys.indexOf(key) == -1){
+            continue
+        }
+        items.push($B.fast_tuple([key, self.obj[key]]))
+    }
+    var set_like = true
+    // Check if all values are hashable
+    for(var item of items){
+        try{
+            _b_.hash(item[1])
+        }catch(err){
+            set_like = false
+            break
+        }
+    }
+    var it = dict_items.$factory(self, items, set_like)
+    it.dict_version = self.$version
+    return it
+}
+
+jsobj_as_pydict.keys = function(self){
+    var lst = []
+    for(var key in self.obj){
+        if(self.exclude(key) && self.new_keys.indexOf(key) == -1){
+            continue
+        }
+        lst.push(key)
+    }
+    var it = dict_keys.$factory(self, lst, true)
+    it.dict_version = self.$version
+    return it
+}
+
+jsobj_as_pydict.values = function(self){
+    var values = []
+    for(var key in self.obj){
+        if(self.exclude(key) && self.new_keys.indexOf(key) == -1){
+            continue
+        }
+        values.push(self.obj[key])
+    }
+    var it = dict_values.$factory(self, values, false)
+    it.dict_version = self.$version
+    return it
+}
+
+$B.set_func_names(jsobj_as_pydict, 'builtins')
 
 })(__BRYTHON__)

@@ -1092,7 +1092,7 @@ $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
                     if(i == len - 1 &&
                             $B.imported[_mod_name][parsed_name[len]] &&
                             $B.imported[_mod_name][parsed_name[len]].__class__ ===
-                                module){
+                                $B.module){
                         return $B.imported[_mod_name][parsed_name[len]]
                     }
                     if(has_from){ // "from a import b" : ImportError

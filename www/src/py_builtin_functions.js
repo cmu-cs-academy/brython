@@ -91,6 +91,10 @@ for(var $func in None){
 
 $B.set_func_names(NoneType, "builtins")
 
+function __build_class__(){
+    throw _b_.NotImplementedError.$factory('__build_class__')
+}
+
 function abs(obj){
     check_nb_args('abs', 1, arguments)
     check_no_kw('abs', obj)
@@ -123,6 +127,10 @@ function abs(obj){
     return $B.$call(method)(obj)
 }
 
+function aiter(async_iterable){
+    return $B.$call($B.$getattr(async_iterable, '__aiter__'))()
+}
+
 function all(obj){
     check_nb_args('all', 1, arguments)
     check_no_kw('all', obj)
@@ -133,6 +141,15 @@ function all(obj){
             if(!$B.$bool(elt)){return false}
         }catch(err){return true}
     }
+}
+
+function anext(async_iterator, _default){
+    var missing = {},
+        $ = $B.args('anext', 2, {async_iterator: null, _default: null},
+                ['async_iterator', '_default'], arguments,
+                {_default: missing}, null, null)
+    var awaitable = $B.$call($B.$getattr(async_iterator, '__anext__'))()
+    return awaitable
 }
 
 function any(obj){
@@ -1001,7 +1018,7 @@ $B.$getattr = function(obj, attr, _default){
 
     var klass = obj.__class__
 
-    var $test = false // attr == "pop" // && obj === $B // "Point"
+    var $test = false // attr == "stderr" // && obj === $B // "Point"
     if($test){console.log("$getattr", attr, obj, klass)}
 
     // Shortcut for classes without parents
@@ -1012,7 +1029,7 @@ $B.$getattr = function(obj, attr, _default){
                  klass.__bases__[0] === _b_.object))){
         if($test){
             console.log("class without parent", klass)
-            console.log('obj[attr]', obj[attr])
+            console.log('\nobj[attr]', obj[attr])
         }
         if(obj[attr] !== undefined){
             return obj[attr]
@@ -1103,7 +1120,11 @@ $B.$getattr = function(obj, attr, _default){
                       return obj.$infos.__func__.$infos.__dict__
                   }
               }
-              return $B.obj_dict(obj)
+              return $B.obj_dict(obj,
+                  function(attr){
+                      return ['__class__'].indexOf(attr) > -1
+                  }
+              )
           }
       case '__doc__':
           // for builtins objects, use $B.builtins_doc
@@ -1229,7 +1250,7 @@ $B.$getattr = function(obj, attr, _default){
     }
     var odga = _b_.object.__getattribute__
     if($test){console.log("attr_func is odga ?", attr_func,
-        attr_func === odga, obj[attr])}
+        attr_func === odga, '\nobj[attr]', obj[attr])}
     if(attr_func === odga){
         var res = obj[attr]
         if(Array.isArray(obj) && Array.prototype[attr] !== undefined){
@@ -1238,7 +1259,6 @@ $B.$getattr = function(obj, attr, _default){
         }else if(res === null){
             return null
         }else if(res === undefined && obj[attr] !== undefined){
-            console.log('cas 1')
             if(_default === undefined){
                 throw $B.attr_error(attr, obj)
             }
@@ -1246,6 +1266,9 @@ $B.$getattr = function(obj, attr, _default){
         }else if(res !== undefined){
             if($test){console.log(obj, attr, obj[attr],
                 res.__set__ || res.$is_class)}
+            if(res.$is_property){
+                return property.__get__(res)
+            }
             // Cf. issue 1081
             if(res.__set__ === undefined || res.$is_class){
                 if($test){console.log("return", res, res+'',
@@ -1369,7 +1392,7 @@ function _get_builtins_doc(){
         }
         url += '/builtins_docstrings.js'
         var f = _b_.open(url)
-        eval(f.$string)
+        eval(f.$content)
         $B.builtins_doc = docs
     }
 }
@@ -2045,7 +2068,7 @@ function $print(){
     writer(end)
     var flush = $B.$getattr(file, 'flush', None)
     if(flush !== None){
-        flush()
+        $B.$call(flush)()
     }
     return None
 }
@@ -2065,11 +2088,22 @@ var property = $B.make_class("property",
 
 property.__init__ = function(self, fget, fset, fdel, doc) {
 
+    var $ = $B.args('__init__', 5,
+                {self: null, fget: null, fset: null, fdel: null, doc: null},
+                ['self', 'fget', 'fset', 'fdel', 'doc'], arguments,
+                {fget: _b_.None, fset: _b_.None, fdel: _b_.None, doc: _b_.None},
+                null, null),
+        self = $.self,
+        fget = $.fget,
+        fset = $.fset,
+        fdel = $.fdel,
+        doc = $.doc
     self.__doc__ = doc || ""
     self.$type = fget.$type
     self.fget = fget
     self.fset = fset
     self.fdel = fdel
+    self.$is_property = true
 
     if(fget && fget.$attrs){
         for(var key in fget.$attrs){
@@ -2077,21 +2111,6 @@ property.__init__ = function(self, fget, fset, fdel, doc) {
         }
     }
 
-    self.__get__ = function(self, obj, objtype) {
-        if(obj === undefined){return self}
-        if(self.fget === undefined){
-            throw _b_.AttributeError.$factory("unreadable attribute")
-        }
-        return $B.$call(self.fget)(obj)
-    }
-    if(fset !== undefined){
-        self.__set__ = function(self, obj, value){
-            if(self.fset === undefined){
-                throw _b_.AttributeError.$factory("can't set attribute")
-            }
-            $B.$getattr(self.fset, '__call__')(obj, value)
-        }
-    }
     self.__delete__ = fdel;
 
     self.getter = function(fget){
@@ -2103,12 +2122,25 @@ property.__init__ = function(self, fget, fset, fdel, doc) {
     self.deleter = function(fdel){
         return property.$factory(self.fget, self.fset, fdel, self.__doc__)
     }
+}
 
+property.__get__ = function(self, obj) {
+    if(self.fget === undefined){
+        throw _b_.AttributeError.$factory("unreadable attribute")
+    }
+    return $B.$call(self.fget)(obj)
 }
 
 property.__repr__ = function(self){
     $B.builtins_repr_check(property, arguments) // in brython_builtins.js
     return _b_.repr(self.fget(self))
+}
+
+property.__set__ = function(self, obj, value){
+    if(self.fset === undefined){
+        throw _b_.AttributeError.$factory("can't set attribute")
+    }
+    $B.$getattr(self.fset, '__call__')(obj, value)
 }
 
 $B.set_func_names(property, "builtins")
@@ -2913,13 +2945,21 @@ function $url_open(){
         }else if($B.files && $B.files.hasOwnProperty($.file)){
             // Virtual file system created by
             // python -m brython --make_file_system
-            $res = atob($B.files[$.file].content)
+            var $res = atob($B.files[$.file].content)
             var source = []
             for(const char of $res){
                 source.push(char.charCodeAt(0))
             }
-            $bytes = _b_.bytes.$factory()
-            $bytes.source = source
+            source.pop()  // remove extra newline char added when created
+            result.content = _b_.bytes.$factory(source)
+            if(!is_binary){
+                // use encoding to restore text
+                try{
+                    result.content = _b_.bytes.decode(result.content, encoding)
+                } catch(error) {
+                    result.error = error
+                }
+            }
         }else if($B.protocol != "file"){
             // Try to load file by synchronous Ajax call
             var req = new XMLHttpRequest()
@@ -3283,7 +3323,9 @@ $B.set_func_names($B.Function, "builtins")
 _b_.__BRYTHON__ = __BRYTHON__
 
 $B.builtin_funcs = [
-    "abs", "all", "any", "ascii", "bin", "breakpoint", "callable", "chr",
+    "__build_class__",
+    "abs", "aiter", "all", "anext", "any", "ascii", "bin", "breakpoint",
+    "callable", "chr",
     "compile", "delattr", "dir", "divmod", "eval", "exec", "exit", "format",
     "getattr", "globals", "hasattr", "hash", "help", "hex", "id", "input",
     "isinstance", "issubclass", "iter", "len", "locals", "max", "min", "next",
