@@ -2950,6 +2950,20 @@ assertRaises(SyntaxError, exec,
 assertRaises(TypeError, chr, '')
 assertRaises(TypeError, chr, 'a')
 
+# issue 1814
+er = IndexError('hello')
+assert str(er) == 'hello'
+assert repr(er) == "IndexError('hello')"
+er = IndexError()
+assert str(er) == ''
+assert repr(er) == 'IndexError()'
+
+# issue 1812
+assertRaises(ValueError, exec,
+    "list(zip(range(3), ['fee', 'fi', 'fo', 'fum'], strict=True))")
+assertRaises(ValueError, exec,
+    "list(zip(range(5), ['fee', 'fi', 'fo', 'fum'], strict=True))")
+    
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================
