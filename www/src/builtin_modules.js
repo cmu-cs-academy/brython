@@ -543,7 +543,7 @@
         max_string_length: $B.max_string_length, // in brython_builtins.js
         modules: _b_.property.$factory(
             function(){
-                return $B.obj_dict($B.lockdown ? {} : $B.imported)
+                return $B.obj_dict($B.imported)
             },
             function(self, value){
                  throw _b_.TypeError.$factory("Read only property 'sys.modules'")
@@ -551,32 +551,26 @@
         ),
         path: _b_.property.$factory(
             function(){
-                return $B.lockdown ? [] : $B.path
+                return $B.path
             },
             function(self, value){
-                if (!$B.lockdown) {
-                  $B.path = value;
-                }
+                 $B.path = value;
             }
         ),
         meta_path: _b_.property.$factory(
             function(){
-                return $B.lockdown ? [] : $B.meta_path
+                return $B.meta_path
             },
             function(self, value){
-                if (!$B.lockdown) {
-                    $B.meta_path = value 
-                }
+                $B.meta_path = value
             }
         ),
         path_hooks: _b_.property.$factory(
             function(){
-                return $B.lockdown ? [] : $B.path_hooks
+                return $B.path_hooks
             },
             function(self, value){
-                if (!$B.lockdown) {
-                    $B.path_hooks = value
-                }
+                $B.path_hooks = value
             }
         ),
         path_importer_cache: _b_.property.$factory(
