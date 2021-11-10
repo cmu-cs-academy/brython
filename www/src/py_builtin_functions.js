@@ -360,7 +360,15 @@ function compile() {
     }
 
     // Run py2js to detect potential syntax errors
-    $B.py2js({src: $.source, filename: $.filename}, module_name, module_name)
+    var root = $B.parser.$create_root_node(
+            {src: $.source, filename: $.filename},
+            module_name, module_name)
+    $B.parser.dispatch_tokens(root, $.source)
+    if($.flags == $B.PyCF_ONLY_AST){
+        var ast = root.ast()
+        console.log('return ast', ast, ast.constructor.$name)
+        return ast
+    }
     return $
 }
 
@@ -524,9 +532,9 @@ function $$eval(src, _globals, _locals){
     if(src.__class__ === code){
         mode = src.mode
         src = src.source
-    }else if(typeof src.valueOf() !== 'string'){
-        throw _b_.TypeError.$factory("eval() arg 1 must be a string, bytes "+
-            "or code object")
+    }else if((! src.valueOf) || typeof src.valueOf() !== 'string'){
+        throw _b_.TypeError.$factory(`${mode}() arg 1 must be a string,` +
+            " bytes or code object")
     }else{
         // src might be an instance of JS String if source has surrogate pairs
         // cf. issue #1772
@@ -576,7 +584,6 @@ function $$eval(src, _globals, _locals){
         global_scope.parent_block = $B.builtins_scope
 
         parent_scope = local_scope
-
         // restore parent scope object
         eval("$locals_" + parent_scope.id + " = current_frame[1]")
 
@@ -767,6 +774,8 @@ function $$eval(src, _globals, _locals){
             }
             js = root.to_js()
 
+            // console.log('js', $B.format_indent(js, 0))
+
             var locals_obj = eval("$locals_" + locals_id),
                 globals_obj = eval("$locals_" + globals_id)
             if(_globals === _b_.None){
@@ -792,6 +801,7 @@ function $$eval(src, _globals, _locals){
             }
         }else{
             js = root.to_js()
+
             var res = eval(js)
         }
 
@@ -865,6 +875,24 @@ function $$eval(src, _globals, _locals){
         err.src = src
         err.module = globals_id
         if(err.$py_error === undefined){
+            console.log('Javascript error', Object.getPrototypeOf(err).name,
+                err.message)
+            var lineNumber = err.lineNumber
+            if(lineNumber !== undefined){
+                console.log('around JS line', lineNumber)
+                console.log(js.split('\n').
+                    slice(lineNumber-5, lineNumber+5).join('\n'))
+                var lines_before = js.split('\n').slice(0, lineNumber),
+                    re = new RegExp('line_info = "(.*?)"', 'g'),
+                    matches = (new String(lines_before)).matchAll(re),
+                    line_info
+                for(var match of matches){
+                    line_info = match[1]
+                }
+                if(line_info){
+                    console.log('around source line', line_info.split(',')[0])
+                }
+            }
             throw $B.exception(err)
         }
         if(globals_is_dict){
@@ -1188,9 +1216,7 @@ $B.$getattr = function(obj, attr, _default){
                     return object_attr[0]
                 }
                 if(_default === undefined){
-                    throw _b_.AttributeError.$factory("'" +
-                        klass.$infos.__name__ +"' object has no attribute '" +
-                        attr + "'")
+                    throw $B.attr_error(attr, obj)
                 }
                 return _default
             }
@@ -1617,6 +1643,8 @@ iterator_class.__next__ = function(self){
     catch(err){throw _b_.StopIteration.$factory('')}
 }
 
+$B.set_func_names(iterator_class, "builtins")
+
 callable_iterator = $B.make_class("callable_iterator",
     function(func, sentinel){
         return {
@@ -1638,6 +1666,8 @@ callable_iterator.__next__ = function(self){
     }
     return res
 }
+
+$B.set_func_names(callable_iterator, "builtins")
 
 $B.$iter = function(obj, sentinel){
     // Function used internally by core Brython modules, to avoid the cost
@@ -2950,7 +2980,6 @@ function $url_open(){
             for(const char of $res){
                 source.push(char.charCodeAt(0))
             }
-            source.pop()  // remove extra newline char added when created
             result.content = _b_.bytes.$factory(source)
             if(!is_binary){
                 // use encoding to restore text
@@ -3040,7 +3069,9 @@ var zip = $B.make_class("zip",
             return res
         }
         var $ns = $B.args('zip', 0, {}, [], arguments, {}, 'args', 'kw')
-        var _args = $ns['args']
+        var _args = $ns['args'],
+            strict = $ns.kw.$string_dict.strict &&
+                $ns.kw.$string_dict.strict[0]
         var args = [],
             nexts = [],
             only_lists = true,
@@ -3048,6 +3079,15 @@ var zip = $B.make_class("zip",
 
         for(var i = 0; i < _args.length; i++){
             if(only_lists && Array.isArray(_args[i])){
+                if(strict){
+                    if(i == 0){
+                        var len = _args[i].length
+                    }else if(_args[i] != len){
+                        throw _b_.ValueError.$factory(`zip() argument ${i} ` +
+                            `is ${_args[i] > len ? 'longer' : 'shorter'} ` +
+                            `than argument ${i - 1}`)
+                    }
+                }
                 if(min_len === undefined || _args[i].length < min_len){
                     min_len = _args[i].length
                 }
@@ -3079,9 +3119,30 @@ var zip = $B.make_class("zip",
                     flag = true
                 for(var i = 0; i < args.length; i++){
                     try{
-                        line.push($B.$call(args[i])())
+                        line.push(args[i]())
                     }catch(err){
                         if(err.__class__ == _b_.StopIteration){
+                            if(strict){
+                                if(i > 0){
+                                    throw _b_.ValueError.$factory(
+                                        `zip() argument ${i + 1} is shorter ` +
+                                        `than argument ${i}`)
+                                }else{
+                                    for(var j = 1; j < args.length; j++){
+                                        var exhausted = true
+                                        try{
+                                            args[j]()
+                                            exhausted = false
+                                        }catch(err){
+                                        }
+                                        if(! exhausted){
+                                            throw _b_.ValueError.$factory(
+                                                `zip() argument ${j + 1} is longer ` +
+                                                `than argument ${i + 1}`)
+                                        }
+                                    }
+                                }
+                            }
                             flag = false
                             break
                         }else{

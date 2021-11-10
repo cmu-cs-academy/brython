@@ -276,98 +276,73 @@ $B.class_name = function(obj){
     }
 }
 
-$B.$list_comp = function(items){
-    // Called for list comprehensions
-    // items[0] is the Python code for the comprehension expression
-    // items[1:] is the loops and conditions in the comprehension
-    // For instance in [ x * 2 for x in A if x > 2 ],
-    // items is ["x * 2", "for x in A", "if x > 2"]
-    var ix = $B.UUID(),
-        res = "comp_result_" + $B.lambda_magic + ix,
-        py = res + " = []\n",
-        indent = 0
-    for(var i = 1, len = items.length; i < len; i++){
-        var item = items[i].replace(/\s+$/, "").replace(/\n/g, "")
-        py += " ".repeat(indent) + item + ":\n"
-        indent += 4
+$B.next_of = function(iterator){
+    // return the function that produces the next item in an iterator
+    if(iterator.__class__ === _b_.range){
+        var obj = {ix: iterator.start}
+        if(iterator.step > 0){
+            return function(){
+                if(obj.ix >= iterator.stop){
+                    throw _b_.StopIteration.$factory('')
+                }
+                var res = obj.ix
+                obj.ix += iterator.step
+                return res
+            }
+        }else{
+            return function(){
+                if(obj.ix <= iterator.stop){
+                    throw _b_.StopIteration.$factory('')
+                }
+                var res = obj.ix
+                obj.ix += iterator.step
+                return res
+            }
+        }
     }
-    py += " ".repeat(indent)
-    py += res + ".append(" + items[0] + ")\n"
-    return [py, ix]
+    return $B.$call($B.$getattr(_b_.iter(iterator), '__next__'))
 }
 
-$B.$dict_comp = function(module_name, parent_scope, items, line_num){
-    // Called for dict comprehensions
-    // items[0] is the Python code for the comprehension expression
-    // items[1:] is the loops and conditions in the comprehension
-    // For instance in {x: x * 2 for x in A if x > 2},
-    // items is ["x: x * 2", "for x in A", "if x > 2"]
-
-    var ix = $B.UUID(),
-        res = "comp_result_" + $B.lambda_magic + ix,
-        py = res + " = {}\n", // Python code
-        indent = 0
-    for(var i = 1, len = items.length; i < len; i++){
-        var item = items[i].replace(/\s+$/,"").replace(/\n/g, "")
-        py += "    ".repeat(indent) + item + ":\n"
-        indent++
+$B.unpacker = function(obj, nb_targets, has_starred, target){
+    // Used in unpacking target of a "for" loop if it is a tuple or list
+    var t = _b_.list.$factory(obj),
+        len = t.length,
+        min_len = has_starred ? len - 1 : len
+    if(len < min_len){
+        throw _b_.ValueError.$factory(
+            `not enough values to unpack (expected ${min_length}, got ${len})`)
     }
-    py += "    ".repeat(indent) + res + ".update({" + items[0] + "})"
-
-    var line_info = line_num + ',' + module_name
-
-    var dictcomp_name = "dc" + ix,
-        root = $B.py2js(
-            {src:py, is_comp: 'dictcomp', line_info},
-            module_name, dictcomp_name, parent_scope, line_num),
-        outer_expr = root.outermost_expr.to_js(),
-        js = root.to_js()
-
-    js += '\nreturn ' + res + '\n'
-
-    js = "(function(_expr){" + js + "})(" + outer_expr + ")"
-    $B.clear_ns(dictcomp_name)
-    delete $B.$py_src[dictcomp_name]
-
-    return js
+    if((! has_starred) && len > nb_targets){
+        console.log('iterable', obj, 't', t, 'nb_targets', nb_targets)
+        throw _b_.ValueError.$factory(
+            `too many values to unpack (expected ${nb_targets})`)
+    }
+    t.index = -1
+    t.read_one = function(){
+        t.index++
+        return t[t.index]
+    }
+    t.read_rest = function(){
+        t.index++
+        return t.slice(t.index)
+    }
+    return t
 }
 
-$B.$gen_expr = function(module_name, parent_scope, items, line_num, set_comp){
-    // Called for generator expressions, or set comprehensions if "set_comp"
-    // is set.
-    // outer_expr is the outermost expression, evaluated prior to running the
-    // generator
-    var ix = $B.UUID(),
-        genexpr_name = (set_comp ? "set_comp" + $B.lambda_magic : "__ge") + ix,
-        py = `def ${genexpr_name}(expr):\n`, // use a special name (cf $global_search)
-        indent = 1
-    for(var i = 1, len = items.length; i < len; i++){
-        var item = items[i].replace(/\s+$/, "").replace(/\n/g, "")
-        py += " ".repeat(indent) + item + ":\n"
-        indent += 4
+$B.rest_iter = function(next_func){
+    // Read the rest of an iterable
+    // Used in assignment to a starred item
+    var res = []
+    while(true){
+        try{
+            res.push(next_func())
+        }catch(err){
+            if($B.is_exc(err, [_b_.StopIteration])){
+                return $B.fast_tuple(res)
+            }
+            throw err
+        }
     }
-    py += " ".repeat(indent)
-    py += "yield (" + items[0] + ")"
-
-    var line_info = line_num + ',' + module_name
-
-    var root = $B.py2js({
-            src: py,
-            is_comp: set_comp ? 'setcomp' : 'genexpr',
-            line_info,
-            ix},
-            genexpr_name, genexpr_name, parent_scope, line_num),
-        js = root.to_js(),
-        lines = js.split("\n")
-    if(root.outermost_expr === undefined){
-        console.log("no outermost", module_name, parent_scope)
-    }
-    var outer_expr = root.outermost_expr.to_js()
-    js = lines.join("\n")
-    js += "\nvar $res = $B.generator.$factory(" + genexpr_name +
-        ')(' + outer_expr + ');\nreturn $res\n'
-    js = "(function($locals_" + genexpr_name +"){" + js + "})($locals)\n"
-    return js
 }
 
 $B.copy_namespace = function(){
@@ -1408,33 +1383,10 @@ $B.trace_return = function(value){
     trace_func(frame_obj, 'return', value)
 }
 
-function exit_ctx_managers_in_generators(frame){
-    // Called when leaving an execution frame.
-    // Inspect the generators in frame's locals. If they have unclosed context
-    // managers, close them.
-    for(key in frame[1]){
-        if(frame[1][key] && frame[1][key].__class__ == $B.generator){
-            // Force generator termination, which executes the "finally" block
-            // associated with the context manager
-            var gen_obj = frame[1][key]
-            gen_obj.js_gen.return()
-        }
-    }
-}
-
-$B.set_cm_in_generator = function(cm_exit){
-    if(cm_exit !== undefined){
-        $B.frames_stack.forEach(function(frame){
-            frame[1].$cm_in_gen = frame[1].$cm_in_gen || new Set()
-            frame[1].$cm_in_gen.add(cm_exit)
-        })
-    }
-}
-
-
 $B.leave_frame = function(arg){
     // Leave execution frame
     if($B.frames_stack.length == 0){console.log("empty stack"); return}
+
     // When leaving a module, arg is set as an object of the form
     // {$locals, value: _b_.None}
     if(arg && arg.value !== undefined && $B.tracefunc){
@@ -1446,16 +1398,28 @@ $B.leave_frame = function(arg){
         }
     }
     var frame = $B.frames_stack.pop()
-    frame[1].$current_exception = undefined
-    if(frame[1].$close_generators){
-        // The attribute $close_generators is set in
-        // py_generator.js/$B.generator
-        for(var i = 0, len = frame[1].$close_generators.length; i < len; i++){
-            var gen = frame[1].$close_generators[i]
-            // Attribute $has_run is set if generator has already been run
-            if(gen.$has_run){
-                gen.return()
+    if(frame[1].$is_generator){
+        // Get context managers in a generator
+        var ctx_managers = new Set()
+        for(var key in frame[1]){
+            if(key.startsWith('$ctx_manager')){
+                ctx_managers.add(frame[1][key])
             }
+        }
+        if(ctx_managers.size > 0 && $B.frames_stack.length > 0){
+            // store context managers in previous frame
+            var caller = $B.last($B.frames_stack)
+            caller[1].$ctx_managers_in_gen = caller[1].$ctx_managers_in_gen ||
+                new Set()
+            for(var cm of ctx_managers){
+                caller[1].$ctx_managers_in_gen.add(cm)
+            }
+        }
+    }
+    frame[1].$current_exception = undefined
+    if(frame[1].$ctx_managers_in_gen){
+        for(var cm of frame[1].$ctx_managers_in_gen){
+            $B.$call($B.$getattr(cm, '__exit__'))(_b_.None, _b_.None, _b_.None)
         }
     }
     return _b_.None
@@ -1466,8 +1430,16 @@ $B.leave_frame_exec = function(arg){
     // on the englobing namespace
     if($B.profile > 0){$B.$profile.return()}
     if($B.frames_stack.length == 0){console.log("empty stack"); return}
-    var frame = $B.frames_stack.pop()
-    exit_ctx_managers_in_generators(frame)
+    var frame = $B.last($B.frames_stack)
+    $B.frames_stack.pop()
+    if(frame[1].$ctx_managers_in_gen){
+        // If the frame used generators with context managers, exit them.
+        // Simulates garbage collection.
+        for(var cm of frame[1].$ctx_managers_in_gen){
+            $B.$call($B.$getattr(cm, '__exit__'))(_b_.None, _b_.None, _b_.None)
+        }
+    }
+
     for(var i = $B.frames_stack.length - 1; i >= 0; i--){
         if($B.frames_stack[i][2] == frame[2]){
             $B.frames_stack[i][3] = frame[3]
