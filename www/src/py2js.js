@@ -160,7 +160,11 @@ if($B.ast_classes){
             if(['decorator'].indexOf(ctx.type) > -1){
                 continue
             }
-            body.push(ast_or_obj(ctx))
+            var child_ast = ast_or_obj(ctx)
+            if(ast.expr.indexOf(child_ast.constructor) > -1){
+                child_ast = new ast.Expr(child_ast)
+            }
+            body.push(child_ast)
         }
         return body
     }
@@ -397,6 +401,8 @@ function check_assignment(context, kwargs){
             for(var item of ctx.tree){
                 check_assignment(item, {action, once: true})
             }
+        }else if(ctx.type == "decorator"){
+            report('decorator')
         }else if(ctx.type == "comprehension"){
             report('comprehension')
         }else if(ctx.type == "ternary"){
@@ -525,7 +531,11 @@ $Node.prototype.ast = function(){
                 (t.type == 'condition' && t.token == 'elif')){
             continue
         }
-        root_ast.body.push(ast_or_obj(node.context.tree[0]))
+        var node_ast = ast_or_obj(node.context.tree[0])
+        if(ast.expr.indexOf(node_ast.constructor) > -1){
+            node_ast = new ast.Expr(node_ast)
+        }
+        root_ast.body.push(node_ast)
     }
     return root_ast
 }
@@ -910,7 +920,7 @@ $AbstractExprCtx.prototype.ast = function(){
         ast_or_obj(this.assign),
         ast_or_obj(this.tree[0])
     )
-    res.target.ctx = ast.Store
+    res.target.ctx = new ast.Store()
     return res
 }
 
@@ -1351,8 +1361,9 @@ $AssignCtx.prototype.ast = function(){
     }
     targets.splice(0, 0, ast_or_obj(target.tree[0]))
     for(var tg of targets){
-        tg.ctx = ast.Store
+        tg.ctx = new ast.Store()
     }
+    value.ctx = new ast.Load()
     return new ast.Assign(targets, value)
 }
 
@@ -1743,11 +1754,11 @@ $AttrCtx.prototype.ast = function(){
     // ast.Attribute(value, attr, ctx)
     var value = ast_or_obj(this.value),
         attr = this.name,
-        ctx = ast.Load
+        ctx = new ast.Load()
     if(this.func == 'setattr'){
-        ctx = ast.Store
+        ctx = new ast.Store()
     }else if(this.func == 'delattr'){
-        ctx = ast.Delete
+        ctx = new ast.Delete()
     }
     return new ast.Attribute(value, attr, ctx)
 }
@@ -1847,8 +1858,8 @@ $AugmentedAssignCtx.prototype.ast = function(){
     // AugAssign(expr target, operator op, expr value)
     var target = ast_or_obj(this.tree[0]),
         value = ast_or_obj(this.tree[1])
-    target.ctx = ast.Store
-    value.ctx = ast.Load
+    target.ctx = new ast.Store()
+    value.ctx = new ast.Load()
     var op = this.op.substr(0, this.op.length -1),
         ast_type_class = op2ast_class[op],
         ast_class = ast_type_class[1]
@@ -2446,7 +2457,7 @@ $CallCtx.prototype.ast = function(){
             continue
         }else if(call_arg.type == 'star_arg'){
             var starred = new ast.Starred(ast_or_obj(call_arg.tree[0]))
-            starred.ctx = ast.Load
+            starred.ctx = new ast.Load()
             res.args.push(starred)
             continue
         }
@@ -3522,7 +3533,7 @@ $DefCtx.prototype.ast = function(){
             posonlyargs: [],
             args: [],
             kwonlyargs: [],
-            kwdefaults: [],
+            kw_defaults: [],
             defaults: []
         },
         decorators = get_decorators(this.parent.node),
@@ -3554,7 +3565,7 @@ $DefCtx.prototype.ast = function(){
             if(state == 'kwonly'){
                 args.kwonlyargs.push(argument)
                 if(default_value){
-                    args.kwdefaults.push(default_value)
+                    args.kw_defaults.push(default_value)
                 }
             }else{
                 args.args.push(argument)
@@ -4943,7 +4954,7 @@ $ExprCtx.prototype.ast = function(){
             ast_or_obj(this.assign),
             res
         )
-        res.target.ctx = ast.Store
+        res.target.ctx = new ast.Store()
         return res
     }
     return res
@@ -5111,51 +5122,9 @@ $ExprCtx.prototype.transition = function(token, value){
                       case '>=':
                       case '>':
                        // chained comparisons such as c1 <= c2 < c3
-                       // replace by (c1 op1 c2) and (c2 op c3)
-
-                       // save c2
-                       var c2 = repl.tree[1], // right operand of op1
-                           c2js = c2.to_js()
-
-                       // clone c2
-                       var c2_clone = new Object()
-                       for(var attr in c2){c2_clone[attr] = c2[attr]}
-
-                       // The variable c2 must be evaluated only once ;
-                       // we generate a temporary variable name to
-                       // replace c2.to_js() and c2_clone.to_js()
-                       var vname = "$c" + chained_comp_num
-                       c2.to_js = function(){return vname}
-                       c2_clone.to_js = function(){return vname}
-                       chained_comp_num++
-
-                       // If there are consecutive chained comparisons
-                       // we must go up to the uppermost 'and' operator
-                       while(repl.parent && repl.parent.type == 'op'){
-                           if($op_weight[repl.parent.op] <
-                                   $op_weight[repl.op]){
-                               repl = repl.parent
-                           }else{break}
-                       }
-                       repl.parent.tree.pop()
-
-                       // Create a new 'and' operator, with the left
-                       // operand equal to c1 <= c2
-                       var and_expr = new $OpCtx(repl, 'and')
-                       // Set an attribute "wrap" to the $OpCtx instance.
-                       // It will be used in an anomymous function where
-                       // the temporary variable called vname will be
-                       // set to the value of c2
-                       and_expr.wrap = {'name': vname, 'js': c2js}
-
-                       c2_clone.parent = and_expr
-                       // For compatibility with the interface of $OpCtx,
-                       // add a fake element to and_expr : it will be
-                       // removed when new_op is created at the next
-                       // line
-                       and_expr.tree.push('xxx')
-                       var new_op = new $OpCtx(c2_clone, op)
-                       return new $AbstractExprCtx(new_op, false)
+                       repl.ops = repl.ops || [repl.op]
+                       repl.ops.push(op)
+                       return new $AbstractExprCtx(repl, false)
                  }
               }
           }
@@ -6573,7 +6542,7 @@ $IdCtx.prototype.ast = function(){
     if(['True', 'False', 'None'].indexOf(this.value) > -1){
         return new ast.Constant(_b_[this.value])
     }
-    return new ast.Name(this.value, ast.Load)
+    return new ast.Name(this.value, new ast.Load())
 }
 
 $IdCtx.prototype.toString = function(){
@@ -6812,7 +6781,7 @@ $IdCtx.prototype.to_js = function(arg){
 
     var val = this.value
 
-    var $test = false // val == "url" && innermost.type == "listcomp"
+    var $test = false // val == "awx" //&& innermost.type == "listcomp"
     if($test){
         console.log("ENTER IdCtx.py2js line", $get_node(this).line_num,
             "\nthis", this, '\nscope', scope)
@@ -6884,7 +6853,8 @@ $IdCtx.prototype.to_js = function(arg){
 
     while(true){
         if($test){
-            console.log(gs.id, gs)
+            console.log(val, gs.id, gs, search_ids)
+            alert()
         }
         if(gs.parent_block){
             if(gs.parent_block == $B.builtins_scope){
@@ -7384,7 +7354,18 @@ var JoinedStrCtx = $B.parser.JoinedStrCtx = function(context, values){
             // expression has access to local scope
             root.binding = $B.clone(this.scope.binding)
 
-            dispatch_tokens(root, src)
+            try{
+                dispatch_tokens(root, src)
+            }catch(err){
+                err.args[1][1] += line_num - 1
+                var line_start = save_pos,
+                    source = $get_module(this).src
+                while(line_start-- > 0 && source[line_start] != '\n'){}
+                err.args[1][2] += value.start + save_pos - line_start
+                err.lineno += line_num - 1
+                err.args[1][3] = $get_module(this).src.split('\n')[line_num - 1]
+                throw err
+            }
 
             $pos = save_pos
             var expr = root.children[0].context.tree[0]
@@ -7763,9 +7744,9 @@ var $ListOrTupleCtx = $B.parser.$ListOrTupleCtx = function(context, real){
 $ListOrTupleCtx.prototype.ast = function(){
     var elts = this.tree.map(ast_or_obj)
     if(this.real == 'list'){
-        return new ast.List(elts, ast.Load)
+        return new ast.List(elts, new ast.Load())
     }else if(this.real == 'tuple'){
-        return new ast.Tuple(elts, ast.Load)
+        return new ast.Tuple(elts, new ast.Load())
     }else{
         console.log('list_or_tuple ast, real', this.real)
         return this
@@ -8644,6 +8625,7 @@ var $OpCtx = $B.parser.$OpCtx = function(context, op){
 }
 
 $OpCtx.prototype.ast = function(){
+    //console.log('op ast', this)
     var ast_type_class = op2ast_class[this.op],
         op_type = ast_type_class[0],
         ast_class = ast_type_class[1]
@@ -8726,6 +8708,18 @@ $OpCtx.prototype.to_js = function(){
         '<': 'lt','>': 'gt'}
 
     if(comps[this.op] !== undefined){
+        if(this.ops){
+            var i = 0,
+                tests = []
+            for(var op of this.ops){
+                var method = comps[op]
+                tests.push(`$B.rich_comp('__${method}__', ` +
+                    `${i == 0 ? this.tree[i].to_js(): '$locals.$op'}, ` +
+                    `$locals.$op = ${this.tree[i + 1].to_js()})`)
+                i++
+            }
+            return tests.join(' && ')
+        }
         var method = comps[this.op]
         if(this.tree[0].type == 'expr' && this.tree[1].type == 'expr'){
             var t0 = this.tree[0].tree[0],
@@ -9056,7 +9050,7 @@ var $PackedCtx = $B.parser.$PackedCtx = function(context){
 }
 
 $PackedCtx.prototype.ast = function(){
-    return new ast.Starred(ast_or_obj(this.tree[0]), ast.Load)
+    return new ast.Starred(ast_or_obj(this.tree[0]), new ast.Load())
 }
 
 $PackedCtx.prototype.toString = function(){
@@ -9270,9 +9264,9 @@ var $PatternCaptureCtx = function(context, value){
 $PatternCaptureCtx.prototype.ast = function(){
   try{
     if(this.tree.length > 1){
-        var pattern = new ast.Name(this.tree[0].value, ast.Load)
+        var pattern = new ast.Name(this.tree[0].value, new ast.Load())
         for(var i = 1; i < this.tree.length; i += 2){
-            pattern = new ast.Attribute(pattern, this.tree[i], ast.Load)
+            pattern = new ast.Attribute(pattern, this.tree[i], new ast.Load())
         }
         return new ast.MatchValue(pattern)
     }else{
@@ -10869,20 +10863,20 @@ var $TargetListCtx = $B.parser.$TargetListCtx = function(context){
 }
 
 $TargetListCtx.prototype.ast = function(){
-    if(this.tree.length == 0){
+    if(this.tree[0].type == 'expr'){
         var item = ast_or_obj(this.tree[0])
-        item.ctx = ast.Store
+        item.ctx = new ast.Store()
         return item
     }else{
         var items = []
         for(var item of this.tree){
             item = ast_or_obj(item)
             if(item.hasOwnProperty('ctx')){
-                item.ctx = ast.Store
+                item.ctx = new ast.Store()
             }
             items.push(item)
         }
-        return new ast.Tuple(items, ast.Store)
+        return new ast.Tuple(items, new ast.Store())
     }
 }
 
@@ -11260,7 +11254,7 @@ $WithCtx.prototype.ast = function(){
         withitem = new ast.withitem(ast_or_obj(item.tree[0]))
         if(item.alias){
             withitem.optional_vars = ast_or_obj(item.alias.tree[0])
-            withitem.optional_vars.ctx = ast.Store
+            withitem.optional_vars.ctx = new ast.Store()
         }
         withitems.push(withitem)
     }
