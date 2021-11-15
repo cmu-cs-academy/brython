@@ -138,7 +138,10 @@ var unary_ops = {unary_inv: 'Invert', unary_pos: 'UAdd', unary_neg: 'USub'}
 
 var op_types = [binary_ops, boolean_ops, comparison_ops, unary_ops]
 
+var _b_ = $B.builtins
+
 var ast = $B.ast = {}
+
 for(var kl in $B.ast_classes){
     var args = $B.ast_classes[kl],
         js = ''
@@ -149,13 +152,40 @@ for(var kl in $B.ast_classes){
                 js += ` this.${arg} = ${arg}\n`
             }
         }
-        js += `  this.__class__ = ast.${kl}\n`
         js += '}'
     }else{
         js = `ast.${kl} = [${args.map(x => 'ast.' + x).join(',')}]\n`
     }
-    js += `\nast.${kl}.$name = "${kl}"\n`
     eval(js)
+    ast[kl].$name = kl
+    if(typeof args == "string"){
+        ast[kl]._fields = args.split(',')
+    }
+}
+
+// Function that creates Python classes for ast classes.
+$B.create_python_ast_classes = function(){
+    if($B.python_ast_classes){
+        return
+    }
+    $B.python_ast_classes = {}
+    for(var klass in $B.ast_classes){
+        $B.python_ast_classes[klass] = (function(kl){
+            var cls = $B.make_class(kl,
+                function(js_node){
+                    return {
+                        __class__: $B.python_ast_classes[kl],
+                        js_node
+                    }
+                }
+            )
+            if(typeof $B.ast_classes[kl] == "string"){
+                cls._fields = $B.ast_classes[kl].split(',')
+            }
+            cls.__mro__ = [$B.AST, _b_.object]
+            return cls
+        })(klass)
+    }
 }
 // Map operators to ast type (BinOp, etc.) and name (Add, etc.)
 var op2ast_class = $B.op2ast_class = {},
