@@ -6,13 +6,13 @@ var _b_ = $B.builtins,
             ("function" === typeof importScripts) &&
             (navigator instanceof WorkerNavigator)
 
-$B.args = function($fname, argcount, slots, var_names, args, $dobj,
+$B.args = function(fname, argcount, slots, var_names, args, $dobj,
     extra_pos_args, extra_kw_args){
     // builds a namespace from the arguments provided in $args
     // in a function defined as
     //     foo(x, y, z=1, *args, u, v, **kw)
     // the parameters are
-    //     $fname = "f"
+    //     fname = "f"
     //     argcount = 3 (for x, y , z)
     //     slots = {x:null, y:null, z:null, u:null, v:null}
     //     var_names = ['x', 'y', 'z', 'u', 'v']
@@ -20,8 +20,8 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
     //     extra_pos_args = 'args'
     //     extra_kw_args = 'kw'
     //     kwonlyargcount = 2
-    if($fname.startsWith("lambda_" + $B.lambda_magic)){
-        $fname = "<lambda>"
+    if(fname.startsWith("lambda_" + $B.lambda_magic)){
+        fname = "<lambda>"
     }
     var has_kw_args = false,
         nb_pos = args.length,
@@ -50,16 +50,16 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
                     var kw_arg = kw_args[i]
                     if(kw_arg.__class__ === _b_.dict){
                         for(var k in kw_arg.$numeric_dict){
-                            throw _b_.TypeError.$factory($fname +
+                            throw _b_.TypeError.$factory(fname +
                                 "() keywords must be strings")
                         }
                         for(var k in kw_arg.$object_dict){
-                            throw _b_.TypeError.$factory($fname +
+                            throw _b_.TypeError.$factory(fname +
                                 "() keywords must be strings")
                         }
                         for(var k in kw_arg.$string_dict){
                             if(kwa[k] !== undefined){
-                                throw _b_.TypeError.$factory($fname +
+                                throw _b_.TypeError.$factory(fname +
                                     "() got multiple values for argument '" +
                                     k + "'")
                             }
@@ -72,11 +72,11 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
                             try{
                                 var k = _b_.next(it)
                                 if(typeof k !== "string"){
-                                    throw _b_.TypeError.$factory($fname +
+                                    throw _b_.TypeError.$factory(fname +
                                         "() keywords must be strings")
                                 }
                                 if(kwa[k] !== undefined){
-                                    throw _b_.TypeError.$factory($fname +
+                                    throw _b_.TypeError.$factory(fname +
                                         "() got multiple values for argument '" +
                                         k + "'")
                                 }
@@ -109,7 +109,7 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
         if(extra_pos_args === null || extra_pos_args == "*"){
             // No parameter to store extra positional arguments :
             // thow an exception
-            msg = $fname + "() takes " + argcount + " positional argument" +
+            msg = fname + "() takes " + argcount + " positional argument" +
                 (argcount > 1 ? "s" : "") + " but more were given"
             throw _b_.TypeError.$factory(msg)
         }else{
@@ -148,15 +148,20 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
                     // If there is a place to store extra keyword arguments
                     extra_kw.$string_dict[key] = [value, extra_kw.$order++]
                 }else{
-                    throw _b_.TypeError.$factory($fname +
+                    throw _b_.TypeError.$factory(fname +
                         "() got an unexpected keyword argument '" + key + "'")
                 }
-            }else if(slots[key] !== null){
+            }else if(slots.hasOwnProperty(key) && slots[key] !== null){
                 // The slot is already filled
-                throw _b_.TypeError.$factory($fname +
+                if(key == extra_pos_args){
+                    throw _b_.TypeError.$factory(
+                        `${fname}() got an unexpected ` +
+                        `keyword argument '${key}'`)
+                }
+                throw _b_.TypeError.$factory(fname +
                     "() got multiple values for argument '" + key + "'")
             }else if(only_positional && only_positional.indexOf(key) > -1){
-                throw _b_.TypeError.$factory($fname + "() got an " +
+                throw _b_.TypeError.$factory(fname + "() got an " +
                     "unexpected keyword argument '" + key + "'")
             }else{
                 // Fill the slot with the key/value pair
@@ -181,10 +186,10 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
     if(missing.length > 0){
 
         if(missing.length == 1){
-            throw _b_.TypeError.$factory($fname +
+            throw _b_.TypeError.$factory(fname +
                 " missing 1 positional argument: " + missing[0])
         }else{
-            var msg = $fname + " missing " + missing.length +
+            var msg = fname + " missing " + missing.length +
                 " positional arguments: "
             msg += missing.join(" and ")
             throw _b_.TypeError.$factory(msg)
@@ -303,7 +308,7 @@ $B.next_of = function(iterator){
     return $B.$call($B.$getattr(_b_.iter(iterator), '__next__'))
 }
 
-$B.unpacker = function(obj, nb_targets, has_starred, target){
+$B.unpacker = function(obj, nb_targets, has_starred, nb_after_starred){
     // Used in unpacking target of a "for" loop if it is a tuple or list
     var t = _b_.list.$factory(obj),
         len = t.length,
@@ -324,7 +329,9 @@ $B.unpacker = function(obj, nb_targets, has_starred, target){
     }
     t.read_rest = function(){
         t.index++
-        return t.slice(t.index)
+        var res = t.slice(t.index, t.length - nb_after_starred)
+        t.index = t.length - nb_after_starred - 1
+        return res
     }
     return t
 }
@@ -858,40 +865,38 @@ $B.delitem_slice = function(obj, slice){
     return di(obj, slice)
 }
 
-// augmented item
-$B.augm_item_add = function(obj, item, incr){
-    if(Array.isArray(obj) && typeof item == "number" &&
-            obj[item] !== undefined){
-        if(Array.isArray(obj[item]) && Array.isArray(incr)){
-            for(var i = 0, len = incr.length; i < len; i++){
-                obj[item].push(incr[i])
+$B.augm_assign = function(left, op, right){
+    // augmented assignment
+    var op1 = op.substr(0, op.length - 1)
+    if(typeof left == 'number' && typeof right == 'number'
+            && op != '//='){ // operator "//" not supported by Javascript
+        var res = eval(left + ' ' + op1 + ' ' + right)
+        if(res <= $B.max_int && res >= $B.min_int &&
+                res.toString().search(/e/i) == -1){
+            return res
+        }else{
+            res = eval(`${BigInt(left)}n ${op1} ${BigInt(right)}n`)
+            var pos = res > 0n,
+                res = res + ''
+            return pos ? $B.fast_long_int(res, true) :
+                         $B.fast_long_int(res.substr(1), false) // remove "-"
+        }
+    }else if(typeof left == 'string' && typeof right == 'string' &&
+            op == '+='){
+        return left + right
+    }else{
+        var method = $B.op2method.augmented_assigns[op],
+            augm_func = $B.$getattr(left, '__' + method + '__', null)
+        if(augm_func !== null){
+            return $B.$call(augm_func)(right)
+        }else{
+            var method1 = $B.op2method.operations[op1]
+            if(method1 === undefined){
+                method1 = $B.op2method.binary[op1]
             }
-            return
-        }else if(typeof obj[item] == "string" && typeof incr == "string"){
-            obj[item] += incr
-            return
-        }else if(typeof obj[item] == "number" && typeof incr == "number"){
-            obj[item] += incr
-            return
+            return $B.rich_op(`__${method1}__`, left, right)
         }
     }
-    var ga = $B.$getattr
-    try{
-        var augm_func = ga(ga(obj, "__getitem__")(item), "__iadd__")
-    }catch(err){
-        ga(obj, "__setitem__")(item,
-            $B.add(ga(obj, "__getitem__")(item), incr))
-        return
-    }
-    augm_func(incr)
-}
-
-var augm_item_src = "" + $B.augm_item_add
-var augm_ops = [["-=", "sub"], ["*=", "mul"]]
-for(var i  =0, len = augm_ops.length; i < len; i++){
-    var augm_code = augm_item_src.replace(/add/g, augm_ops[i][1])
-    augm_code = augm_code.replace(/\+=/g, augm_ops[i][0])
-    eval("$B.augm_item_" + augm_ops[i][1] + "=" + augm_code)
 }
 
 $B.extend = function(fname, arg){
@@ -1452,7 +1457,10 @@ var min_int = Math.pow(-2, 53), max_int = Math.pow(2, 53) - 1
 $B.is_safe_int = function(){
     for(var i = 0; i < arguments.length; i++){
         var arg = arguments[i]
-        if(arg < min_int || arg > max_int){return false}
+        if((typeof arg != "number") ||
+                (arg < min_int || arg > max_int)){
+            return false
+        }
     }
     return true
 }
@@ -1493,7 +1501,7 @@ $B.add = function(x, y){
     }
     var res = $B.$call(method)(x, y)
     if(res === _b_.NotImplemented){ // issue 1309
-        return $B.rich_op("add", x, y)
+        return $B.rich_op("__add__", x, y)
     }
     return res
 }
@@ -1666,7 +1674,9 @@ $B.rich_comp = function(op, x, y){
     }
 
     res = x_class_op(x, y)
-    if(res !== _b_.NotImplemented){return res}
+    if(res !== _b_.NotImplemented){
+        return res
+    }
     var y_class_op = $B.$call($B.$getattr(y.__class__ || $B.get_class(y),
         rev_op))
     res = y_class_op(y, x)
@@ -1687,23 +1697,23 @@ $B.rich_comp = function(op, x, y){
         "' and '" + $B.class_name(y) + "'")
 }
 
-var opname2opsign = {sub: "-", xor: "^", mul: "*"}
+var opname2opsign = {__sub__: "-", __xor__: "^", __mul__: "*"}
 
 $B.rich_op = function(op, x, y){
     var x_class = x.__class__ || $B.get_class(x),
         y_class = y.__class__ || $B.get_class(y),
-        special_method = '__' + op + '__',
+        rop = '__r' + op.substr(2),
         method
     if(x_class === y_class){
         // For objects of the same type, don't try the reversed operator
         if(x_class === _b_.int){
-            return _b_.int[special_method](x, y)
+            return _b_.int[op](x, y)
         }else if(x_class === _b_.bool){
-            return (_b_.bool[special_method] || _b_.int[special_method])
+            return (_b_.bool[op] || _b_.int[op])
                 (x, y)
         }
         try{
-            method = $B.$call($B.$getattr(x_class, "__" + op + "__"))
+            method = $B.$call($B.$getattr(x_class, op))
         }catch(err){
             if(err.__class__ === _b_.AttributeError){
                 var kl_name = $B.class_name(x)
@@ -1718,8 +1728,8 @@ $B.rich_op = function(op, x, y){
 
     if(_b_.issubclass(y_class, x_class)){
         // issue #1686
-        var reflected_left = $B.$getattr(x_class, '__r' + op + '__'),
-            reflected_right = $B.$getattr(y_class, '__r' + op + '__')
+        var reflected_left = $B.$getattr(x_class, rop),
+            reflected_right = $B.$getattr(y_class, rop)
         if(reflected_right !== reflected_left){
             return reflected_right(y, x)
         }
@@ -1727,12 +1737,12 @@ $B.rich_op = function(op, x, y){
     // For instances of different classes, try reversed operator
     var res
     try{
-        method = $B.$call($B.$getattr(x, "__" + op + "__"))
+        method = $B.$call($B.$getattr(x, op))
     }catch(err){
         if(err.__class__ !== _b_.AttributeError){
             throw err
         }
-        res = $B.$call($B.$getattr(y, "__r" + op + "__"))(x)
+        res = $B.$call($B.$getattr(y, rop))(x)
         if(res !== _b_.NotImplemented){
             return res
         }
@@ -1742,7 +1752,7 @@ $B.rich_op = function(op, x, y){
     }
     res = method(y)
     if(res === _b_.NotImplemented){
-        var reflected = $B.$getattr(y, "__r" + op + "__", null)
+        var reflected = $B.$getattr(y, rop, null)
         if(reflected !== null){
             res = $B.$call(reflected)(x)
             if(res !== _b_.NotImplemented){

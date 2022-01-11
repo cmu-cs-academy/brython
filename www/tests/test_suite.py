@@ -774,4 +774,21 @@ assertRaises(SyntaxError, exec, "050")
 # issue 1807
 assertRaises(SyntaxError, exec, '-')
 
+# issue 1819
+assert eval("-5 - 8") == -13
+
+assert [0 < a < 2 for a in (0, 1)] == [False, True]
+
+# unpacking in "for" target
+lists = [
+  [0, 1, 2, 3],
+  ['ab', 'b', 'c']
+  ]
+
+groups = []
+for x, *y, z in lists:
+  groups.append((x, y, z))
+
+assert groups == [(0, [1, 2], 3), ('ab', ['b'], 'c')]
+
 print('passed all tests...')

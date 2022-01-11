@@ -36,7 +36,8 @@ assert math.factorial(0) == 1
 assert math.factorial(1) == 1
 assert math.factorial(2) == 2
 assert math.factorial(5) == 120
-assert math.factorial(5.) == 120
+# issue 1856
+assertRaises(TypeError, math.factorial, 5.)
 
 assert almost_equal(math.acosh(1), 0)
 
@@ -258,5 +259,8 @@ try:
     raise Exception("should have riased OverflowError")
 except OverflowError:
     pass
-    
+
+# issue 1842
+assert not math.isclose(0.1, 0)
+
 print("passed all tests..")

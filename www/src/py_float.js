@@ -81,7 +81,7 @@ float.as_integer_ratio = function(self){
     }
     py_exponent = x
     if(exponent > 0){
-        numerator = $B.rich_op("mul", numerator, py_exponent)
+        numerator = $B.rich_op("__mul__", numerator, py_exponent)
     }else{
         denominator = py_exponent
     }
@@ -637,7 +637,7 @@ float.__repr__ = function(self){
 
     var res = self + "" // coerce to string
     
-    if(res.indexOf(".") == -1){
+    if(res.search(/[.eE]/) == -1){
         res += ".0"
     }
     var split_e = res.split(/e/i)
