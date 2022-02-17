@@ -2967,6 +2967,54 @@ assertRaises(ValueError, exec,
 # issue 1816
 assertRaises(SyntaxError, exec, '@x = 123')
 
+# issue 1821
+class MyRepr:
+    def __init__(self):
+        self.__repr__ = lambda: "obj"
+    def __repr__(self):
+        return "class"
+my_repr = MyRepr()
+assert str(my_repr.__repr__()) == 'obj'
+assert str(my_repr) == 'class'
+assert str(MyRepr.__repr__(my_repr)) == 'class'
+assert str(MyRepr().__repr__()) == 'obj'
+
+# issue 1826
+assertRaises(SyntaxError, exec, """x, if y > 4:
+    pass""")
+assertRaises(SyntaxError, exec, """async def f():
+    await x = 1""")
+
+# issue 1827
+class Vector2:
+
+    def __init__(self, a, b):
+        self.x, self.y = a, b
+
+    def clone(self):
+        return Vector2(self.x, self.y)
+
+    def __imul__(self, k):
+        res = self.clone()
+        res.x *= k
+        res.y *= k
+        return res
+
+vector = Vector2(1.5, 3.7)
+
+vector *= 25.7
+
+assert (vector.x, vector.y) == (38.55, 95.09)
+
+# issue 1830
+def foo(constructor: bool):
+    assert constructor is True
+
+foo(constructor=True)
+
+# issue 1854
+assert 0 != int
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================

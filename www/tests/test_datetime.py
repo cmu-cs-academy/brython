@@ -121,4 +121,47 @@ date = "Thu, 26 Aug 2021 00:00:00 GMT"
 dt = datetime.strptime(date, "%a, %d %b %Y %H:%M:%S GMT")
 assert dt == datetime(2021, 8, 26, 0, 0)
 
+# issue 1845
+for d in ['01.02.2020', '01/02/2020', '01-02-2020']:
+    try:
+        datetime.strptime(d, '%d%m%Y')
+        raise Exception('should have raised ValueError')
+    except ValueError:
+        pass
+
+d = datetime(2020,2, 1)
+assert datetime.strptime('01.02.2020', '%d.%m.%Y') == d
+assert datetime.strptime('01/02/2020', '%d/%m/%Y') == d
+assert datetime.strptime('01-02-2020', '%d-%m-%Y') == d
+
+assert datetime.strptime('3.2.2020', '%d.%m.%Y') == datetime(2020, 2, 3)
+
+# issue 1847
+import time
+assert time.strptime(f'01.02.2020', '%d.%m.%Y').tm_wday == 5
+
+# issue 1848
+try:
+    datetime.strptime('1.1.10000', '%d.%m.%Y')
+    raise Exception('should have raised ValueError')
+except ValueError:
+    pass
+
+# issue 1849
+assert datetime.strptime('11-12-2013', '%d-%m-%Y') == \
+    datetime(2013, 12, 11, 0, 0)
+assert datetime.strptime('09-09-2013', '%d-%m-%Y') == \
+    datetime(2013, 9, 9, 0, 0)
+assert datetime.strptime('9-9-2013', '%d-%m-%Y') == \
+    datetime(2013, 9, 9, 0, 0)
+
+assert list(time.strptime('11-12-2013', '%d-%m-%Y')) == \
+    [2013, 12, 11, 0, 0, 0, 2, 345, -1]
+
+assert list(time.strptime('09-09-2013', '%d-%m-%Y')) == \
+    [2013, 9, 9, 0, 0, 0, 0, 252, -1]
+
+assert list(time.strptime('9-9-2013', '%d-%m-%Y')) == \
+    [2013, 9, 9, 0, 0, 0, 0, 252, -1]
+    
 print('passed all tests')

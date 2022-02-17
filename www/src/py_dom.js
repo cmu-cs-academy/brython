@@ -367,8 +367,7 @@ DOMEvent.__getattribute__ = function(self, attr){
         }
         return $B.$JS2Py(res)
     }
-    throw _b_.AttributeError.$factory("object DOMEvent has no attribute '" +
-        attr + "'")
+    throw $B.attr_error(attr, self)
 }
 
 DOMEvent.$factory = function(evt_name){
@@ -683,15 +682,14 @@ DOMNode.__getattribute__ = function(self, attr){
             if(self instanceof SVGElement){
                 return self[attr].baseVal.value
             }
-            if(self.style[attr]){
+            var computed = window.getComputedStyle(self).
+                                  getPropertyValue(attr)
+            if(computed !== undefined){
+                var prop = Math.floor(parseFloat(computed) + 0.5)
+                return isNaN(prop) ? computed : prop
+            } else if(self.style[attr]){
                 return parseInt(self.style[attr])
             }else{
-                var computed = window.getComputedStyle(self).
-                                      getPropertyValue(attr)
-                if(computed !== undefined){
-                    var prop = Math.floor(parseFloat(computed) + 0.5)
-                    return isNaN(prop) ? computed : prop
-                }
                 throw _b_.AttributeError.$factory("style." + attr +
                     " is not set for " + _b_.str.$factory(self))
             }
@@ -1262,6 +1260,16 @@ DOMNode.closest = function(self, selector){
     return DOMNode.$factory(res)
 }
 
+DOMNode.bindings = function(self){
+    // Return a dictionary mapping events defined on self to the associated
+    // callback functions
+    var res = $B.empty_dict()
+    for(var key in self.$events){
+        _b_.dict.$setitem(res, key, self.$events[key].map(x => x[1]))
+    }
+    return res
+}
+
 DOMNode.events = function(self, event){
     self.$events = self.$events || {}
     var evt_list = self.$events[event] = self.$events[event] || [],
@@ -1473,8 +1481,10 @@ DOMNode.set_html = function(self, value){
 }
 
 DOMNode.set_style = function(self, style){ // style is a dict
-    if(!_b_.isinstance(style, _b_.dict)){
-        throw _b_.TypeError.$factory("style must be dict, not " +
+    if(typeof style === 'string'){
+        self.style = style
+    }else if(!_b_.isinstance(style, _b_.dict)){
+        throw _b_.TypeError.$factory("style must be str or dict, not " +
             $B.class_name(style))
     }
     var items = _b_.list.$factory(_b_.dict.items(style))

@@ -2509,13 +2509,6 @@ function from_codepoint_list(codepoints, type){
     return $B.String(s)
 }
 
-var GroupDict = $B.make_class("GroupDict")
-GroupDict.__mro__ = [_b_.dict, _b_.object]
-GroupDict.__setitem__ = function(){
-    throw _b_.TypeError.$factory("read only")
-}
-
-
 var bytes_like = [_b_.bytes, _b_.bytearray, _b_.memoryview]
 
 function string2bytes(s){
@@ -2545,7 +2538,7 @@ function transform_repl(data, pattern){
     repl = repl.replace(/\\b/g, '\b')
     repl = repl.replace(/\\v/g, '\v')
     repl = repl.replace(/\\f/g, '\f')
-    repl = repl.replace(/\\a/g, '\a')
+    repl = repl.replace(/\\a/g, '\x07')
     // detect backreferences
     var pos = 0,
         escaped = false,
@@ -2896,14 +2889,6 @@ function* iterator(pattern, string, flags, original_string, pos, endpos){
             pos++
         }
     }
-    // does the pattern match the empty string ?
-    /*
-    var mo = match(pattern, new StringObj(''), 0, 0)
-    if(mo){
-        mo.start = mo.end = string.length
-        yield BMO.$factory(mo)
-    }
-    */
     delete original_string.in_iteration
 }
 
@@ -2925,7 +2910,7 @@ MO.prototype.backtrack = function(string, groups){
         this.nb++
         this.end = this.start + this.len * this.nb
         return true
-    }else if(! this.node.non_greedy && this.nb > this.nb_min){
+    }else if((! this.node.non_greedy) && this.nb > this.nb_min){
         this.nb--
         this.end = this.start + this.len * this.nb
         return true
@@ -2962,11 +2947,26 @@ function GroupMO(node, start, matches, string, groups, endpos){
 GroupMO.prototype.backtrack = function(string, groups){
     // Try backtracking in the last match
     if(this.matches.length > 0){
-        var match = $last(this.matches),
-            mos = match.mos,
+        var _match = $last(this.matches),
+            mos = _match.mos,
             nb0 = mos.length
         while(mos.length > 0){
             var mo = mos.pop()
+            if(mo.node instanceof Case){
+                var rank = mo.node.parent.items.indexOf(mo.node)
+                for(var _case of mo.node.parent.items.slice(rank + 1)){
+                    var _mo = match({node: _case, text: _case.text},
+                        string, mo.start)
+                    if(_mo){
+                        // update GroupMO object
+                        mos.push(_mo)
+                        this.end = _mo.end
+                        var ix = this.$groups.$last[this.$groups.$last.length - 1]
+                        this.$groups[ix].end = _mo.end
+                        return true
+                    }
+                }
+            }
             if(mo.backtrack(string, groups)){
                 mos.push(mo)
                 if(this.node.num !== undefined){
@@ -3137,7 +3137,6 @@ BMO.groupdict = function(){
             _b_.dict.$setitem(d, key, value)
         }
     }
-    d.__class__ = GroupDict
     return d
 }
 
@@ -3288,9 +3287,6 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
         // node is either a Choice between several items, or a sequence of
         // items
         if(node instanceof Choice){
-            for(var subgroup of subgroups(node)){
-                //delete groups[subgroup]
-            }
             mo = false
             for(var _case of node.items){
                 mo = match({node: _case, text: _case.text}, string, pos,

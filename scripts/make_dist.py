@@ -27,7 +27,8 @@ if implementation[3] == 'rc':
 vname2 = '.'.join(str(x) for x in implementation[:2])
 vname1 = str(implementation[0])
 
-abs_path = lambda _pth: os.path.join(os.path.dirname(os.getcwd()), 'www',
+script_dir = os.path.dirname(os.getcwd())
+abs_path = lambda _pth: os.path.join(script_dir, 'www',
     'src', _pth)
 
 def run():
@@ -63,6 +64,7 @@ def run():
         'brython_builtins',
         'version_info',
         'python_tokenizer',
+        'py_ast',
         'py2js',
         'loaders',
         'py_object',
