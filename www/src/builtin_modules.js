@@ -862,14 +862,36 @@
                 return $B.python_ast_classes[constr.$name].$factory(js_node)
             }else if(Array.isArray(js_node)){
                 return js_node.map($B.AST.$convert)
-            }else if(typeof js_node == 'string' ||
-                    typeof js_node == 'number'){
+            }else if(js_node.type){
+                // numeric constant
+                switch(js_node.type){
+                    case 'int':
+                        var res = parseInt(js_node.value[1], js_node.value[0])
+                        if(res < $B.min_int || res > $B.max_int){
+                            return $B.long_int.$factory(js_node.value[1],
+                                js_node.value[0])
+                        }
+                        return res
+                    case 'float':
+                        return new Number(js_node.value)
+                    case 'imaginary':
+                        return $B.make_complex(0,
+                            $B.AST.$convert(js_node.value))
+                    case 'ellipsis':
+                        return _b_.Ellipsis
+                }
+            }else if(['string', 'number'].indexOf(typeof js_node) > -1){
                 return js_node
             }else if(js_node.$name){
                 // eg Store(), Load()...
                 return js_node.$name + '()'
+            }else if([_b_.None, _b_.True, _b_.False].indexOf(js_node) > -1){
+                return js_node
+            }else if(js_node.__class__){
+                return js_node
             }else{
                 console.log('cannot handle', js_node)
+                return js_node
             }
         }
     }

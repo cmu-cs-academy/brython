@@ -992,16 +992,8 @@ str.__reduce_ex__ = function(self){
 
 str.__repr__ = function(self){
     // special cases
-    var t = {
-        8: "\\x08",
-        9: "\\t",
-        10: "\\n",
-        11: "\\x0b",
-        12: "\\x0c",
-        13: "\\r",
-        92: "\\\\"
-    }
-    var repl = '',
+    var t = $B.special_string_repr, // in brython_builtins.js
+        repl = '',
         chars = to_chars(self)
     for(var i = 0; i < chars.length; i++){
         var cp = _b_.ord(chars[i])
@@ -1020,7 +1012,9 @@ str.__repr__ = function(self){
             }
             repl += '\\x' + cp
         }else if(cp >= 0x300 && cp <= 0x36F){
-            repl += "\u200B" + chars[i]
+            repl += "\u200B" + chars[i] + ' '
+        }else if(cp.toString(16) == 'feff'){
+            repl += '\\ufeff'
         }else{
             repl += chars[i]
         }
@@ -2467,7 +2461,7 @@ str.$factory = function(arg, encoding, errors){
         if(method === null ||
                 // if not better than object.__str__, try __repr__
                 (arg.__class__ && arg.__class__ !== _b_.object &&
-                method.$infos && method.$infos.__func__ === _b_.object.__str__)){
+                method === _b_.object.__str__)){
             var method = $B.$getattr(klass, "__repr__")
         }
     }
