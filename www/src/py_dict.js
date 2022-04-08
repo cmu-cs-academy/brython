@@ -288,7 +288,7 @@ dict.__contains__ = function(){
 
     switch(typeof key) {
         case "string":
-            return self.$string_dict[key] !== undefined
+            return self.$string_dict.hasOwnProperty(key)
         case "number":
             return self.$numeric_dict[key] !== undefined
     }
@@ -454,9 +454,8 @@ dict.$getitem = function(self, arg, ignore_missing){
 
     switch(typeof arg){
         case "string":
-            var x = self.$string_dict[arg]
-            if(x !== undefined){
-                return x[0]
+            if(self.$string_dict.hasOwnProperty(arg)){
+                return self.$string_dict[arg][0]
             }
             break
         case "number":
@@ -483,8 +482,9 @@ dict.$getitem = function(self, arg, ignore_missing){
     }
     if(_b_.isinstance(arg, _b_.str)){
         // string subclass
-        var res = self.$string_dict[arg.valueOf()]
-        if(res !== undefined){return res[0]}
+        if(self.$string_dict.hasOwnProperty(arg.valueOf())){
+            return self.$string_dict[arg.valueOf()][0]
+        }
     }
 
     var ix = rank(self, hash, arg)
@@ -799,7 +799,7 @@ dict.$setitem = function(self, key, value, $hash){
             if(self.$string_dict === undefined){
                 console.log("pas de string dict", self, key, value)
             }
-            if(self.$string_dict[key] !== undefined){
+            if(self.$string_dict.hasOwnProperty(key)){
                 self.$string_dict[key][0] = value
             }else{
                 self.$string_dict[key] = [value, self.$order++]
@@ -969,11 +969,8 @@ var dict_items = $B.make_view("dict_items", true)
 dict_items.$iterator = $B.make_iterator_class("dict_itemiterator")
 
 dict.items = function(self){
-    if(arguments.length > 1){
-       var _len = arguments.length - 1,
-           _msg = "items() takes no arguments (" + _len + " given)"
-       throw _b_.TypeError.$factory(_msg)
-    }
+    var $ = $B.args('items', 1, {self: null}, ['self'], arguments,
+                    {}, null, null)
     var items = to_list(self),
         set_like = true
     // Check if all values are hashable
@@ -996,11 +993,8 @@ var dict_keys = $B.make_view("dict_keys")
 dict_keys.$iterator = $B.make_iterator_class("dict_keyiterator")
 
 dict.keys = function(self){
-    if(arguments.length > 1){
-       var _len = arguments.length - 1,
-           _msg = "keys() takes no arguments (" + _len + " given)"
-       throw _b_.TypeError.$factory(_msg)
-    }
+    var $ = $B.args('keys', 1, {self: null}, ['self'], arguments,
+                    {}, null, null)
     var it = dict_keys.$factory(self, to_list(self, 0), true)
     it.dict_version = self.$version
     return it
@@ -1118,11 +1112,8 @@ var dict_values = $B.make_view("dict_values")
 dict_values.$iterator = $B.make_iterator_class("dict_valueiterator")
 
 dict.values = function(self){
-    if(arguments.length > 1){
-       var _len = arguments.length - 1,
-           _msg = "values() takes no arguments (" + _len + " given)"
-       throw _b_.TypeError.$factory(_msg)
-    }
+    var $ = $B.args('values', 1, {self: null}, ['self'], arguments,
+                    {}, null, null)
     var values = to_list(self, 1)
     var it = dict_values.$factory(self, values, false)
     it.dict_version = self.$version

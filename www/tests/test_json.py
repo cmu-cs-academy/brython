@@ -45,4 +45,15 @@ d = {'command': 'settest setting_test_channel', 'kwargs': {}, 'guild_id': 771732
 
 assert json.dumps(d) == '{"command": "settest setting_test_channel", "kwargs": {}, "guild_id": 771732762503544801, "channel_id": "773488498518786077", "user_id": 634763612535390200, "category": "guild"}'
 
+# issue 1858
+assert json.loads("[0, null]") == [0, None]
+
+# issue 1902
+s = json.loads('"\\u0160"')
+assert s == "Š"
+
+# issue 1903
+assert json.dumps('\na🤭bŠé"') == r'"\na\ud83e\udd2db\u0160\u00e9\""'
+
+
 print('all tests ok..')

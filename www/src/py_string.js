@@ -169,7 +169,7 @@ str.__add__ = function(self, other){
 str.__contains__ = function(self, item){
     if(! _b_.isinstance(item, str)){
         throw _b_.TypeError.$factory("'in <string>' requires " +
-            "string as left operand, not " + item.__class__)
+            "string as left operand, not " + $B.class_name(item))
     }
     if(item.__class__ === str || _b_.isinstance(item, str)){
         var nbcar = item.length
@@ -1028,6 +1028,12 @@ str.__repr__ = function(self){
     var qesc = new RegExp("'", "g") // to escape single quote
     res = "'" + res.replace(qesc, "\\'") + "'"
     return res
+}
+
+str.__rmod__ = function(){
+    var $ = $B.args('__rmod__', 2, {self: null, other: null},
+                    ['self', 'other'], arguments, {}, null, null)
+    return str.__mod__($.other, $.self)
 }
 
 str.__rmul__ = function(self, other){
@@ -2298,7 +2304,7 @@ str.startswith = function(){
     if(! _b_.isinstance(prefixes, _b_.tuple)){
         prefixes = [prefixes]
     }
-    var s = $.self.substring($.js_start, $.js_end)
+    var s = $.self.substring($.start, $.end)
     for(var prefix of prefixes){
         if(! _b_.isinstance(prefix, str)){
             throw _b_.TypeError.$factory("endswith first arg must be str " +

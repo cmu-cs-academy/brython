@@ -134,7 +134,7 @@ list.__delitem__ = function(self, arg){
 }
 
 list.__eq__ = function(self, other){
-    if(isinstance(self, list)){var klass = list}else{var klass = tuple}
+    var klass = isinstance(self, list) ? list : tuple
     if(isinstance(other, klass)){
        if(other.length == self.length){
             var i = self.length
@@ -145,7 +145,9 @@ list.__eq__ = function(self, other){
             }
             return true
        }
+       return false
     }
+    // not the same class
     return _b_.NotImplemented
 }
 
@@ -533,7 +535,10 @@ list.clear = function(){
 list.copy = function(){
     var $ = $B.args("copy", 1, {self: null}, ["self"],
         arguments, {}, null, null)
-    return $.self.slice()
+    var res = $.self.slice()
+    res.__class__ = self.__class__
+    res.__brython__ = true
+    return res
 }
 
 list.count = function(){

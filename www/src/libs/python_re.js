@@ -99,6 +99,15 @@ var Flag = $B.make_class("Flag",
     }
 )
 
+Flag.__and__ = function(self, other){
+    if(other.__class__ === Flag){
+        return Flag.$factory(self.value & other.value)
+    }else if(typeof other == "number" || typeof other == "boolean"){
+        return Flag.$factory(self.value & other)
+    }
+    return _b_.NotImplemented
+}
+
 Flag.__index__ = function(self){
     return self.value
 }
@@ -114,8 +123,18 @@ Flag.__eq__ = function(self, other){
 Flag.__or__ = function(self, other){
     if(other.__class__ === Flag){
         return Flag.$factory(self.value | other.value)
-    }else if(typeof other == "number"){
+    }else if(typeof other == "number" || typeof other == "boolean"){
         return Flag.$factory(self.value | other)
+    }
+    return _b_.NotImplemented
+}
+
+Flag.__rand__ = function(self, other){
+    if(typeof other == "number" || _b_.isinstance(other, _b_.int)){
+        if(other == 0){
+            return false // Flag.$factory(self.value)
+        }
+        return self.value & other
     }
     return _b_.NotImplemented
 }
@@ -123,9 +142,9 @@ Flag.__or__ = function(self, other){
 Flag.__ror__ = function(self, other){
     if(typeof other == "number" || _b_.isinstance(other, _b_.int)){
         if(other == 0){
-            return Flag.$factory(self.value)
+            return self.value
         }
-        return Flag.$factory(self.value | other)
+        return self.value | other
     }
     return _b_.NotImplemented
 }
@@ -1015,8 +1034,8 @@ CharacterClass.prototype.match = function(string, pos){
     // browse string codepoints until they don't match, or the number of
     // matches is above the maximum allowed
     while(pos + i <= len &&
-            this.test_func(string, pos + i, this.flags) &&
-            i < this.repeat.max){
+            i < this.repeat.max &&
+            this.test_func(string, pos + i, this.flags)){
         i++
     }
     var nb = i
@@ -1100,7 +1119,7 @@ CharacterSet.prototype.match = function(string, pos){
                         }
                     }
                 }else if(item instanceof CharacterClass){
-                    test = !! item.match(string, pos) // boolean
+                    test = !! item.match(string, pos + i) // boolean
                 }else{
                     if(item.ord == cp1){
                         test = true
@@ -1868,7 +1887,7 @@ function compile(pattern, flags){
                     if(previous instanceof CharSeq){
                         previous.chars.push(item)
                         added_to_charseq = true
-                    }else if(previous instanceof Char){
+                    }else if(previous instanceof Char && ! previous.repeater){
                         node.items.pop()
                         node.items.push(new CharSeq([previous, item]))
                         added_to_charseq = true
@@ -2674,12 +2693,13 @@ function transform_repl(data, pattern){
     data.repl1 = repl1
     if(has_backref){
         parts.push(repl.substr(next_pos))
-        data.repl = function(bmo){
+data.repl = function(bmo){
             var mo = bmo.mo,
                 res = parts[0],
                 groups = mo.$groups,
                 s = mo.string,
-                group
+                group,
+                is_bytes = s.type == 'bytes'
             for(var i = 1, len = parts.length; i < len; i += 2){
                 if(groups[parts[i]] === undefined){
                     if(mo.node.$groups[parts[i]] !== undefined){
@@ -2694,7 +2714,11 @@ function transform_repl(data, pattern){
                     }
                 }else{
                     group = groups[parts[i]]
-                    res += s.substring(group.start, group.end)
+                    var x = s.substring(group.start, group.end)
+                    if(is_bytes){
+                        x = _b_.bytes.decode(x, 'latin-1')
+                    }
+                    res += x
                 }
                 res += parts[i + 1]
             }
@@ -2837,10 +2861,13 @@ function subn(pattern, repl, string, count, flags){
     for(var bmo of $module.finditer(BPattern.$factory(pattern), string.to_str()).js_gen){
         // finditer yields instances of BMatchObject
         var mo = bmo.mo // instance of MatchObject
-        res += from_codepoint_list(string.codepoints.slice(pos, mo.start),
-            string.type)
+        res += from_codepoint_list(string.codepoints.slice(pos, mo.start))
         if(typeof repl == "function"){
-            res += $B.$call(repl)(bmo)
+            var x = $B.$call(repl)(bmo)
+            if(x.__class__ === _b_.bytes){
+                x = _b_.bytes.decode(x, 'latin-1')
+            }
+            res += x // $B.$call(repl)(bmo)
         }else{
             res += repl1
         }
@@ -2853,8 +2880,7 @@ function subn(pattern, repl, string, count, flags){
             break
         }
     }
-    res += from_codepoint_list(string.codepoints.slice(pos),
-        string.type)
+    res += from_codepoint_list(string.codepoints.slice(pos))
     if(pattern.type === "bytes"){
         res = _b_.str.encode(res, "latin-1")
     }

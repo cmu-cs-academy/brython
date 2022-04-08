@@ -325,28 +325,6 @@ type.__format__ = function(klass, fmt_spec){
 
 type.__getattribute__ = function(klass, attr){
     switch(attr) {
-        case "__annotations__":
-            var mro = [klass].concat(klass.__mro__),
-                res
-            for(var i = 0, len = mro.length; i < len; i++){
-                if(mro[i].__dict__){
-                    var ann = mro[i].__dict__.$string_dict.__annotations__[0]
-                    if(ann){
-                        if(res === undefined){
-                            res = ann
-                        }else if(res.__class__ === _b_.dict &&
-                                ann.__class__ === _b_.dict){
-                            // Inherit annotations that are implemented as
-                            // dictionaries
-                            for(var key in ann.$string_dict){
-                                res.$string_dict[key] = ann.$string_dict[key]
-                            }
-                        }
-                    }
-                }
-            }
-            if(res === undefined){res = $B.empty_dict()}
-            return res
         case "__bases__":
             var res = klass.__bases__ // || _b_.tuple.$factory()
             res.__class__ = _b_.tuple
@@ -375,7 +353,7 @@ type.__getattribute__ = function(klass, attr){
                 function(key){delete klass[key]})
     }
     var res = klass[attr]
-    var $test = false // attr == "__init__" // && klass.$infos.__name__ == "generator"
+    var $test = false // attr == "__or__" && klass === _b_.list
     if($test){
         console.log("attr", attr, "of", klass, res, res + "")
     }
@@ -439,6 +417,10 @@ type.__getattribute__ = function(klass, attr){
                         __name__: attr,
                         __qualname__: klass.$infos.__name__ + "." + attr,
                         __module__: res.$infos ? res.$infos.__module__ : ""
+                    }
+                    if($test){
+                        console.log('return method from meta', meta_method,
+                            meta_method + '')
                     }
                     return meta_method
                 }
@@ -653,7 +635,7 @@ type.__or__ = function(){
                 arguments, {}, null, null),
         cls = $.cls,
         other = $.other
-    if(! _b_.isinstance(other, type)){
+    if(other !== _b_.None && ! _b_.isinstance(other, type)){
         return _b_.NotImplemented
     }
     return $B.UnionType.$factory([cls, other])
@@ -1015,6 +997,12 @@ $B.GenericAlias.__getitem__ = function(self, item){
     throw _b_.TypeError.$factory("descriptor '__getitem__' for '" +
         self.origin_class.$infos.__name__ +"' objects doesn't apply to a '" +
         $B.class_name(item) +"' object")
+}
+
+$B.GenericAlias.__or__ = function(self, other){
+    var $ = $B.args('__or__', 2, {self: null, other: null}, ['self', 'other'],
+                    arguments, {}, null, null)
+    return $B.UnionType.$factory([self, other])
 }
 
 $B.GenericAlias.__origin__ = {

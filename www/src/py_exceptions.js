@@ -10,7 +10,7 @@ $B.del_exc = function(){
 $B.set_exc = function(exc){
     var frame = $B.last($B.frames_stack)
     if(frame === undefined){
-        console.log("no frame", exc, exc.__class__, exc.args)
+        console.log("no frame", exc, exc.__class__, exc.args, exc.$stack)
     }
     frame[1].$current_exception = $B.exception(exc)
 }
@@ -20,13 +20,15 @@ $B.get_exc = function(){
     return frame[1].$current_exception
 }
 
-$B.$raise = function(arg){
+$B.$raise = function(arg, cause){
     // Used for "raise" without specifying an exception.
     // If there is an exception in the stack, use it, else throw a simple
     // Exception
+    var active_exc = $B.get_exc()
     if(arg === undefined){
-        var es = $B.get_exc()
-        if(es !== undefined){throw es}
+        if(active_exc !== undefined){
+            throw active_exc
+        }
         throw _b_.RuntimeError.$factory("No active exception to reraise")
     }else if(_b_.isinstance(arg, BaseException)){
         if(arg.__class__ === _b_.StopIteration &&
@@ -34,6 +36,9 @@ $B.$raise = function(arg){
             // PEP 479
             arg = _b_.RuntimeError.$factory("generator raised StopIteration")
         }
+        arg.__context__ = active_exc === undefined ? _b_.None : active_exc
+        arg.__cause__ = cause || _b_.None
+        arg.__suppress_context__ = cause !== undefined
         throw arg
     }else if(arg.$is_class && _b_.issubclass(arg, BaseException)){
         if(arg === _b_.StopIteration){
@@ -42,13 +47,17 @@ $B.$raise = function(arg){
                 throw _b_.RuntimeError.$factory("generator raised StopIteration")
             }
         }
-        throw $B.$call(arg)()
+        var exc = $B.$call(arg)()
+        exc.__context__ = active_exc === undefined ? _b_.None : active_exc
+        exc.__cause__ = cause || _b_.None
+        exc.__suppress_context__ = cause !== undefined
+        throw exc
     }else{
         throw _b_.TypeError.$factory("exceptions must derive from BaseException")
     }
 }
 
-$B.$syntax_err_line = function(exc, module, src, pos, line_num){
+$B.$syntax_err_line = function(exc, module, src, pos, line_num, filename){
     // map position to line number
     var pos2line = {},
         lnum = 1,
@@ -82,11 +91,11 @@ $B.$syntax_err_line = function(exc, module, src, pos, line_num){
         }
         exc.offset = lpos + 1 // starts at column 1, not 0
         exc.args = $B.fast_tuple([$B.$getitem(exc.args, 0),
-            $B.fast_tuple([module, line_num, lpos, line])])
+            $B.fast_tuple([filename, line_num, lpos, line])])
     }
     exc.lineno = line_num
     exc.msg = exc.args[0]
-    exc.filename = module
+    exc.filename = filename
 }
 
 $B.$SyntaxError = function(module, msg, src, pos, line_num, root) {
@@ -95,7 +104,7 @@ $B.$SyntaxError = function(module, msg, src, pos, line_num, root) {
         line_num = root.line_info
     }
     var exc = _b_.SyntaxError.$factory(msg)
-    $B.$syntax_err_line(exc, module, src, pos, line_num)
+    $B.$syntax_err_line(exc, module, src, pos, line_num, root.filename)
     throw exc
 }
 
@@ -134,7 +143,7 @@ $B.$IndentationError = function(module, msg, src, pos, line_num, root,
         msg += ` after ${type} on line ${indented_node.line_num}`
     }
     var exc = _b_.IndentationError.$factory(msg)
-    $B.$syntax_err_line(exc, module, src, pos, line_num)
+    $B.$syntax_err_line(exc, module, src, pos, line_num, root.filename)
     throw exc
 }
 
@@ -293,7 +302,8 @@ var frame = $B.make_class("frame",
                 filename = "<string>"
             }
             if(_frame[1].$line_info === undefined){
-                res.f_lineno = -1
+                res.f_lineno = _frame[1].$lineno || -1
+
             }else{
                 var line_info = _frame[1].$line_info.split(",")
                 res.f_lineno = parseInt(line_info[0])
@@ -463,33 +473,42 @@ var getExceptionTrace = function(exc, includeInternal) {
         info += "\nJS stack:\n" + exc.$js_exc.stack + "\n"
     }
     info += "Traceback (most recent call last):"
-    var line_info = exc.$line_info
+    var line_info = exc.$line_info,
+        src
 
     for(var i = 0; i < exc.$stack.length; i++){
+        src = undefined
         var frame = exc.$stack[i]
-        if(! frame[1] || ! frame[1].$line_info){
+        if(! frame[1]){
             continue
         }
-        var $line_info = frame[1].$line_info
-        var line_info = $line_info.split(','),
-            src
-        if(exc.module == line_info[1]){
-            src = exc.src
+        if(frame.exec_obj){
+            // set for exec when globals is set to globals()
+            line_info = [frame.exec_obj.$lineno, frame[2]]
+            src = frame.exec_src
+        }else if(frame[1].$line_info){
+            var $line_info = frame[1].$line_info
+            line_info = $line_info.split(',')
+        }else if(frame[1].$lineno){
+            line_info = [frame[1].$lineno, frame[2]]
         }
-        if(!includeInternal){
-            var src = frame[3].$src
-            if(src === undefined){
-                if($B.VFS && $B.VFS.hasOwnProperty(frame[2])){
-                    src = $B.VFS[frame[2]][1]
-                }else if(src = $B.file_cache[frame[3].__file__]){
-                    // For imported modules, cf. issue 981
+        var file = frame[1].__file__ || frame[3].__file__
+        if(src == undefined){
+            if(file && $B.file_cache[file]){
+                src = $B.file_cache[file]
+            }else{
+                console.log('pas de __file__ ou de file_cache[__file]')
+                console.log(exc.$stack)
+                if($B.imported[frame[2]] === undefined){
+                    var file = frame[3].__file__,
+                        src = $B.file_cache[file]
                 }else{
-                    continue
+                    var file = $B.imported[frame[2]].__file__,
+                        src = $B.file_cache[file]
                 }
             }
         }
-        var file = frame[3].__file__ || "<string>",
-            module = line_info[1],
+        var module = line_info[1],
             is_exec = module.charAt(0) == "$"
         if(is_exec){
             module = "<module>"
@@ -525,7 +544,12 @@ var getExceptionTrace = function(exc, includeInternal) {
         if(src !== undefined && ! is_exec){
             var lines = src.split("\n"),
                 line = lines[parseInt(line_info[0]) - 1]
-            if(line){line = line.replace(/^[ ]+/g, "")}
+            if(line === undefined){
+                console.log('bizarre, src', src, 'frame', frame, 'line_info', line_info)
+            }
+            if(line){
+                line = line.replace(/^[ ]+/g, "")
+            }
             info += "\n    " + line
         }
     }
@@ -538,7 +562,7 @@ var getExceptionTrace = function(exc, includeInternal) {
 }
 
 BaseException.__getattr__ = function(self, attr){
-
+    
     if(attr == "info"){
         return getExceptionTrace(self, false);
     }else if (attr == "infoWithInternal"){
@@ -547,6 +571,10 @@ BaseException.__getattr__ = function(self, attr){
         // Return traceback object
         if(self.$traceback !== undefined){return self.$traceback}
         return traceback.$factory(self)
+    }else if(attr == '__context__'){
+        var frame = $B.last($B.frames_stack),
+            ctx = frame[1].$current_exception
+        return ctx || _b_.None
     }else{
         throw $B.attr_error(attr, self)
     }
@@ -583,15 +611,22 @@ $B.restore_stack = function(stack, locals){
 
 $B.freeze = function(err){
     // Store line numbers in frames stack when the exception occured
+    function get_line_info(frame){
+        var line_info = frame[1].$line_info
+        if(! line_info){
+            line_info = `${frame[1].$lineno},${frame[2]}`
+        }
+        return line_info
+    }
     if(err.$stack === undefined){
         err.$line_infos = []
-        for(var i = 0, len = $B.frames_stack.length; i < len; i++){
-            err.$line_infos.push($B.frames_stack[i][1].$line_info)
+        for(var frame of $B.frames_stack){
+            err.$line_infos.push(get_line_info(frame))
         }
         // Make a copy of the current frames stack array
         err.$stack = $B.frames_stack.slice()
         if($B.frames_stack.length){
-            err.$line_info = $B.last($B.frames_stack)[1].$line_info
+            err.$line_info = get_line_info($B.last($B.frames_stack))
         }
     }
 }
@@ -663,8 +698,24 @@ $B.exception = function(js_exc, in_ctx_manager){
             (js_exc.message || "<" + js_exc + ">")
         exc.args = _b_.tuple.$factory([$message])
         exc.$py_error = true
-        console.log('js error', exc.args, exc.__class__)
+        console.log('js error', exc.args)
         console.log(js_exc.stack)
+        console.log('frames_stack', $B.frames_stack.slice())
+        if($B.js_from_ast){
+            for(var frame of $B.frames_stack){
+                var src = undefined
+                var file = frame[1].__file__ || frame[3].__file__
+                if(file && $B.file_cache[file]){
+                    src = $B.file_cache[file]
+                }
+                console.log('line', frame[1].$lineno, 'file', file, 'in', frame[0])
+                if(src !== undefined){
+                    var lines = src.split('\n'),
+                        line = lines[frame[1].$lineno - 1]
+                    console.log('    ' + line)
+                }
+            }
+        }
         $B.freeze(exc)
     }else{
         var exc = js_exc
@@ -713,7 +764,7 @@ $B.is_recursion_error = function(js_exc){
         (err_type == 'RangeError' && err_msg == 'Maximum call stack size exceeded')
 }
 
-function $make_exc(names, parent){
+var $make_exc = $B.$make_exc = function(names, parent){
     // Creates the exception classes that inherit from parent
     // names is the list of exception names
     if(parent === undefined){
@@ -863,6 +914,9 @@ _b_.SyntaxError.$factory = function(){
         frame = $B.last($B.frames_stack)
     if(frame){
         line_info = frame[1].$line_info
+        if(line_info === undefined){
+            line_info = `${frame[1].$lineno},${frame[2]}`
+        }
         exc.filename = frame[3].__file__
         exc.lineno = parseInt(line_info.split(",")[0])
         var src = $B.file_cache[frame[3].__file__]

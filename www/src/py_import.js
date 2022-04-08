@@ -193,7 +193,8 @@ function run_py(module_contents, path, module, compiled) {
 
         var src = {
             src: module_contents,
-            has_annotations: false
+            has_annotations: false,
+            filename: path
         }
 
         root = $B.py2js(src, module,
@@ -211,10 +212,12 @@ function run_py(module_contents, path, module, compiled) {
            console.log(js)
         }
         var src = js
-        js = "var $module = (function(){\n" + js + "return $locals_" +
-            module.__name__.replace(/\./g, "_") + "})(__BRYTHON__)\n" +
+        js = "var $module = (function(){\n" + js
+        var prefix = $B.js_from_ast ? 'locals_' : '$locals_'
+        js += 'return ' + prefix
+        js += module.__name__.replace(/\./g, "_") + "})(__BRYTHON__)\n" +
             "return $module"
-        var module_id = "$locals_" + module.__name__.replace(/\./g, '_')
+        var module_id = prefix + module.__name__.replace(/\./g, '_')
         var $module = (new Function(module_id, js))(module)
     }catch(err){
         if($B.debug > 1){
@@ -229,7 +232,7 @@ function run_py(module_contents, path, module, compiled) {
             for(var attr in err){
                 console.log(attr, err[attr])
             }
-            console.log($B.$getattr(err, "info", "[no info]"))
+            console.log('info', $B.$getattr(err, "info", "[no info]"))
             console.log("message: " + err.$message)
             console.log("filename: " + err.fileName)
             console.log("linenum: " + err.lineNumber)
@@ -414,9 +417,10 @@ VFSLoader.exec_module = function(self, modobj){
             }
             mod.__file__ = path
             try{
-                var parent_id = parent.replace(/\./g, "_")
-                mod_js += "return $locals_" + parent_id
-                var $module = new Function("$locals_" + parent_id, mod_js)(
+                var parent_id = parent.replace(/\./g, "_"),
+                    prefix = $B.js_from_ast ? 'locals_' : '$locals_'
+                mod_js += "return " + prefix + parent_id
+                var $module = new Function(prefix + parent_id, mod_js)(
                     mod)
             }catch(err){
                 if($B.debug > 1){
@@ -1152,10 +1156,27 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
     aliases: aliases used to override local variable name bindings
              (eg "import traceback as tb")
     locals: local namespace import bindings will be applied upon
-     */
-    fromlist = fromlist === undefined ? [] : fromlist
-    aliases = aliases === undefined ? {} : aliases
-    locals = locals === undefined ? {} : locals
+    level: number of leading '.' in "from . import a" or "from .mod import a"
+    */
+    var level = 0,
+        frame = $B.last($B.frames_stack),
+        current_module = frame[2],
+        parts = current_module.split('.')
+    while(mod_name.length > 0 && mod_name.startsWith('.')){
+        level++
+        mod_name = mod_name.substr(1)
+        if(parts.length == 0){
+            throw _b_.ImportError.$factory("Parent module '' not loaded, "+
+                "cannot perform relative import")
+        }
+        current_module = parts.join('.')
+        parts.pop()
+    }
+    if(level > 0){
+        mod_name = current_module +
+            (mod_name.length > 0 ? '.' + mod_name : '')
+
+    }
     var parts = mod_name.split(".")
     // For . , .. and so on , remove one relative step
     if(mod_name[mod_name.length - 1] == "."){parts.pop()}
@@ -1176,6 +1197,9 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
         }
     }
     var mod_name = norm_parts.join(".")
+    fromlist = fromlist === undefined ? [] : fromlist
+    aliases = aliases === undefined ? {} : aliases
+    locals = locals === undefined ? {} : locals
 
     if($B.$options.debug == 10){
        console.log("$import "+mod_name)
@@ -1198,6 +1222,7 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
                         __import__ :
                         $B.$getattr(__import__, "__call__"),
         modobj = importer(mod_name, globals, undefined, fromlist, 0)
+
     // Apply bindings upon local namespace
     if(! fromlist || fromlist.length == 0){
         // import mod_name [as alias]
@@ -1249,12 +1274,14 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
                         if(mod_name === "__future__"){
                             // special case for __future__, cf issue #584
                             var frame = $B.last($B.frames_stack),
-                                line_info = frame[3].$line_info,
+                                line_info = frame[3].$line_info ||
+                                    frame[1].$lineinfo + ',' + frame[2],
                                 line_elts = line_info.split(','),
                                 line_num = parseInt(line_elts[0])
                             $B.$SyntaxError(frame[2],
                                 "future feature " + name + " is not defined",
-                                current_frame[3].src, undefined, line_num)
+                                current_frame[3].src, undefined, line_num,
+                                {filename: mod_name})
                         }
                         if($err3.$py_error){
                             throw $err3

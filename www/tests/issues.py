@@ -3015,6 +3015,45 @@ foo(constructor=True)
 # issue 1854
 assert 0 != int
 
+# issue 1857
+lines = ["789/",
+         "456*",
+         "123-",
+         "0.=+"]
+
+((x for x in line) for line in lines)
+
+# issue 1860
+try:
+    try:
+        raise ValueError("inner")
+    except Exception as e:
+        raise ValueError("outer") from e
+except Exception as e:
+    assert repr(e.__context__) == "ValueError('inner')"
+
+# issue 1875
+assertRaises(SyntaxError, exec, "(a, b = b, a)")
+
+# issue 1886
+try:
+    exec("[i := i for i in range(5)]")
+except SyntaxError as exc:
+    assert "cannot rebind" in exc.args[0]
+
+# issue 1895
+s = [1, 2, 3]
+
+try:
+    [x1895 for s[0] in s]
+    raise Exception('should have raised NameError')
+except NameError:
+    pass
+
+# issue 1905
+assert [1 for a in [2 for (a, b) in [(3, 4)]]] == [1]
+assert [1 for a in [2 for a, b in [(3, 4)]]] == [1]
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================

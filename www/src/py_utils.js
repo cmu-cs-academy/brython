@@ -6,13 +6,13 @@ var _b_ = $B.builtins,
             ("function" === typeof importScripts) &&
             (navigator instanceof WorkerNavigator)
 
-$B.args = function($fname, argcount, slots, var_names, args, $dobj,
+$B.args = function(fname, argcount, slots, var_names, args, $dobj,
     extra_pos_args, extra_kw_args){
     // builds a namespace from the arguments provided in $args
     // in a function defined as
     //     foo(x, y, z=1, *args, u, v, **kw)
     // the parameters are
-    //     $fname = "f"
+    //     fname = "f"
     //     argcount = 3 (for x, y , z)
     //     slots = {x:null, y:null, z:null, u:null, v:null}
     //     var_names = ['x', 'y', 'z', 'u', 'v']
@@ -20,8 +20,8 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
     //     extra_pos_args = 'args'
     //     extra_kw_args = 'kw'
     //     kwonlyargcount = 2
-    if($fname.startsWith("lambda_" + $B.lambda_magic)){
-        $fname = "<lambda>"
+    if(fname.startsWith("lambda_" + $B.lambda_magic)){
+        fname = "<lambda>"
     }
     var has_kw_args = false,
         nb_pos = args.length,
@@ -50,16 +50,16 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
                     var kw_arg = kw_args[i]
                     if(kw_arg.__class__ === _b_.dict){
                         for(var k in kw_arg.$numeric_dict){
-                            throw _b_.TypeError.$factory($fname +
+                            throw _b_.TypeError.$factory(fname +
                                 "() keywords must be strings")
                         }
                         for(var k in kw_arg.$object_dict){
-                            throw _b_.TypeError.$factory($fname +
+                            throw _b_.TypeError.$factory(fname +
                                 "() keywords must be strings")
                         }
                         for(var k in kw_arg.$string_dict){
                             if(kwa[k] !== undefined){
-                                throw _b_.TypeError.$factory($fname +
+                                throw _b_.TypeError.$factory(fname +
                                     "() got multiple values for argument '" +
                                     k + "'")
                             }
@@ -72,11 +72,11 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
                             try{
                                 var k = _b_.next(it)
                                 if(typeof k !== "string"){
-                                    throw _b_.TypeError.$factory($fname +
+                                    throw _b_.TypeError.$factory(fname +
                                         "() keywords must be strings")
                                 }
                                 if(kwa[k] !== undefined){
-                                    throw _b_.TypeError.$factory($fname +
+                                    throw _b_.TypeError.$factory(fname +
                                         "() got multiple values for argument '" +
                                         k + "'")
                                 }
@@ -109,7 +109,7 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
         if(extra_pos_args === null || extra_pos_args == "*"){
             // No parameter to store extra positional arguments :
             // thow an exception
-            msg = $fname + "() takes " + argcount + " positional argument" +
+            msg = fname + "() takes " + argcount + " positional argument" +
                 (argcount > 1 ? "s" : "") + " but more were given"
             throw _b_.TypeError.$factory(msg)
         }else{
@@ -148,21 +148,22 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
                     // If there is a place to store extra keyword arguments
                     extra_kw.$string_dict[key] = [value, extra_kw.$order++]
                 }else{
-                    throw _b_.TypeError.$factory($fname +
+                    throw _b_.TypeError.$factory(fname +
                         "() got an unexpected keyword argument '" + key + "'")
                 }
-            }else if(slots[key] !== null){
+            }else if(slots.hasOwnProperty(key) && slots[key] !== null){
                 // The slot is already filled
                 if(key == extra_pos_args){
                     throw _b_.TypeError.$factory(
-                        `${$fname}() got an unexpected ` +
+                        `${fname}() got an unexpected ` +
                         `keyword argument '${key}'`)
                 }
-                throw _b_.TypeError.$factory($fname +
+                throw _b_.TypeError.$factory(fname +
                     "() got multiple values for argument '" + key + "'")
             }else if(only_positional && only_positional.indexOf(key) > -1){
-                throw _b_.TypeError.$factory($fname + "() got an " +
-                    "unexpected keyword argument '" + key + "'")
+                throw _b_.TypeError.$factory(`${fname}() got some ` +
+                    `positional-only arguments passed as keyword ` +
+                    `arguments: '${key}'`)
             }else{
                 // Fill the slot with the key/value pair
                 slots[key] = value
@@ -177,21 +178,46 @@ $B.args = function($fname, argcount, slots, var_names, args, $dobj,
             if($dobj[attr] !== undefined){
                 slots[attr] = $dobj[attr]
             }else{
-                missing.push("'" + attr + "'")
+                missing.push(attr)
             }
         }
     }
 
 
     if(missing.length > 0){
-
         if(missing.length == 1){
-            throw _b_.TypeError.$factory($fname +
-                " missing 1 positional argument: " + missing[0])
+            var arg_type = 'positional'
+            if(var_names.indexOf(missing[0]) >= argcount){
+                arg_type = 'required keyword-only'
+            }
+            throw _b_.TypeError.$factory(fname +
+                ` missing 1 ${arg_type} argument: '${missing[0]}'`)
         }else{
-            var msg = $fname + " missing " + missing.length +
-                " positional arguments: "
-            msg += missing.join(" and ")
+            var missing_positional = missing.filter(arg =>
+                    var_names.indexOf(arg) < argcount),
+                missing_kwonly = missing.filter(arg =>
+                    var_names.indexOf(arg) >= argcount)
+
+            function format_missing(m, type){
+                var msg = m.length +
+                       ` required ${type} argument` +
+                       (m.length > 1 ? 's' : '')
+                m = m.map(x => `'${x}'`)
+                if(m.length > 1){
+                    m[m.length - 1] = ' and ' + m[m.length - 1]
+                    for(var i = 0; i < m.length - 2; i++){
+                        m[i] = m[i] + ', '
+                    }
+                }
+                return msg + ': ' + m.join('')
+            }
+
+            var msg = fname + " missing "
+            if(missing_positional.length > 0){
+                msg += format_missing(missing_positional, 'positional')
+            }else{
+                msg += format_missing(missing_kwonly, 'keyword-only')
+            }
             throw _b_.TypeError.$factory(msg)
         }
 
@@ -308,7 +334,7 @@ $B.next_of = function(iterator){
     return $B.$call($B.$getattr(_b_.iter(iterator), '__next__'))
 }
 
-$B.unpacker = function(obj, nb_targets, has_starred, target){
+$B.unpacker = function(obj, nb_targets, has_starred, nb_after_starred){
     // Used in unpacking target of a "for" loop if it is a tuple or list
     var t = _b_.list.$factory(obj),
         len = t.length,
@@ -329,7 +355,9 @@ $B.unpacker = function(obj, nb_targets, has_starred, target){
     }
     t.read_rest = function(){
         t.index++
-        return t.slice(t.index)
+        var res = t.slice(t.index, t.length - nb_after_starred)
+        t.index = t.length - nb_after_starred - 1
+        return res
     }
     return t
 }
@@ -347,6 +375,26 @@ $B.rest_iter = function(next_func){
             }
             throw err
         }
+    }
+}
+
+$B.set_lineno = function(locals, lineno){
+    locals.$lineno = lineno
+    if(locals.$f_trace !== _b_.None){$B.trace_line()}
+    return true
+}
+
+$B.handle_annotation = function(annotation_string){
+    // Evaluate the annotation string or not, depending on whether postponed
+    // evaluation is set (PEP 463)
+    if($B.imported.__future__ &&
+            $B.frames_stack.length > 0 &&
+            $B.last($B.frames_stack)[3].annotations ===
+                $B.imported.__future__.annotations){
+        // don't evaluate
+        return annotation_string
+    }else{
+        return _b_.eval(annotation_string)
     }
 }
 
@@ -433,7 +481,9 @@ $B.$global_search = function(name, search_ids){
 $B.$local_search = function(name){
     // search in local namespace
     var frame = $B.last($B.frames_stack)
-    if(frame[1][name] !== undefined){return frame[1][name]}
+    if(frame[1][name] !== undefined){
+        return frame[1][name]
+    }
     else{
         throw _b_.UnboundLocalError.$factory("local variable '" +
             name + "' referenced before assignment")
@@ -441,7 +491,7 @@ $B.$local_search = function(name){
 }
 
 $B.get_method_class = function(ns, qualname){
-    // Used to set the cell __name__ in a method. ns is the namespace
+    // Used to set the cell __class__ in a method. ns is the namespace
     // and qualname is the qualified name of the class
     // Generally, for qualname = "A.B", the result is just ns.A.B
     // In some cases, ns.A might not yet be defined (cf. issue #1740).
@@ -686,6 +736,7 @@ $B.getitem_slice = function(obj, slice){
         }
         if(res){
             res.__class__ = obj.__class__ // can be tuple
+            res.__brython__ = true
             return res
         }else{
             return _b_.list.$getitem(obj, slice)
@@ -892,7 +943,7 @@ $B.augm_assign = function(left, op, right){
             if(method1 === undefined){
                 method1 = $B.op2method.binary[op1]
             }
-            return $B.rich_op(method1, left, right)
+            return $B.rich_op(`__${method1}__`, left, right)
         }
     }
 }
@@ -1401,15 +1452,20 @@ $B.leave_frame = function(arg){
         }
     }
     var frame = $B.frames_stack.pop()
+
     if(frame[1].$is_generator){
         // Get context managers in a generator
-        var ctx_managers = new Set()
-        for(var key in frame[1]){
-            if(key.startsWith('$ctx_manager')){
-                ctx_managers.add(frame[1][key])
+        if(frame[1].$context_managers){ // set by code produced by js_from_ast
+            var ctx_managers = frame[1].$context_managers
+        }else{
+            var ctx_managers = []
+            for(var key in frame[1]){
+                if(key.startsWith('$ctx_manager')){
+                    ctx_managers.push(frame[1][key])
+                }
             }
         }
-        if(ctx_managers.size > 0 && $B.frames_stack.length > 0){
+        if(ctx_managers.length > 0 && $B.frames_stack.length > 0){
             // store context managers in previous frame
             var caller = $B.last($B.frames_stack)
             caller[1].$ctx_managers_in_gen = caller[1].$ctx_managers_in_gen ||
@@ -1455,7 +1511,7 @@ var min_int = Math.pow(-2, 53), max_int = Math.pow(2, 53) - 1
 $B.is_safe_int = function(){
     for(var i = 0; i < arguments.length; i++){
         var arg = arguments[i]
-        if((typeof arg != "number") ||
+        if((typeof arg != "number") || isNaN(arg) ||
                 (arg < min_int || arg > max_int)){
             return false
         }
@@ -1499,7 +1555,7 @@ $B.add = function(x, y){
     }
     var res = $B.$call(method)(x, y)
     if(res === _b_.NotImplemented){ // issue 1309
-        return $B.rich_op("add", x, y)
+        return $B.rich_op("__add__", x, y)
     }
     return res
 }
@@ -1695,23 +1751,23 @@ $B.rich_comp = function(op, x, y){
         "' and '" + $B.class_name(y) + "'")
 }
 
-var opname2opsign = {sub: "-", xor: "^", mul: "*"}
+var opname2opsign = {__sub__: "-", __xor__: "^", __mul__: "*"}
 
 $B.rich_op = function(op, x, y){
     var x_class = x.__class__ || $B.get_class(x),
         y_class = y.__class__ || $B.get_class(y),
-        special_method = '__' + op + '__',
+        rop = '__r' + op.substr(2),
         method
     if(x_class === y_class){
         // For objects of the same type, don't try the reversed operator
         if(x_class === _b_.int){
-            return _b_.int[special_method](x, y)
+            return _b_.int[op](x, y)
         }else if(x_class === _b_.bool){
-            return (_b_.bool[special_method] || _b_.int[special_method])
+            return (_b_.bool[op] || _b_.int[op])
                 (x, y)
         }
         try{
-            method = $B.$call($B.$getattr(x_class, "__" + op + "__"))
+            method = $B.$call($B.$getattr(x_class, op))
         }catch(err){
             if(err.__class__ === _b_.AttributeError){
                 var kl_name = $B.class_name(x)
@@ -1726,40 +1782,57 @@ $B.rich_op = function(op, x, y){
 
     if(_b_.issubclass(y_class, x_class)){
         // issue #1686
-        var reflected_left = $B.$getattr(x_class, '__r' + op + '__'),
-            reflected_right = $B.$getattr(y_class, '__r' + op + '__')
+        var reflected_left = $B.$getattr(x_class, rop),
+            reflected_right = $B.$getattr(y_class, rop)
         if(reflected_right !== reflected_left){
             return reflected_right(y, x)
         }
     }
-    // For instances of different classes, try reversed operator
     var res
     try{
-        method = $B.$call($B.$getattr(x, "__" + op + "__"))
+        // Test if object has attribute op. If so, it is not used in the
+        // operation, but the attribute op of its class, if is exits
+        // This prevents a + b to succeed if the instance a has __add__
+        // but its class has no __add__
+        // It also prevents a | b to succeed if getattr(a, op) fails
+        // although getattr(type(a), op) succeeds, which is the case for
+        // [1] | 'a' : getattr(list, '__or__') succeeds because type.__or__ is
+        // defined, but hasattr([1], '__or__') is False
+        var attr = $B.$getattr(x, op)
+        method = $B.$getattr(x_class, op)
     }catch(err){
         if(err.__class__ !== _b_.AttributeError){
             throw err
         }
-        res = $B.$call($B.$getattr(y, "__r" + op + "__"))(x)
+        res = $B.$call($B.$getattr(y, rop))(x)
         if(res !== _b_.NotImplemented){
             return res
         }
-        throw _b_.TypeError.$factory("'" + (opname2opsign[op] || op) +
-            "' not supported between instances of '" + $B.class_name(x) +
-            "' and '" + $B.class_name(y) + "'")
+        throw _b_.TypeError.$factory(
+            `unsupported operand type(s) for '${$B.method_to_op[op]}' :` +
+            ` '${$B.class_name(x)}' and '${$B.class_name(y)}'`)
+
     }
-    res = method(y)
+    res = method(x, y)
     if(res === _b_.NotImplemented){
-        var reflected = $B.$getattr(y, "__r" + op + "__", null)
-        if(reflected !== null){
-            res = $B.$call(reflected)(x)
-            if(res !== _b_.NotImplemented){
-                return res
+        try{
+            var reflected = $B.$getattr(y, rop),
+                method = $B.$getattr(y_class, rop)
+        }catch(err){
+            if(err.__class__ !== _b_.AttributeError){
+                throw err
             }
+            throw _b_.TypeError.$factory(
+                `unsupported operand type(s) for '${$B.method_to_op[op]}' :` +
+                ` '${$B.class_name(x)}' and '${$B.class_name(y)}'`)
         }
-        throw _b_.TypeError.$factory("'" + (opname2opsign[op] || op) +
-            "' not supported between instances of '" + $B.class_name(x) +
-            "' and '" + $B.class_name(y) + "'")
+        res = method(y, x)
+        if(res === _b_.NotImplemented){
+            throw _b_.TypeError.$factory(
+                `unsupported operand type(s) for '${$B.method_to_op[op]}' :` +
+                ` '${$B.class_name(x)}' and '${$B.class_name(y)}'`)
+        }
+        return res
     }else{
         return res
     }
