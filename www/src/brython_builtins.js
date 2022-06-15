@@ -15,6 +15,7 @@ $B.isWebWorker = ('undefined' !== typeof WorkerGlobalScope) &&
                   (navigator instanceof WorkerNavigator)
 $B.isNode = (typeof process !=='undefined') && (process.release.name==='node')
 
+
 var _window
 if($B.isNode){
     _window = {
@@ -79,8 +80,11 @@ $B.__ARGV = []
 // script name and its source code
 $B.webworkers = {}
 
-// File cache, indexed by module names
+// File cache, indexed by module paths
 $B.file_cache = {}
+
+// Mapping between script url and script name
+$B.url2name = {}
 
 // Mapping between a Python module name and its source code
 $B.$py_src = {}
@@ -132,6 +136,22 @@ $B.__setattr__ = function(attr, value){
 $B.language = _window.navigator.userLanguage || _window.navigator.language || 'en';
 
 $B.locale = "C" // can be reset by locale.setlocale
+
+// Set attribute "tz_name", used in module time to return the
+// attribute tm_zone of struct_time instances
+var date = new Date()
+var formatter = new Intl.DateTimeFormat($B.language, {timeZoneName: 'short'}),
+    short = formatter.format(date)
+formatter = new Intl.DateTimeFormat($B.language, {timeZoneName: 'long'})
+var long = formatter.format(date)
+var ix = 0,
+    minlen = Math.min(short.length, long.length)
+while(ix < minlen && short[ix] == long[ix]){
+    ix++
+}
+$B.tz_name = long.substr(ix).trim()
+
+
 $B.PyCF_ONLY_AST = 1024 // compiler flag, used in libs/_ast.js
 
 if($B.isWebWorker){

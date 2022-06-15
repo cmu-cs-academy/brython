@@ -285,13 +285,12 @@ $B.set_func_names(Attributes, "<dom>")
 
 // Class for DOM events
 
-var DOMEvent = $B.DOMEvent = {
-    __class__: _b_.type,
-    __mro__: [object],
-    $infos:{
-        __name__: "DOMEvent"
+var DOMEvent = $B.DOMEvent = $B.make_class("DOMEvent",
+    function(evt_name){
+        // Factory to create instances of DOMEvent, based on an event name
+        return DOMEvent.__new__(DOMEvent, evt_name)
     }
-}
+)
 
 DOMEvent.__new__ = function(cls, evt_name){
     var ev = new Event(evt_name)
@@ -370,11 +369,6 @@ DOMEvent.__getattribute__ = function(self, attr){
     throw $B.attr_error(attr, self)
 }
 
-DOMEvent.$factory = function(evt_name){
-    // Factory to create instances of DOMEvent, based on an event name
-    return DOMEvent.__new__(DOMEvent, evt_name)
-}
-
 // Function to transform a DOM event into an instance of DOMEvent
 var $DOMEvent = $B.$DOMEvent = function(ev){
     ev.__class__ = DOMEvent
@@ -390,30 +384,22 @@ var $DOMEvent = $B.$DOMEvent = function(ev){
 
 $B.set_func_names(DOMEvent, "browser")
 
-var Clipboard = {
-    __class__: _b_.type,
-    $infos: {
-        __module__: "browser",
-        __name__: "Clipboard"
+var Clipboard = $B.make_class('Clipboard',
+    function(data){
+        return {
+            __class__ : Clipboard,
+            __dict__: $B.empty_dict(),
+            data : data
+        }
     }
-}
+)
 
 Clipboard.__getitem__ = function(self, name){
     return self.data.getData(name)
 }
 
-Clipboard.__mro__ = [object]
-
 Clipboard.__setitem__ = function(self, name, value){
     self.data.setData(name, value)
-}
-
-Clipboard.$factory = function(data){ // drag and drop dataTransfer
-    return {
-        __class__ : Clipboard,
-        __dict__: $B.empty_dict(),
-        data : data
-    }
 }
 
 $B.set_func_names(Clipboard, "<dom>")
@@ -446,7 +432,8 @@ var OpenFile = $B.OpenFile = {
     $infos: {
         __module__: "<pydom>",
         __name__: "OpenFile"
-    }
+    },
+    $is_class: true
 }
 
 OpenFile.$factory = function(file, mode, encoding) {
@@ -493,89 +480,14 @@ dom.File.__str__ = function(){return "<class 'File'>"}
 dom.FileReader.__class__ = _b_.type
 dom.FileReader.__str__ = function(){return "<class 'FileReader'>"}
 
-// Class for options in a select box
-
-var Options = {
-    __class__: _b_.type,
-    __delitem__: function(self, key){
-        key = $B.PyNumber_Index(key)
-        if(key < 0){
-            key += self.parent.options.length
-        }
-        if(! self.parent.options[key]){
-            throw _b_.KeyError.$factory(key)
-        }
-        self.parent.options.remove(key)
-    },
-    __getitem__: function(self, key){
-        key = $B.PyNumber_Index(key)
-        if(key < 0){
-            key += self.parent.options.length
-        }
-        if(! self.parent.options[key]){
-            throw _b_.KeyError.$factory(key)
-        }
-        return DOMNode.$factory(self.parent.options[key])
-    },
-    __len__: function(self){
-        return self.parent.options.length
-    },
-    __mro__: [object],
-    __setattr__: function(self, attr, value){
-        self.parent.options[attr] = value
-    },
-    __setitem__: function(self, attr, value){
-        self.parent.options[attr] = $B.$JS2Py(value)
-    },
-    __str__: function(self){
-        return "<object Options wraps " + self.parent.options + ">"
-    },
-    append: function(self, element){
-        self.parent.options.add(element)
-    },
-    insert: function(self, index, element){
-        if(index === undefined){self.parent.options.add(element)}
-        else{self.parent.options.add(element, index)}
-    },
-    item: function(self, index){
-        return self.parent.options.item(index)
-    },
-    namedItem: function(self, name){
-        return self.parent.options.namedItem(name)
-    },
-    remove: function(self, element){
-        self.parent.options.remove(element.index)
-    },
-    $infos: {
-        __module__: "<pydom>",
-        __name__: "Options"
-    }
-}
-
-Options.$factory = function(parent){
-    return {
-        __class__: Options,
-        parent: parent
-    }
-}
-
-$B.set_func_names(Options, "<dom>")
 
 // Class for DOM nodes
 
-var DOMNode = {
-    __class__ : _b_.type,
-    __mro__: [object],
-    $infos: {
-        __module__: "browser",
-        __name__: "DOMNode"
+var DOMNode = $B.make_class('browser',
+    function(elt){
+        return elt
     }
-}
-
-DOMNode.$factory = function(elt){
-    return elt
-}
-
+)
 
 DOMNode.__add__ = function(self, other){
     // adding another element to self returns an instance of TagSum
@@ -766,13 +678,12 @@ DOMNode.__getattribute__ = function(self, attr){
         return res
     }
 
-    // Looking for property. If the attribute is in the forbidden
-    // arena ... look for the aliased version
     var property = self[attr]
 
     if(property !== undefined && self.__class__ &&
             self.__class__.__module__ != "browser.html" &&
-            self.__class__.__module__ != "browser.svg"){
+            self.__class__.__module__ != "browser.svg" &&
+            ! self.__class__.$webcomponent){
         // cf. issue #1543 : if an element has the attribute "attr" set and
         // its class has an attribute of the same name, show a warning that
         // the class attribute is ignored
@@ -788,8 +699,7 @@ DOMNode.__getattribute__ = function(self, attr){
             var from_class = $B.$getattr(self.__class__, attr, _b_.None)
             if(from_class !== _b_.None){
                 var frame = $B.last($B.frames_stack),
-                    line_info = frame[1].$line_info,
-                    line = line_info.split(',')[0]
+                    line = frame[1].$lineno
                 console.info("Warning: line " + line + ", " + self.tagName +
                     " element has instance attribute '" + attr + "' set." +
                     " Attribute of class " + $B.class_name(self) +
@@ -826,6 +736,11 @@ DOMNode.__getattribute__ = function(self, attr){
     if(res !== undefined){
         if(res === null){return _b_.None}
         if(typeof res === "function"){
+            if(res.$is_func){
+                // If the attribute was set in __setattr__ (elt.foo = func),
+                // then getattr(elt, "foo") must be "func"
+                return res
+            }
             // If elt[attr] is a function, it is converted in another function
             // that produces a Python error message in case of failure.
             var func = (function(f, elt){
@@ -874,9 +789,9 @@ DOMNode.__getattribute__ = function(self, attr){
             })(res, self)
             func.$infos = {__name__ : attr, __qualname__: attr}
             func.$is_func = true
+            func.$python_function = res
             return func
         }
-        if(attr == 'options'){return Options.$factory(self)}
         if(attr == 'style'){return $B.JSObj.$factory(self[attr])}
         if(Array.isArray(res)){return res} // issue #619
         return $B.$JS2Py(res)
@@ -1616,13 +1531,7 @@ $B.set_func_names(DOMNode, "browser")
 
 // return query string as an object with methods to access keys and values
 // same interface as cgi.FieldStorage, with getvalue / getlist / getfirst
-var Query = {
-    __class__: _b_.type,
-    __mro__: [_b_.object],
-    $infos:{
-        __name__: "query"
-    }
-}
+var Query = $B.make_class("query")
 
 Query.__contains__ = function(self, key){
     return self._keys.indexOf(key) > -1
@@ -1697,14 +1606,15 @@ Query.keys = function(self){
 $B.set_func_names(Query, "<dom>")
 
 // class used for tag sums
-var TagSum = {
-    __class__ : _b_.type,
-    __mro__: [object],
-    $infos: {
-        __module__: "<pydom>",
-        __name__: "TagSum"
+var TagSum = $B.make_class("TagSum",
+    function(){
+        return {
+            __class__: TagSum,
+            children: [],
+            toString: function(){return "(TagSum)"}
+        }
     }
-}
+)
 
 TagSum.appendChild = function(self, child){
     self.children.push(child)
@@ -1747,14 +1657,6 @@ TagSum.clone = function(self){
         res.children.push(self.children[i].cloneNode(true))
     }
     return res
-}
-
-TagSum.$factory = function(){
-    return {
-        __class__: TagSum,
-        children: [],
-        toString: function(){return "(TagSum)"}
-    }
 }
 
 $B.set_func_names(TagSum, "<dom>")

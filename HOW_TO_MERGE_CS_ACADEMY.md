@@ -11,6 +11,7 @@ Then resolve merge conflicts:
 Delete these files:
 
 * www/src/brython.js
+* www/src/brython_standard_parser.js
 * www/src/brython_stdlib.js
 * www/src/stdlib_paths.js
 * www/src/version_info.js

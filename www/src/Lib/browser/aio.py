@@ -26,25 +26,91 @@ async def gather(*coros, rate=0):
     return dones
 
 
-class Future:
-    """Help manage callback based APIs with async
+class QueueEmpty (Exception) :
+    pass
 
-    This class tries to match asyncio.Future
-    """
 
-    def __new__(cls, *args, **kwargs):
-        methods = {}
-        def executor(resolve_cb, reject_cb):
-            methods["resolve"] = resolve_cb
-            methods["reject"] = reject_cb
-        promise = window.Promise.new(executor)
-        promise._methods = methods
-        promise.set_result = cls.set_result.__get__(promise)
-        promise.set_exception = cls.set_exception.__get__(promise)
-        return promise
+class QueueFull (Exception) :
+    pass
 
-    def set_result(self, value):
-        self._methods["resolve"](value)
 
-    def set_exception(self, exc):
-        self._methods["reject"](exc)
+class Queue(object):
+
+    def __init__(self, maxsize=0):
+        from collections import deque # lazy import
+        self.maxsize = maxsize
+        self.data = deque(maxlen=maxsize or None)
+        self.readers = deque()
+        self.writers = deque()
+        self.joiners = deque()
+        self.tasks = 0
+
+    def qsize(self):
+        return len(self.data)
+
+    def empty(self):
+        return self.qsize() == 0
+
+    def full(self):
+        return self.maxsize and self.qsize() == self.maxsize
+
+    async def get(self):
+        if self.empty():
+            future = Future()
+            def reader(val):
+                future.set_result(val)
+            self.readers.append(reader)
+            return await future
+
+        item = self.get_nowait()
+        if self.writers:
+            # unblock one writer
+            writer = self.writers.popleft()
+            writer()
+        return item
+
+    def get_nowait(self):
+        try :
+            return self.data.popleft()
+        except IndexError :
+            raise QueueEmpty()
+
+    async def put(self, item):
+        if self.full():
+            future = Future()
+            def writer():
+                self.put_nowait(item)
+                future.set_result(True)
+            self.writers.append(writer)
+            await future
+            return
+
+        if self.readers:
+            # directly pass item to the reader
+            self.tasks += 1
+            reader = self.readers.popleft()
+            reader(item)
+        else :
+            # self.tasks is incremented in put_nowait
+            self.put_nowait(item)
+
+    def put_nowait(self, item):
+        if self.full() :
+            raise QueueFull()
+        self.data.append(item)
+        self.tasks += 1
+
+    async def join(self):
+        if self.tasks > 0:
+            future = Future()
+            def setres():
+                future.set_result(True)
+            await future
+
+    def task_done(self):
+        if self.tasks == 0:
+            raise ValueError("no tasks")
+        self.tasks -= 1
+        if tasks == 0:
+            for joiner in self.joiners:
+                joiner()

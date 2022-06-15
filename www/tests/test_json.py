@@ -45,4 +45,40 @@ d = {'command': 'settest setting_test_channel', 'kwargs': {}, 'guild_id': 771732
 
 assert json.dumps(d) == '{"command": "settest setting_test_channel", "kwargs": {}, "guild_id": 771732762503544801, "channel_id": "773488498518786077", "user_id": 634763612535390200, "category": "guild"}'
 
+# issue 1858
+assert json.loads("[0, null]") == [0, None]
+
+# issue 1902
+s = json.loads('"\\u0160"')
+assert s == "Š"
+
+# issue 1903
+assert json.dumps('\na🤭bŠé"') == r'"\na\ud83e\udd2db\u0160\u00e9\""'
+
+# issue 1930
+assert json.loads('["one\\ntwo"]')[0][3] == '\n'
+assert json.loads('"one\\ntwo\\nthree"') == 'one\ntwo\nthree'
+assert json.loads('"one\\ttwo\\tthree"') == 'one\ttwo\tthree'
+assert json.loads('"one\\rtwo\\rthree"') == 'one\rtwo\rthree'
+assert json.loads('"one\\btwo\\bthree"') == 'one\btwo\bthree'
+assert json.loads('"one\\ftwo\\fthree"') == 'one\ftwo\fthree'
+assert json.loads('"one \'two\' three"') == "one 'two' three"
+assert json.loads('"one \\"two\\" three"') == 'one "two" three'
+assert json.loads('"one\\\\\\ntwo\\nthree"') == 'one\\\ntwo\nthree'
+
+# issue 1936
+class ComplexEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, complex):
+            return [obj.real, obj.imag]
+        # Let the base class default method raise the TypeError
+        return json.JSONEncoder.default(self, obj)
+
+assert json.dumps(2 + 1j, cls=ComplexEncoder) == '[2.0, 1.0]'
+assert ComplexEncoder().encode(2 + 1j) == '[2.0, 1.0]'
+assert list(ComplexEncoder().iterencode(2 + 1j)) == ['[2.0', ', 1.0', ']']
+
+# issue 1944
+assert json.loads('{"a":[]}') == {'a': []}
+
 print('all tests ok..')

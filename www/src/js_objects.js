@@ -276,18 +276,16 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
                 }
                 return pyobj2jsobj(res)
             }catch(err){
-                console.log(err)
-                console.log($B.$getattr(err,'info'))
-                console.log($B.class_name(err) + ':',
-                    err.args.length > 0 ? err.args[0] : '' )
+                if($B.debug > 1){
+                    console.log($B.class_name(err) + ':',
+                        err.args.length > 0 ? err.args[0] : '' )
+                }
                 throw err
             }
         }
     }else{
         // other types are left unchanged
-
         return pyobj
-
     }
 }
 
@@ -299,22 +297,15 @@ function pyargs2jsargs(pyargs){
         var arg = pyargs[i]
         if(arg !== undefined && arg !== null &&
                 arg.$nat !== undefined){
-            var kw = arg.kw
-            if(Array.isArray(kw)){
-                kw = $B.extend(js_attr.name, ...kw)
-            }
-            if(Object.keys(kw).length > 0){
-                //
-                // Passing keyword arguments to a Javascript function
-                // raises a TypeError : since we don't know the
-                // signature of the function, the result of Brython
-                // code like foo(y=1, x=2) applied to a JS function
-                // defined by function foo(x, y) can't be determined.
-                //
-                throw _b_.TypeError.$factory(
-                    "A Javascript function can't take " +
-                        "keyword arguments")
-            }
+            // Passing keyword arguments to a Javascript function
+            // raises a TypeError : since we don't know the
+            // signature of the function, the result of Brython
+            // code like foo(y=1, x=2) applied to a JS function
+            // defined by function foo(x, y) can't be determined.
+            //
+            throw _b_.TypeError.$factory(
+                "A Javascript function can't take " +
+                    "keyword arguments")
         }else{
             args.push($B.pyobj2jsobj(arg))
         }
@@ -322,7 +313,7 @@ function pyargs2jsargs(pyargs){
     return args
 }
 
-$B.JSObj = $B.make_class("JSObj",
+$B.JSObj = $B.make_class("JSObject",
     function(jsobj){
         if(Array.isArray(jsobj)){
             //jsobj.__class__ = _b_.list
@@ -367,6 +358,9 @@ $B.JSObj.__eq__ = function(self, other){
             }
             if(Object.keys(self).length !== Object.keys(other).length){
                 return false
+            }
+            if(self === other){
+                return true
             }
             for(var key in self){
                 if(! $B.JSObj.__eq__(self[key], other[key])){

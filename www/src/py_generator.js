@@ -58,20 +58,35 @@ $B.generator.__next__ = function(self){
 }
 
 $B.generator.__str__ = function(self){
-    return '<' + self.$name + ' object>'
+    var name = self.js_gen.$name || 'generator'
+    if(self.js_gen.$func && self.js_gen.$func.$infos){
+        name = self.js_gen.$func.$infos.__qualname__
+    }
+    return `<generator object ${name}>`
 }
 
 $B.generator.close = function(self){
+    var save_stack = $B.frames_stack.slice()
+    if(self.$frame){
+        $B.frames_stack.push(self.$frame)
+    }
     try{
         $B.generator.throw(self, _b_.GeneratorExit.$factory())
     }catch(err){
         if(! $B.is_exc(err, [_b_.GeneratorExit, _b_.StopIteration])){
+            $B.frames_stack = save_stack
             throw _b_.RuntimeError.$factory("generator ignored GeneratorExit")
         }
     }
+    $B.frames_stack = save_stack
+}
+
+function trace(){
+    return $B.frames_stack.slice()
 }
 
 $B.generator.send = function(self, value){
+    // version for ast_to_js
     // Set attribute $has_run. It is used in py_utils.js/$B.leave_frame()
     // to decide if a generator with "yield" inside context managers must
     // be applied method .return()
@@ -84,12 +99,26 @@ $B.generator.send = function(self, value){
         throw _b_.ValueError.$factory("generator already executing")
     }
     gen.gi_running = true
+    // save frames before resuming the generator
+    var save_stack = $B.frames_stack.slice()
+    // put generator frame on top of stack
+    // generator expressions don't have $frame
+    if(self.$frame){
+        $B.frames_stack.push(self.$frame)
+    }
     try{
         var res = gen.next(value)
     }catch(err){
         gen.$finished = true
+        $B.frames_stack = save_stack
         throw err
     }
+    // Call leave_frame to handle context managers
+    if($B.last($B.frames_stack) === self.$frame){
+        $B.leave_frame()
+    }
+    // restore stack
+    $B.frames_stack = save_stack
     if(res.value && res.value.__class__ === $GeneratorReturn){
         gen.$finished = true
         throw _b_.StopIteration.$factory(res.value.value)
@@ -121,13 +150,21 @@ $B.generator.throw = function(self, type, value, traceback){
             exc = $B.$call(exc)(value)
         }
     }
-    if(traceback !== undefined){exc.$traceback = traceback}
+    if(traceback !== undefined){
+        exc.$traceback = traceback
+    }
+    var save_stack = $B.frames_stack.slice()
+    if(self.$frame){
+        $B.frames_stack.push(self.$frame)
+    }
     var res = gen.throw(exc)
+    $B.frames_stack = save_stack
     if(res.done){
         throw _b_.StopIteration.$factory("StopIteration")
     }
     return res.value
 }
+
 
 $B.set_func_names($B.generator, "builtins")
 
@@ -170,12 +207,26 @@ $B.async_generator.asend = async function(self, value){
         throw _b_.ValueError.$factory("generator already executing")
     }
     gen.ag_running = true
+    // save frames before resuming the generator
+    var save_stack = $B.frames_stack.slice()
+    // put generator frame on top of stack
+    // generator expressions don't have $frame
+    if(self.$frame){
+        $B.frames_stack.push(self.$frame)
+    }
     try{
         var res = await gen.next(value)
     }catch(err){
         gen.$finished = true
+        $B.frames_stack = save_stack
         throw err
     }
+    // Call leave_frame to handle context managers
+    if($B.last($B.frames_stack) === self.$frame){
+        $B.leave_frame()
+    }
+    // restore stack
+    $B.frames_stack = save_stack
     if(res.done){
         throw _b_.StopAsyncIteration.$factory(value)
     }
@@ -206,16 +257,15 @@ $B.async_generator.athrow = async function(self, type, value, traceback){
         }
     }
     if(traceback !== undefined){exc.$traceback = traceback}
+    var save_stack = $B.frames_stack.slice()
+    if(self.$frame){
+        $B.frames_stack.push(self.$frame)
+    }
     await gen.throw(value)
+    $B.frames_stack = save_stack
 }
+
 
 $B.set_func_names($B.async_generator, "builtins")
-
-function rstrip(s, strip_chars){
-    var _chars = strip_chars || " \t\n";
-    var nstrip = 0, len = s.length;
-    while(nstrip < len && _chars.indexOf(s.charAt(len-1-nstrip)) > -1) nstrip ++;
-    return s.substr(0, len-nstrip)
-}
 
 })(__BRYTHON__)

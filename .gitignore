@@ -91,10 +91,13 @@ setup/data/changelog_*.txt
 setup/data/*.js
 setup/data/demo.html
 www/static_doc
+www/static_tutorial/
 www/src/brython.js
+www/src/brython_standard_parser.js
 www/src/brython_no_static.js
 www/src/brython_stdlib.js
 www/src/brython_dist.js
+www/src/full_grammar.js
 www/src/stdlib_paths.js
 www/src/version_info.js
 

@@ -451,7 +451,7 @@ class B(A):
     pass
 
 
-assert {'prop': 'str'} == B.__annotations__
+assert B.__annotations__ == {}
 
 # issue 922
 class A:
@@ -769,5 +769,10 @@ D = type('C', (B, A,), {})
 
 d = D()
 assert t == ['MetaB Call', 'I am A', 'I am B']
+
+# issue 1884
+from tester import assertRaises
+
+assertRaises(SyntaxError, exec, 'class(x):\n pass')
 
 print('passed all tests..')

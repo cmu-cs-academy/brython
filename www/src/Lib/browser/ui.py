@@ -1,5 +1,8 @@
 from . import html, window, console, document
-from .widgets import dialog, menu
+
+
+class UIError(Exception):
+    pass
 
 
 class Border:
@@ -127,8 +130,6 @@ class Widget:
 
     def config(self, **kw):
         element = self
-        if isinstance(self, Document):
-            element = document
 
         if (value := kw.get('value')):
             if not isinstance(self, (Label, Entry)):
@@ -146,6 +147,7 @@ class Widget:
 
         for attr in ['width', 'height', 'top', 'left']:
             if (value := kw.get(attr)):
+
                 match value:
                     case str():
                         setattr(element.style, attr, value)
@@ -227,9 +229,7 @@ class Widget:
 
     def _wrap_callback(self, func):
         def f(event):
-            mouse.x = event.clientX
-            mouse.y = event.clientY
-            res = func(self)
+            res = func(event)
             if res is False:
                 event.stopPropagation()
                 event.preventDefault()
@@ -243,22 +243,20 @@ class Widget:
         return _Coords(parent.offsetLeft, parent.offsetTop, parent.offsetWidth,
             parent.offsetHeight)
 
-    def grid(self, column=None, columnspan=1, row=None, rowspan=1, align=''):
+    def grid(self, column=None, columnspan=1, row=None, rowspan=1, align='',
+            **options):
         master = self.master
-        if isinstance(master, Document):
-            master = document
         if not hasattr(master, '_table'):
             master._table = html.TABLE(
-                #border=1,
                 cellpadding=0,
                 cellspacing=0,
-                style='width:100%;height:100%;')
+                style='width:100%;')
             master <= master._table
             if row == 'same':
                 row = 0
 
         master.table = _Wrapper(master._table)
-        
+
         if not hasattr(master, 'cells'):
             master.cells = set()
 
@@ -293,6 +291,7 @@ class Widget:
             column = nb_cols
         elif column == 'same':
             column = nb_cols - 1
+
         # cells in row occupied because of rowspan / colspan
         cols_from_span = [c for (r, c) in master.cells
             if r == row and c < column]
@@ -348,12 +347,11 @@ class Widget:
         self.row = row
         self.column = column
         self.cell = _Wrapper(td)
+
+        self.cell.config(**options)
+
         self.row = _Wrapper(tr)
-        if isinstance(self, Text):
-            self.dw = self.parentNode.offsetWidth - self.offsetWidth
-            self.dh = self.parentNode.offsetHeight - self.offsetHeight
-            self.style.width = f'{self.parentNode.width - self.dw}px'
-            self.style.height = f'{self.parentNode.height - self.dh}px'
+
         return self
 
     @property
@@ -421,16 +419,14 @@ class Box(html.DIV, Widget):
 
     default_config = {
         'width': 'inherit',
-        'height': None,
         'background': backgroundColor,
         'color': color,
         'cursor': 'default',
         'menu': None,
-        'border': Border(width=1),
         'font': Font(family='sans-serif', size=12)
     }
 
-    def __init__(self, title="", container=document, titlebar=True, **options):
+    def __init__(self, container=document, title="", titlebar=False, **options):
         html.DIV.__init__(self,
             style="position:absolute;box-sizing:border-box")
 
@@ -454,6 +450,9 @@ class Box(html.DIV, Widget):
             self.title_bar.bind("touchend", self._stop_moving)
             self.bind("leave", self._stop_moving)
             self.is_moving = False
+
+        elif title:
+            raise UIError('cannot set title if titlebar is not set')
 
     def add(self, widget, **kw):
         if hasattr(self, 'panel'):
@@ -539,21 +538,6 @@ class Checkbuttons(Frame):
         self.add(Label(label))
 
 
-class Document(Widget):
-
-    default_config = {
-        'background': '#fff',
-        'color': color,
-        'menu': None,
-        'font': Font(family='sans-serif', size=12)
-    }
-
-    def __init__(self, **options):
-        self._options = self.default_config | options
-        self.config(**options)
-        self.menu = None
-
-
 class Button(html.BUTTON, Widget):
 
     def __init__(self, *args, **options):
@@ -578,13 +562,16 @@ class Image(html.IMG, Widget):
 class Label(html.DIV, Widget):
 
     default_style = {
-        'whiteSpace': 'pre'
+        'whiteSpace': 'pre',
+        'padding': '0.3em'
     }
 
     def __init__(self, value, *args, **options):
         self._options = options
         self._value = value
         super().__init__(value, *args)
+        if not value:
+            self.style.minHeight = '1em'
         self.apply_default_style()
 
 
@@ -835,9 +822,7 @@ class Text(html.DIV, Widget):
         'borderWidth': '1px',
         'borderStyle': 'solid',
         'borderColor': '#999',
-        'boxSizing': 'border-box',
-        'height': '100%',
-        'overflow-y': 'scroll'
+        'boxSizing': 'border-box'
     }
 
     def __init__(self, *args, **options):
@@ -858,9 +843,9 @@ class TitleBar(html.DIV, Widget):
         self._options = self.default_config | options
         super().__init__('', *args)
 
-        self.add(Label(title, padding=Padding(5)))
+        self.add(Label(title))
         self.close_button = Button("&#9587;",
-            margin=Margin(0, 0, 0, 20),
+            padding=Padding(bottom=10),
             background="inherit",
             border=Border(width=0))
 

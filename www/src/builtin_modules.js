@@ -92,14 +92,23 @@
         delete browser.win
         // browser.send is an alias for postMessage
         browser.self.send = self.postMessage
-    } else {
+        browser.document = _b_.property.$factory(
+            function(){
+                throw _b_.ValueError.$factory(
+                    "'document' is not available in Web Workers")
+            },
+            function(self, value){
+                browser.document = value
+            }
+        )
+    }else{
         browser.is_webworker = false
         update(browser, {
             "alert":function(message){
                 window.alert($B.builtins.str.$factory(message || ""))
             },
             confirm: $B.JSObj.$factory(window.confirm),
-            "document":$B.DOMNode.$factory(document),
+            "document": $B.DOMNode.$factory(document),
             doc: $B.DOMNode.$factory(document), // want to use document instead of doc
             DOMEvent:$B.DOMEvent,
             DOMNode: $B.DOMNode,
@@ -437,6 +446,40 @@
                 }
             }
         },
+        import_js: function(url, name){
+            // load JS script at specified url
+            // If it exposes a variable $module, use it as the namespace of imported
+            // module named "name"
+            var xhr = new XMLHttpRequest(),
+                result
+            xhr.open('GET', url, false)
+            xhr.onreadystatechange = function(){
+                if(this.readyState == 4){
+                    if(this.status == 200){
+                        eval(this.responseText)
+                        if(typeof $module !== 'undefined'){
+                            result = $B.module.$factory(name)
+                            for(var key in $module){
+                                result[key] = $B.jsobj2pyobj($module[key])
+                            }
+                            result.__file__ = url
+                        }else{
+                            result = _b_.ImportError.$factory('Javascript ' +
+                                `module at ${url} doesn't define $module`)
+                        }
+                    }else{
+                        result = _b_.ModuleNotFoundError.$factory(name)
+                    }
+                }
+            }
+            xhr.send()
+            if(_b_.isinstance(result, _b_.BaseException)){
+                $B.handle_error(result)
+            }else{
+                $B.imported[name] = result
+            }
+        },
+        JSObject: $B.JSObj,
         JSON: {
             __class__: $B.make_class("JSON"),
             parse: function(){
@@ -462,6 +505,7 @@
         NULL: null,
         "Number": self.Number && $B.JSObj.$factory(self.Number),
         py2js: function(src, module_name){
+            console.log('javascript.py2js', src, module_name)
             if(module_name === undefined){
                 module_name = '__main__' + $B.UUID()
             }
@@ -689,17 +733,18 @@
                 syntax_error.line = message.line
                 throw syntax_error
             }
-            var frame = $B.imported._sys.Getframe()
+            var frame = $B.imported._sys.Getframe(),
+                category = message.__class__ || $B.get_class(message),
                 warning_message = {
                     __class__: WarningMessage,
                     message: message,
-                    category: message.__class__,
+                    category,
                     filename: message.filename || frame.f_code.co_filename,
                     lineno: message.lineno || frame.f_lineno,
                     file: _b_.None,
                     line: _b_.None,
                     source: _b_.None,
-                    _category_name: message.__class__.__name__
+                    _category_name: category.__name__
                 }
             if($B.imported.warnings){
                 $B.imported.warnings._showwarnmsg_impl(warning_message)
@@ -840,7 +885,10 @@
 
     $B.AST = {
         __class__: _b_.type,
-        __getattr__: function(self, attr){
+        __Xgetattr__: function(self, attr){
+            if(self.js_node === undefined){
+                console.log('AST __getattr__', attr, self)
+            }
             var res = self.js_node[attr]
             if(res === undefined){
                 throw $B.attr_error(attr, self)
@@ -859,19 +907,24 @@
             }
             var constr = js_node.constructor
             if(constr && constr.$name){
+                $B.create_python_ast_classes()
                 return $B.python_ast_classes[constr.$name].$factory(js_node)
             }else if(Array.isArray(js_node)){
                 return js_node.map($B.AST.$convert)
             }else if(js_node.type){
-                // numeric constant
+                // literal constant
                 switch(js_node.type){
                     case 'int':
                         var res = parseInt(js_node.value[1], js_node.value[0])
                         if(res < $B.min_int || res > $B.max_int){
-                            return $B.long_int.$factory(js_node.value[1],
+                            var res = $B.long_int.$factory(js_node.value[1],
                                 js_node.value[0])
+                            if(js_node.sign == '-'){
+                                res.pos = false
+                            }
+                            return res
                         }
-                        return res
+                        return js_node.sign == '-' ? -res : res
                     case 'float':
                         return new Number(js_node.value)
                     case 'imaginary':
@@ -879,6 +932,16 @@
                             $B.AST.$convert(js_node.value))
                     case 'ellipsis':
                         return _b_.Ellipsis
+                    case 'str':
+                        if(js_node.is_bytes){
+                            return _b_.bytes.$factory(js_node.value, 'latin-1')
+                        }
+                        return js_node.value
+                    case 'id':
+                        if(['False', 'None', 'True'].indexOf(js_node.value) > -1){
+                            return _b_[js_node.value]
+                        }
+                        break
                 }
             }else if(['string', 'number'].indexOf(typeof js_node) > -1){
                 return js_node

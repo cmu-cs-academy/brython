@@ -1,5 +1,7 @@
 from tester import assertRaises
 
+parser_to_ast = hasattr(__BRYTHON__, 'parser_to_ast')
+
 # issue 5
 assert(isinstance(__debug__, bool))
 
@@ -491,9 +493,9 @@ assertRaises(TypeError, f)
 # issue 342
 try:
     from .spam import eggs
-except SystemError as ie:
+except ImportError as ie:
     assert str(ie) == \
-        "Parent module '' not loaded, cannot perform relative import"
+        "attempted relative import with no known parent package"
 
 # issue 343
 a76gf = 0
@@ -1856,7 +1858,7 @@ try:
     exec("a = +25, b = 25")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "cannot assign to operator"
+    assert exc.args[0] == "invalid syntax. Maybe you meant '==' or ':=' instead of '='?"
 
 # issue 949
 class A(object):
@@ -1902,7 +1904,7 @@ try:
     exec("x + x += 10")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "cannot assign to operator"
+    assert exc.args[0] == "'expression' is an illegal expression for augmented assignment"
 
 # issue 965
 assertRaises(SyntaxError, exec, "if:x=2")
@@ -1914,7 +1916,7 @@ try:
     exec("x = 400 - a, y = 400 - b")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "cannot assign to operator"
+    assert exc.args[0] == "invalid syntax. Maybe you meant '==' or ':=' instead of '='?"
 
 # issue 975
 l = [1, 2, 3]
@@ -2049,7 +2051,7 @@ assert b2.show() == 8
 import os
 try:
     issues_py_dir = os.path.dirname(__file__)
-    z_txt_path = os.path.join(issues_py_dir, "z.txt")
+    z_txt_path = os.path.join(issues_py_dir, "..", "z.txt")
 except NameError:
     z_txt_path = "z.txt"
 
@@ -2390,8 +2392,8 @@ try:
     exec("(x.a * 2) += 100")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "'operator' is an illegal expression for augmented assignment"
-
+    assert exc.args[0] == "'expression' is an illegal expression for augmented assignment"
+    
 # issue 1278
 import textwrap
 assert textwrap.wrap('1234 123', width=5) == ['1234', '123']
@@ -2650,7 +2652,10 @@ try:
     exec("not x = 1")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    assert exc.args[0] == "cannot assign to operator"
+    if parser_to_ast:
+        assert exc.args[0] == "cannot assign to expression"
+    else:
+        assert exc.args[0] == "cannot assign to operator"
     pass
 
 # issue 1501
@@ -3014,6 +3019,66 @@ foo(constructor=True)
 
 # issue 1854
 assert 0 != int
+
+# issue 1857
+lines = ["789/",
+         "456*",
+         "123-",
+         "0.=+"]
+
+((x for x in line) for line in lines)
+
+# issue 1860
+try:
+    try:
+        raise ValueError("inner")
+    except Exception as e:
+        raise ValueError("outer") from e
+except Exception as e:
+    assert repr(e.__context__) == "ValueError('inner')"
+
+# issue 1875
+assertRaises(SyntaxError, exec, "(a, b = b, a)")
+
+# issue 1886
+try:
+    exec("[i := i for i in range(5)]")
+except SyntaxError as exc:
+    assert "cannot rebind" in exc.args[0]
+
+# issue 1895
+s = [1, 2, 3]
+
+try:
+    [x1895 for s[0] in s]
+    raise Exception('should have raised NameError')
+except NameError:
+    pass
+
+# issue 1905
+assert [1 for a in [2 for (a, b) in [(3, 4)]]] == [1]
+assert [1 for a in [2 for a, b in [(3, 4)]]] == [1]
+
+# issue 1927
+alist = [1, 2, 3, 4]
+
+def length(alist):
+    match alist:
+        case []: return 0
+        case [x, *xs]: return 1 + length(xs)
+
+assert length(alist) == 4
+
+# issue 1940
+state:str = ""
+
+# issue 1953
+from typing import Callable, List, Tuple, Union
+Callable[[int], tuple[int, int]]
+Callable[[int], Tuple[int, int]]
+Callable[[int], list[int]]
+Callable[[int], List[int]]
+Callable[[int], int | str]
 
 # ==========================================
 # Finally, report that all tests have passed

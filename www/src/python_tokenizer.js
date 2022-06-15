@@ -1,5 +1,6 @@
 ;(function($B){
 
+var _b_ = $B.builtins
 
 function ord(char){
     if(char.length == 1){
@@ -21,19 +22,58 @@ var ops = '.,:;+-*/%~^|&=<>[](){}@',
     closing = {'}': '{', ']': '[', ')': '('}
 
 function Token(type, string, start, end, line){
+    start = start.slice(0, 2)
     var res = {type, string, start, end, line}
     res[0] = type
     res[1] = string
-    res[2] = start.slice(0, 2)
+    res[2] = start
     res[3] = end
     res[4] = line
     return res
 }
 
+var errors = {}
+
+
+function TokenError(message, position){
+    if(errors.TokenError === undefined){
+        var $error_2 = {
+            $name: "TokenError",
+            $qualname: "TokenError",
+            $is_class: true,
+            __module__: "tokenize"
+        }
+
+        var error = errors.TokenError = $B.$class_constructor("TokenError",
+            $error_2, _b_.tuple.$factory([_b_.Exception]),["_b_.Exception"],[])
+        error.__doc__ = _b_.None
+        error.$factory = function(message, position){
+            return {
+                __class__: error,
+                msg: message,
+                lineno: position[0],
+                colno: position[1]
+            }
+        }
+        error.__str__ = function(self){
+            var s = self.msg
+            if(self.lineno > 1){
+                s += ` (${self.lineno}, ${self.colno})`
+            }
+            return s
+        }
+        $B.set_func_names(error, "tokenize")
+    }
+    var exc = errors.TokenError.$factory(message, position)
+    console.log('error', exc.__class__, exc.args)
+    return exc
+}
+
 function get_line_at(src, pos){
     // Get the line in source code src starting at position pos
-    var end = src.substr(pos).search(/[\r\n]/)
-    return end == -1 ? src.substr(pos) : src.substr(pos, end)
+    var end = src.substr(pos).search(/[\r\n]/),
+        line = end == -1 ? src.substr(pos) : src.substr(pos, end + 1)
+    return line + '\n'
 }
 
 function get_comment(src, pos, line_num, line_start, token_name, line){
@@ -69,6 +109,21 @@ function get_comment(src, pos, line_num, line_start, token_name, line){
             return {t, pos}
         }
         pos++
+    }
+}
+
+function test_num(num_type, char){
+    switch(num_type){
+        case '':
+            return $B.unicode_tables.Nd[ord(char)] !== undefined
+        case 'x':
+            return '0123456789abcdef'.indexOf(char.toLowerCase()) > -1
+        case 'b':
+            return '01'.indexOf(char) > -1
+        case 'o':
+            return '01234567'.indexOf(char) > -1
+        default:
+            throw Error('unknown num type ' + num_type)
     }
 }
 
@@ -451,8 +506,6 @@ $B.tokenizer = function*(src){
                                 pos--
                             }
                             while(pos < quote_pos){
-                                console.log('yield ERRORTOKEN, escaped',
-                                    escaped)
                                 yield Token('ERRORTOKEN', ' ',
                                     [line_num, pos - line_start + 1],
                                     [line_num, pos - line_start + 2],
@@ -491,25 +544,38 @@ $B.tokenizer = function*(src){
                 break
 
             case 'NUMBER':
-                if(num_type == '' && unicode_tables.Nd[ord(char)]){
-                    number += char
-                }else if(num_type == 'b' && '01'.indexOf(char) > -1){
-                    number += char
-                }else if(num_type == 'o' && '01234567'.indexOf(char) > -1){
-                    number += char
-                }else if(num_type == 'x' &&
-                        '0123456789abcdef'.indexOf(char.toLowerCase()) > -1){
+                if(test_num(num_type, char)){
                     number += char
                 }else if(char == '_' && ! number.endsWith('.')){
                     if(number.endsWith('_')){
                         throw SyntaxError('consecutive _ in number')
+                    }else if(src[pos] === undefined ||
+                            ! test_num(num_type, src[pos])){
+                        // eg 12_
+                        yield Token('NUMBER', number,
+                            [line_num, pos - line_start - number.length],
+                            [line_num, pos - line_start],
+                            line)
+                        state = null
+                        pos--
+                    }else{
+                        number += char
                     }
-                    number += char
                 }else if(char == '.' && number.indexOf(char) == -1){
                     number += char
                 }else if(char.toLowerCase() == 'e' &&
                         number.toLowerCase().indexOf('e') == -1){
-                    number += char
+                    if('+-'.indexOf(src[pos]) > -1 ||
+                            unicode_tables.Nd[ord(src[pos])]){
+                        number += char
+                    }else{
+                        yield Token('NUMBER', number,
+                            [line_num, pos - line_start - number.length],
+                            [line_num, pos - line_start],
+                            line)
+                        state = null
+                        pos--
+                    }
                 }else if((char == '+' || char == '-') &&
                         number.toLowerCase().endsWith('e')){
                     number += char
@@ -554,8 +620,9 @@ $B.tokenizer = function*(src){
               line)
             break
         case 'STRING':
-            throw SyntaxError(
-                `unterminated string literal (detected at line ${line_num})`)
+            var msg = `unterminated ${triple_quote ? 'triple-quoted ' : ''}` +
+                `string literal (detected at line ${line_num})`
+            throw SyntaxError(msg)
     }
 
     if(! src.endsWith('\n') && char != ' ' && state != line_start){

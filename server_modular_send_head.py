@@ -789,6 +789,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 
             if self.content_length: # Not set for Chunked Transfer Encoding
                 self.send_header("Content-Length", str(self.content_length))
+
             self.end_headers()
             return f
         except:

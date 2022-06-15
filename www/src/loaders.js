@@ -44,8 +44,10 @@ function idb_load(evt, module){
                 }
                 $B.imported[module] = $B.module.$factory(module, "",
                     __package__)
+                $B.url2name[module] = module
                 try{
-                    var root = $B.py2js(source, module, module),
+                    var root = $B.py2js(
+                            {src:source, filename: module}, module, module),
                         js = root.to_js()
                 }catch(err){
                     $B.handle_error(err)
@@ -379,9 +381,12 @@ var loop = $B.loop = function(){
             module.$src = script.$src
             module.__file__ = script.__file__
             $B.imported[script_id] = module
-
-            new Function("$locals_" + script_id, script.js)(module)
-
+            var module = new Function(script.js + `\nreturn locals`)()
+            for(var key in module){
+                if(! key.startsWith('$')){
+                    $B.imported[script_id][key] = module[key]
+                }
+            }
         }catch(err){
             // If the error was not caught by the Python runtime, build an
             // instance of a Python exception
@@ -392,6 +397,7 @@ var loop = $B.loop = function(){
                     console.log('around line', lineNumber)
                     console.log(script.js.split('\n').
                         slice(lineNumber - 4, lineNumber).join('\n'))
+                    console.log('script\n', script.js)
                 }
                 if($B.is_recursion_error(err)){
                     err = _b_.RecursionError.$factory("too much recursion")

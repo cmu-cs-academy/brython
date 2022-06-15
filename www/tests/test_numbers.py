@@ -656,4 +656,48 @@ assert str(float(-a)) == "-9.223372036854776e+18"
 # issue 1840
 assert 0 // 10 ** 100 == 0
 
+# issue 1864
+assertRaises(NameError, exec, "_12")
+assert 1_2 == 12
+assertRaises(SyntaxError, exec, "12_")
+
+assertRaises(SyntaxError, exec, "_12.34e56")
+assert 1_2.34e56 == 1.234e+57
+assertRaises(SyntaxError, exec, "12_.34e56")
+assertRaises(SyntaxError, exec, "12._34e56")
+assert 12.3_4e56 == 1.234e+57
+assertRaises(SyntaxError, exec, "12.34e_56")
+assert 12.34e5_6 == 1.234e+57
+assertRaises(SyntaxError, exec, "12.34e56_")
+
+# issue 1885
+assertRaises(TypeError, exec, '1 / float')
+
+# issue 1924
+n = 19
+assert n.bit_count() == 3
+assert (-n).bit_count() == 3
+
+n = 2 ** 70 + 567444332
+assert n.bit_count() == 14
+
+# issue 1947
+a = -1 + 1j
+assert a ** 3 == 2+2j
+assert a ** -1 == (-0.5-0.5j)
+
+assert (-0.5 + math.sqrt(3) / 2 * 1j) ** 3 == (0.9999999999999998 +
+    1.1102230246251565e-16j)
+
+# issue 1955
+a = -1
+a %= 2
+assert(a == 1)
+
+# issue 1960
+assert int('-10', 0) == -10
+assert int('-0b010', 0) == -2
+assert int('-0o010', 0) == -8
+assert int('-0x010', 0) == -16
+
 print('passed all tests...')

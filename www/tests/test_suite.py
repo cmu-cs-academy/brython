@@ -779,4 +779,129 @@ assert eval("-5 - 8") == -13
 
 assert [0 < a < 2 for a in (0, 1)] == [False, True]
 
+# unpacking in "for" target
+lists = [
+  [0, 1, 2, 3],
+  ['ab', 'b', 'c']
+  ]
+
+groups = []
+for x, *y, z in lists:
+  groups.append((x, y, z))
+
+assert groups == [(0, [1, 2], 3), ('ab', ['b'], 'c')]
+
+# various flavours of try / except / else / finally
+def try_except1():
+    try:
+        return 1
+    except ZeroDivisionError:
+        return 2
+
+assert try_except1() == 1
+
+def try_except2():
+    try:
+        return 1 / 0
+    except ZeroDivisionError:
+        return 2
+
+assert try_except2() == 2
+
+def try_except_else1():
+    try:
+        return 1
+    except ZeroDivisionError:
+        return 2
+    else:
+        return 3
+
+assert try_except_else1() == 1
+
+def try_except_else2():
+    try:
+        return 1 / 0
+    except ZeroDivisionError:
+        return 2
+    else:
+        return 3
+
+assert try_except_else2() == 2
+
+def try_finally():
+    try:
+        return 1
+    finally:
+        return 4
+
+assert try_finally() == 4
+
+def try_except_else_finally():
+    try:
+        return 1
+    except ZeroDivisionError:
+        return 2
+    else:
+        return 3
+    finally:
+        return 4
+
+#assert try_except_else_finally() == 4
+
+args = ['invalid syntax', ['<string>', 1, 2, 'a f']]
+
+info, [filename, lineno, offset, line] = args
+assert filename == '<string>'
+
+items = [(1, 2), (3, 4)]
+t = []
+for i, (key, value) in enumerate(items):
+  t.append((key, value))
+
+assert t == items
+
+# issue 1961
+src = '''
+xs = ["a", "a", "b", "a", "c"]
+n = 0
+def count(xs):
+    for x in xs:
+        print("So far, n is", n)
+        n += 1
+count(xs)
+'''
+
+try:
+    exec(src)
+    raise Exception('should have raises UnboundLocalError')
+except UnboundLocalError as exc:
+    assert str(exc) == "local variable 'n' referenced before assignment"
+
+# symtable syntax errors
+def test_syntax_error(code, message):
+    try:
+        exec(code)
+        raise Exception(f'{code} should have raised\nSyntaxError: {message}')
+    except SyntaxError as exc:
+        assert exc.msg == message, exc.msg
+
+tests = [
+    ("[p for n in (p := ['a', 'b', 'c'])]",
+    "assignment expression cannot be used in a comprehension iterable expression"),
+    ("class A:\n [x:=1 for _ in range(5)]",
+    "assignment expression within a comprehension cannot be used in a class body"),
+    ("[i for i in range(5) if (j := 0) for k[j + 1] in range(5)]",
+    "comprehension inner loop cannot rebind assignment expression target 'j'"),
+    ("[(a := 1) for a, (*b, c[d+e::f(g)], h.i) in [1]]",
+    "assignment expression cannot rebind comprehension iteration variable 'a'"),
+    ("[(b := 1) for a, (*b, c[d+e::f(g)], h.i) in [1]]",
+    "assignment expression cannot rebind comprehension iteration variable 'b'"),
+    ("def f(x, x):\n pass",
+    "duplicate argument 'x' in function definition")
+    ]
+
+if hasattr(__BRYTHON__, "parser_to_ast"):
+    for code, expected in tests:
+        test_syntax_error(code, expected)
+
 print('passed all tests...')
