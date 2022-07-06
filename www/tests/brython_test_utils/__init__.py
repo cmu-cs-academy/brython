@@ -94,8 +94,10 @@ def populate_testmod_input(elem, selected=None):
                 o = html.OPTION(caption, value=filenm)
             g <= o
 
-def trace_exc():
+def trace_exc(run_frame):
     exc_type, exc_value, traceback = sys.exc_info()
+    
+    this_frame = sys._getframe()
 
     def show_line(filename, lineno):
         if filename.startswith('<'):
@@ -108,15 +110,20 @@ def trace_exc():
 
     print('Traceback (most recent call last):')
     show = False
+    started = False
+
     while traceback:
         frame = traceback.tb_frame
-        lineno = traceback.tb_lineno
-        filename = frame.f_code.co_filename
-        if filename == '<string>':
-            show = True
-        if show:
-            print(f'  File {filename}, line {lineno}')
-            show_line(filename, lineno)
+        if frame is run_frame:
+            started = True
+        elif started:
+            lineno = traceback.tb_lineno
+            filename = frame.f_code.co_filename
+            if filename == '<string>':
+                show = True
+            if show:
+                print(f'  File {filename}, line {lineno}')
+                show_line(filename, lineno)
         traceback = traceback.tb_next
 
     if isinstance(exc_value, [SyntaxError, IndentationError]):
@@ -143,7 +150,8 @@ def run(src, file_path=None):
     except Exception as exc:
         #msg = traceback.format_exc()
         #print(msg, file=sys.stderr)
-        trace_exc()
+        console.log('exc in run', exc.args)
+        trace_exc(sys._getframe())
         state = 0
     t1 = time.perf_counter()
     return state, t0, t1, msg

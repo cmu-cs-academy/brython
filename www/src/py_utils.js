@@ -183,7 +183,6 @@ $B.args = function(fname, argcount, slots, var_names, args, $dobj,
         }
     }
 
-
     if(missing.length > 0){
         if(missing.length == 1){
             var arg_type = 'positional'
@@ -228,7 +227,6 @@ $B.args = function(fname, argcount, slots, var_names, args, $dobj,
     }
 
     return slots
-
 }
 
 $B.wrong_nb_args = function(name, received, expected, positional){
@@ -244,14 +242,17 @@ $B.wrong_nb_args = function(name, received, expected, positional){
     }
 }
 
-
 $B.get_class = function(obj){
     // generally we get the attribute __class__ of an object by obj.__class__
     // but Javascript builtins used by Brython (functions, numbers, strings...)
     // don't have this attribute so we must return it
 
-    if(obj === null){return $B.$NoneDict}
-    if(obj === undefined){return $B.UndefinedClass} // in builtin_modules.js
+    if(obj === null){
+        return $B.imported.javascript.NullType // in builtin_modules.js
+    }
+    if(obj === undefined){
+        return $B.imported.javascript.UndefinedType // idem
+    }
     var klass = obj.__class__
     if(klass === undefined){
         switch(typeof obj) {
@@ -379,7 +380,9 @@ $B.rest_iter = function(next_func){
 
 $B.set_lineno = function(locals, lineno){
     locals.$lineno = lineno
-    if(locals.$f_trace !== _b_.None){$B.trace_line()}
+    if(locals.$f_trace !== _b_.None){
+        $B.trace_line()
+    }
     return true
 }
 
@@ -742,6 +745,10 @@ $B.$is = function(a, b){
             (a === $B.long_int && b === _b_.int)){
         return true
     }
+    if((a === undefined || a === $B.Undefined) &&
+            (b === undefined || b === $B.Undefined)){
+        return true
+    }
     return a === b
 }
 
@@ -834,7 +841,8 @@ var $io = $B.make_class("io",
     function(out){
         return {
             __class__: $io,
-            out
+            out,
+            encoding: 'utf-8'
         }
     }
 )
@@ -1063,6 +1071,7 @@ $B.int_or_bool = function(v){
 
 $B.enter_frame = function(frame){
     // Enter execution frame : save on top of frames stack
+    frame.__class__ = $B.frame
     $B.frames_stack.push(frame)
     if($B.tracefunc && $B.tracefunc !== _b_.None){
         if(frame[4] === $B.tracefunc ||
@@ -1081,13 +1090,14 @@ $B.enter_frame = function(frame){
                 }
             }
             try{
-                return $B.tracefunc($B._frame.$factory($B.frames_stack,
-                    $B.frames_stack.length - 1), 'call', _b_.None)
+                return $B.tracefunc($B.last($B.frames_stack), 'call', _b_.None)
             }catch(err){
                 err.$in_trace_func = true
                 throw err
             }
         }
+    }else{
+        $B.tracefunc = _b_.None
     }
     return _b_.None
 }
@@ -1099,8 +1109,7 @@ $B.trace_exception = function(){
     }
     var trace_func = top_frame[1].$f_trace,
         exc = top_frame[1].$current_exception,
-        frame_obj = $B._frame.$factory($B.frames_stack,
-            $B.frames_stack.length - 1)
+        frame_obj = $B.last($B.frames_stack)
     return trace_func(frame_obj, 'exception', $B.fast_tuple([
         exc.__class__, exc, $B.traceback.$factory(exc)]))
 }
@@ -1111,32 +1120,14 @@ $B.trace_line = function(){
         return _b_.None
     }
     var trace_func = top_frame[1].$f_trace,
-        frame_obj = $B._frame.$factory($B.frames_stack,
-            $B.frames_stack.length - 1)
+        frame_obj = $B.last($B.frames_stack)
     return trace_func(frame_obj, 'line', _b_.None)
-}
-
-$B.set_line = function(line_info){
-    // Used in loops to run trace function
-    var top_frame = $B.last($B.frames_stack)
-    if($B.tracefunc && top_frame[0] == $B.tracefunc.$current_frame_id){
-        return _b_.None
-    }
-    top_frame[1].$line_info = line_info
-    var trace_func = top_frame[1].$f_trace
-    if(trace_func !== _b_.None){
-        var frame_obj = $B._frame.$factory($B.frames_stack,
-            $B.frames_stack.length - 1)
-        top_frame[1].$ftrace = trace_func(frame_obj, 'line', _b_.None)
-    }
-    return true
 }
 
 $B.trace_return = function(value){
     var top_frame = $B.last($B.frames_stack),
         trace_func = top_frame[1].$f_trace,
-        frame_obj = $B._frame.$factory($B.frames_stack,
-            $B.frames_stack.length - 1)
+        frame_obj = $B.last($B.frames_stack)
     if(top_frame[0] == $B.tracefunc.$current_frame_id){
         // don't call trace func when returning from the frame where
         // sys.settrace was called
@@ -1452,7 +1443,7 @@ $B.rich_op = function(op, x, y){
         // issue #1686
         var reflected_left = $B.$getattr(x_class, rop, false),
             reflected_right = $B.$getattr(y_class, rop, false)
-        if(reflected_right && reflected_left && 
+        if(reflected_right && reflected_left &&
                 reflected_right !== reflected_left){
             return reflected_right(y, x)
         }

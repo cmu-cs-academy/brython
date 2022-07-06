@@ -2,8 +2,7 @@
 
 var _b_ = $B.builtins
 
-function compiler_error(ast_obj, message){
-    //console.log('compiler check throws error', message, ast_obj, state.filename)
+function compiler_error(ast_obj, message, end){
     var exc = _b_.SyntaxError.$factory(message)
     exc.filename = state.filename
     if(exc.filename != '<string>'){
@@ -15,9 +14,10 @@ function compiler_error(ast_obj, message){
         exc.text = _b_.none
     }
     exc.lineno = ast_obj.lineno
-    exc.offset = ast_obj.col_offset
-    exc.end_lineno = ast_obj.end_lineno
-    exc.end_offset = ast_obj.end_col_offset
+    exc.offset = ast_obj.col_offset + 1
+    end = end || ast_obj
+    exc.end_lineno = end.end_lineno
+    exc.end_offset = end.end_col_offset + 1
     exc.args[1] = [exc.filename, exc.lineno, exc.offset, exc.text,
                    exc.end_lineno, exc.end_offset]
     throw exc
@@ -204,6 +204,8 @@ function make_ref(name, scopes, scope){
         return `$B.resolve_global('${name}')`
     }else if(Array.isArray(scope.resolve)){
         return `$B.resolve_in_scopes('${name}', [${scope.resolve}])`
+    }else if(scope.resolve == 'own_class_name'){
+        return `$B.own_class_name('${name}')`
     }
 }
 
@@ -224,7 +226,7 @@ function local_scope(name, scope){
 
 function name_scope(name, scopes){
     // return the scope where name is bound, or undefined
-    var test = false // name == '__annotations__'
+    var test = false // name == 'A'
     if(test){
         console.log('name scope', name, scopes)
         alert()
@@ -259,6 +261,9 @@ function name_scope(name, scopes){
         is_local = [LOCAL, CELL].indexOf(__scope) > -1
     if(test){
         console.log('block', block, 'is local', is_local)
+    }
+    if(up_scope.ast instanceof $B.ast.ClassDef && name == up_scope.name){
+        return {found: false, resolve: 'own_class_name'}
     }
     // special case
     if(name == '__annotations__'){
@@ -343,15 +348,10 @@ function name_scope(name, scopes){
         }
     }
     if(builtins_scope.locals.has(name)){
-        return {found: builtins_scope} // `_b_.${name}`
+        return {found: builtins_scope}
     }
 
     var scope_names = make_search_namespaces(scopes)
-    /* scopes.slice().
-                             reverse().
-                             map(scope => make_scope_name(scopes, scope))
-    scope_names.push('_b_')
-     */
     return {found: false, resolve: scope_names}
 }
 
@@ -484,6 +484,10 @@ $B.resolve_global = function(name){
     throw _b_.NameError.$factory(name)
 }
 
+$B.own_class_name = function(name){
+    throw _b_.NameError.$factory(name)
+}
+
 var $operators = $B.op2method.subset("all") // in py2js.js
 
 var opname2opsign = {}
@@ -534,6 +538,27 @@ function add_body(body, scopes){
         }
     }
     return res.trimRight()
+}
+
+function extract_docstring(ast_obj, scopes){
+    /*
+    Extract docstring from ast_obj body.
+    Used for modules, classes and functions.
+    The result is a Javascript "template string" to preserve multi-line
+    docstrings.
+    */
+    var js = '_b_.None' // default
+    if(ast_obj.body.length &&
+            ast_obj.body[0] instanceof $B.ast.Expr &&
+            ast_obj.body[0].value instanceof $B.ast.Constant){
+        // docstring
+        var value = ast_obj.body[0].value.value
+        if(typeof value == 'string'){
+            js = ast_obj.body[0].value.to_js(scopes)
+            ast_obj.body.shift()
+        }
+    }
+    return js
 }
 
 function init_comprehension(comp){
@@ -669,9 +694,7 @@ function init_scopes(type, scopes){
 
     if(name){
         name = name.replace(/-/g, '_') // issue 1958
-    }
-
-    if(filename == '<string>'){
+    }else if(filename.startsWith('<') && filename.endsWith('>')){
         name = 'exec'
     }
     var top_scope = new Scope(name, `${type}`, this),
@@ -810,8 +833,8 @@ $B.ast.Assign.prototype.to_js = function(scopes){
                 break
             }
         }
-        var id = $B.UUID()
-        js += `var it_${id} = $B.unpacker(${value}, ${nb_targets}, ` +
+        var iter_id = 'it_' + $B.UUID()
+        js += `var ${iter_id} = $B.unpacker(${value}, ${nb_targets}, ` +
              `${has_starred}`
         if(nb_after_starred !== undefined){
             js += `, ${nb_after_starred}`
@@ -820,38 +843,40 @@ $B.ast.Assign.prototype.to_js = function(scopes){
         var assigns = []
         for(var elt of target.elts){
             if(elt instanceof $B.ast.Starred){
-                assigns.push(assign_one(elt, `it_${id}.read_rest()`))
+                assigns.push(assign_one(elt, `${iter_id}.read_rest()`))
             }else if(elt instanceof $B.ast.List ||
                     elt instanceof $B.ast.Tuple){
-                assigns.push(assign_many(elt, `it_${id}.read_one()`))
+                assigns.push(assign_many(elt, `${iter_id}.read_one()`))
             }else{
-                assigns.push(assign_one(elt, `it_${id}.read_one()`))
+                assigns.push(assign_one(elt, `${iter_id}.read_one()`))
             }
         }
         js += assigns.join('\n')
-
         return js
     }
 
-    if(this.targets.length == 1){
-        var target = this.targets[0]
+    // evaluate value once
+    var value_id = 'v' + $B.UUID()
+    js += `var ${value_id} = ${value}\n`
+
+    var assigns = []
+    for(var target of this.targets){
         if(! (target instanceof $B.ast.Tuple) &&
                ! (target instanceof $B.ast.List)){
-            return js + assign_one(target, value)
+            assigns.push(assign_one(target, value_id))
         }else{
-            return js + assign_many(target, value)
+            assigns.push(assign_many(target, value_id))
         }
     }
-    var id = 'v' + $B.UUID()
-    js += `var ${id} = ${value}\n`
-    for(var target of this.targets){
-        js += assign_one(target, id) + '\n'
-    }
+
+    js += assigns.join('\n')
     return js
 }
 
 $B.ast.AsyncFor.prototype.to_js = function(scopes){
-    compiler_check(this)
+    if(! (last_scope(scopes).ast instanceof $B.ast.AsyncFunctionDef)){
+        compiler_error(this, "'async for' outside async function")
+    }
     return $B.ast.For.prototype.to_js.bind(this)(scopes)
 }
 
@@ -879,6 +904,10 @@ $B.ast.AsyncWith.prototype.to_js = function(scopes){
         else:
             await aexit(mgr, None, None, None)
     */
+
+    if(! (last_scope(scopes).ast instanceof $B.ast.AsyncFunctionDef)){
+        compiler_error(this, "'async with' outside async function")
+    }
 
     function bind_vars(vars, scopes){
         if(vars instanceof $B.ast.Name){
@@ -1044,8 +1073,20 @@ $B.ast.BoolOp.prototype.to_js = function(scopes){
 
 }
 
+function in_loop(scopes){
+    for(var scope of scopes.slice().reverse()){
+        if(scope.ast instanceof $B.ast.For ||
+                scope.ast instanceof $B.ast.While){
+            return true
+        }
+    }
+    return false
+}
+
 $B.ast.Break.prototype.to_js = function(scopes){
-    compiler_check(this)
+    if(! in_loop(scopes)){
+        compiler_error(this, "'break' outside loop")
+    }
     var js = ''
     for(var scope of scopes.slice().reverse()){
         if(scope.ast instanceof $B.ast.For){
@@ -1058,14 +1099,6 @@ $B.ast.Break.prototype.to_js = function(scopes){
 }
 
 $B.ast.Call.prototype.to_js = function(scopes){
-    var kw_names = []
-    for(var kw of this.keywords){
-        if(kw.arg && kw_names.indexOf(kw.arg) > -1){
-            compiler_error(kw, `keyword argument repeated: ${kw.arg}`)
-        }else{
-            kw_names.push(kw.arg)
-        }
-    }
     var js = '$B.$call(' + $B.js_from_ast(this.func, scopes) + ')'
     var args = make_args.bind(this)(scopes)
     return js + (args.has_starred ? `.apply(null, ${args.js})` :
@@ -1189,14 +1222,8 @@ $B.ast.ClassDef.prototype.to_js = function(scopes){
 
     scopes.push(class_scope)
 
-
     // Detect doc string
-    var docstring = '_b_.None'
-    if(this.body[0] instanceof $B.ast.Expr &&
-            this.body[0].value instanceof $B.ast.Constant &&
-            typeof this.body[0].value.value == "string"){
-        docstring = this.body.splice(0, 1)[0].to_js(scopes)
-    }
+    var docstring = extract_docstring(this, scopes)
 
     js += `var ${ref} = (function(){\n` +
           `var ${locals_name} = {__annotations__: $B.empty_dict()},\n` +
@@ -1204,7 +1231,7 @@ $B.ast.ClassDef.prototype.to_js = function(scopes){
           `locals.$name = "${this.name}"\n` +
           `locals.$qualname = "${qualname}"\n` +
           `locals.$is_class = true\n` +
-          `var top_frame = ["${ref}", locals, "${glob}", ${globals_name}]\n` +
+          `var top_frame = ["${this.name}", locals, "${glob}", ${globals_name}]\n` +
           `top_frame.__file__ = '${scopes.filename}'\n` +
           `locals.$lineno = ${this.lineno}\n` +
           `locals.$f_trace = $B.enter_frame(top_frame)\n` +
@@ -1245,7 +1272,6 @@ $B.ast.ClassDef.prototype.to_js = function(scopes){
             decorate = `$B.$call(${dec})(${decorate})`
         }
         js += decorate + '\n'
-        //js += `locals_${enclosing_scope.name}.${this.name} = ${class_ref}`
     }
 
     return js
@@ -1375,7 +1401,9 @@ $B.ast.Constant.prototype.to_js = function(scopes){
 }
 
 $B.ast.Continue.prototype.to_js = function(scopes){
-    compiler_check(this)
+    if(! in_loop(scopes)){
+        compiler_error(this, "'continue' not properly in loop")
+    }
     return 'continue'
 }
 
@@ -1420,7 +1448,6 @@ $B.ast.Dict.prototype.to_js = function(scopes){
                 items.push(`[${$B.js_from_ast(this.keys[i], scopes)}, ` +
                            `${$B.js_from_ast(this.values[i], scopes)}]`)
             }catch(err){
-                console.log('error', this.keys[i], this.values[i])
                 throw err
             }
         }
@@ -1592,12 +1619,7 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
     }
 
     // Detect doc string
-    var docstring = '_b_.None'
-    if(this.body[0] instanceof $B.ast.Expr &&
-            this.body[0].value instanceof $B.ast.Constant &&
-            typeof this.body[0].value.value == "string"){
-        docstring = this.body.splice(0, 1)[0].value.to_js(scopes)
-    }
+    var docstring = extract_docstring(this, scopes)
 
     // Parse args
     var parsed_args = transform_args.bind(this)(scopes),
@@ -1734,9 +1756,11 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
 
     scopes.pop()
 
-    var func_name_scope = bind(this.name, scopes)
-    var qualname = func_name_scope.type == 'class' ?
-        `${func_name_scope.name}.${this.name}` : this.name
+    var func_name_scope = bind(this.name, scopes),
+        in_class = func_name_scope.ast instanceof $B.ast.ClassDef
+
+    var qualname = in_class ? `${func_name_scope.name}.${this.name}` :
+                              this.name
 
     // Flags
     var flags = 67
@@ -1765,6 +1789,9 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
     // Set attribute $is_func to distinguish Brython functions from JS
     // Used in py_dom.js / DOMNode.__getattribute__
     js += `${name2}.$is_func = true\n`
+    if(in_class){
+        js += `${name2}.$is_method = true\n`
+    }
     if(is_async){
         js += `${name2}.$is_async = true\n`
     }
@@ -1956,7 +1983,13 @@ $B.ast.Import.prototype.to_js = function(scopes){
 }
 
 $B.ast.ImportFrom.prototype.to_js = function(scopes){
-    compiler_check(this)
+    if(this.module === '__future__'){
+        if(! ($B.last(scopes).ast instanceof $B.ast.Module)){
+            compiler_error(this,
+                'from __future__ imports must occur at the beginning of the file',
+                $B.last(this.names))
+        }
+    }
     if(this.level == 0){
         module = this.module
     }else{
@@ -2343,7 +2376,8 @@ $B.ast.Module.prototype.to_js = function(scopes){
     }
     js += `\nlocals.__file__ = '${scopes.filename || "<string>"}'\n` +
           `locals.__name__ = '${name}'\n` +
-          `locals.__annotations__ = $B.empty_dict()\n`
+          `locals.__annotations__ = $B.empty_dict()\n` +
+          `locals.__doc__ = ${extract_docstring(this, scopes)}\n`
     if(! namespaces){
         // for exec(), frame is put on top of the stack inside
         // py_builtin_functions.js / $$eval()
@@ -2460,7 +2494,7 @@ $B.ast.Slice.prototype.to_js = function(scopes){
 
 $B.ast.Starred.prototype.to_js = function(scopes){
     if(this.$handled){
-        return `_b_.list.$factory(${$B.js_from_ast(this.value, scopes)})`
+        return `_b_.list.$unpack(${$B.js_from_ast(this.value, scopes)})`
     }
     if(this.ctx instanceof $B.ast.Store){
         compiler_error(this,

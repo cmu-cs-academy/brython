@@ -73,7 +73,7 @@ function get_line_at(src, pos){
     // Get the line in source code src starting at position pos
     var end = src.substr(pos).search(/[\r\n]/),
         line = end == -1 ? src.substr(pos) : src.substr(pos, end + 1)
-    return line + '\n'
+    return line
 }
 
 function get_comment(src, pos, line_num, line_start, token_name, line){
@@ -125,6 +125,32 @@ function test_num(num_type, char){
         default:
             throw Error('unknown num type ' + num_type)
     }
+}
+
+$B.TokenReader = function(src){
+    this.tokens = []
+    this.tokenizer = $B.tokenizer(src)
+    this.position = 0
+}
+
+$B.TokenReader.prototype.read = function(){
+    if(this.position < this.tokens.length){
+        var res = this.tokens[this.position]
+    }else{
+        var res = this.tokenizer.next()
+        if(res.done){
+            this.done = true
+            return
+        }
+        res = res.value
+        this.tokens.push(res)
+    }
+    this.position++
+    return res
+}
+
+$B.TokenReader.prototype.seek = function(position){
+    this.position = position
 }
 
 $B.tokenizer = function*(src){
@@ -338,6 +364,9 @@ $B.tokenizer = function*(src){
                         break
                     case '\\':
                         if(mo = /^\f?(\r\n|\r|\n)/.exec(src.substr(pos))){
+                            if(pos == src.length - 1){
+                                throw SyntaxError('EOF in multi-line statement')
+                            }
                             line_num++
                             pos += mo[0].length
                             line_start = pos + 1
@@ -410,6 +439,7 @@ $B.tokenizer = function*(src){
                         }else if(char == ' ' || char == '\t'){
                             // ignore
                         }else{
+                            // invalid character
                             yield Token('ERRORTOKEN', char,
                                 [line_num, pos - line_start],
                                 [line_num, pos - line_start + 1],

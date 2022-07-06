@@ -85,12 +85,26 @@ var StringIO = $B.make_class("StringIO",
         }
     }
 )
+
 StringIO.__mro__ = [$B.Reader, _b_.object]
 
 StringIO.getvalue = function(){
     var $ = $B.args("getvalue", 1, {self: null},
             ["self"], arguments, {}, null, null)
-    return $.self.$content
+    return $.self.$content.substr(0) // copy
+}
+
+StringIO.truncate = function(self, size){
+    var $ = $B.args('truncate', 2, {self: null, size: null}, ['self', 'size'],
+            arguments, {size: _b_.None}, null, null),
+        self = $.self,
+        size = $.size
+    if(size === _b_.None){
+        size = self.$counter
+    }
+    self.$content = self.$content.substr(0, size)
+    self.$counter = self.$content.length
+    return self.$counter
 }
 
 StringIO.write = function(){
@@ -105,7 +119,7 @@ StringIO.write = function(){
     text = text.substr(0, position) + $.data +
         text.substr(position + $.data.length)
     $.self.$content = text
-    $.self.$counter += $.data.length
+    $.self.$counter = position + $.data.length
     return $.data.length
 }
 

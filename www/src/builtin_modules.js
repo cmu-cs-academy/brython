@@ -135,7 +135,6 @@
                         }
                     }
                 })
-                console.log(js_scripts)
                 // Check if imported scripts have been modified
                 for(var mod in $B.imported){
                     if($B.imported[mod].$last_modified){
@@ -355,20 +354,20 @@
     modules['browser'] = browser
 
     // Class for Javascript "undefined"
-    $B.UndefinedClass = $B.make_class("Undefined",
+    $B.UndefinedType = $B.make_class("UndefinedType",
         function(){return $B.Undefined}
     )
-    $B.UndefinedClass.__mro__ = [_b_.object]
-    $B.UndefinedClass.__bool__ = function(self){
+    $B.UndefinedType.__mro__ = [_b_.object]
+    $B.UndefinedType.__bool__ = function(self){
         return false
     }
-    $B.UndefinedClass.__repr__ = $B.UndefinedClass.__str__ = function(self){
+    $B.UndefinedType.__repr__ = function(self){
         return "<Javascript undefined>"
     }
 
-    $B.Undefined = {__class__: $B.UndefinedClass}
+    $B.Undefined = {__class__: $B.UndefinedType}
 
-    $B.set_func_names($B.UndefinedClass, "javascript")
+    $B.set_func_names($B.UndefinedType, "javascript")
 
     // Class used by javascript.super()
     var super_class = $B.make_class("JavascriptSuper",
@@ -450,6 +449,10 @@
             // load JS script at specified url
             // If it exposes a variable $module, use it as the namespace of imported
             // module named "name"
+            var $ = $B.args('import_js', 2, {url: null, alias: null},
+                    ['url', 'alias'], arguments, {alias: _b_.None}, null, null),
+                url = $.url
+                alias = $.alias
             var xhr = new XMLHttpRequest(),
                 result
             xhr.open('GET', url, false)
@@ -476,7 +479,17 @@
             if(_b_.isinstance(result, _b_.BaseException)){
                 $B.handle_error(result)
             }else{
-                $B.imported[name] = result
+                if(alias === _b_.None){
+                    // set module name from url
+                    alias = url.split('.')
+                    if(alias.length > 1){
+                        alias.pop() // remove extension
+                    }
+                    alias = alias.join('.')
+                }
+                $B.imported[alias] = result
+                var frame = $B.last($B.frames_stack)
+                frame[1][alias] = result
             }
         },
         JSObject: $B.JSObj,
@@ -503,9 +516,9 @@
         },
         "Math": self.Math && $B.JSObj.$factory(self.Math),
         NULL: null,
+        NullType: $B.make_class('NullType'),
         "Number": self.Number && $B.JSObj.$factory(self.Number),
         py2js: function(src, module_name){
-            console.log('javascript.py2js', src, module_name)
             if(module_name === undefined){
                 module_name = '__main__' + $B.UUID()
             }
@@ -518,8 +531,11 @@
         "String": self.String && $B.JSObj.$factory(self.String),
         "super": super_class,
         UNDEFINED: $B.Undefined,
-        UndefinedType: $B.UndefinedClass
+        UndefinedType: $B.UndefinedType
     }
+
+    modules.javascript.NullType.$infos.__module__ = 'javascript'
+    modules.javascript.UndefinedType.$infos.__module__ = 'javascript'
 
     var arraybuffers = ["Int8Array", "Uint8Array", "Uint8ClampedArray",
         "Int16Array", "Uint16Array", "Int32Array", "Uint32Array",
@@ -542,8 +558,7 @@
             var $ = $B.args("_getframe", 1, {depth: null}, ['depth'],
                     arguments, {depth: 0}, null, null),
                 depth = $.depth
-            return $B._frame.$factory($B.frames_stack,
-                $B.frames_stack.length - depth - 1)
+            return $B.frames_stack[$B.frames_stack.length - depth - 1]
         },
         breakpointhook: function(){
             var hookname = $B.$options.breakpoint,
@@ -885,16 +900,6 @@
 
     $B.AST = {
         __class__: _b_.type,
-        __Xgetattr__: function(self, attr){
-            if(self.js_node === undefined){
-                console.log('AST __getattr__', attr, self)
-            }
-            var res = self.js_node[attr]
-            if(res === undefined){
-                throw $B.attr_error(attr, self)
-            }
-            return $B.AST.$convert(res)
-        },
         __mro__: [_b_.object],
         $infos:{
             __qualname__: 'AST',

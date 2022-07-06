@@ -321,8 +321,9 @@ $B.set_func_names(classmethod, "builtins")
 
 var code = $B.code = $B.make_class("code")
 
-code.__repr__ = code.__str__ = function(self){
-    return `<code object ${self.co_name}, file '${self.co_filename}'>`
+code.__repr__ = code.__str__ = function(_self){
+    return `<code object ${_self.co_name}, file '${_self.co_filename}', ` +
+        `line ${_self.co_firstlineno || 1}>`
 }
 
 code.__getattribute__ = function(self, attr){
@@ -346,9 +347,10 @@ function compile() {
     $.__class__ = code
     $.co_flags = $.flags
     $.co_name = "<module>"
-    $.co_filename = $.filename
+    var filename = $.co_filename = $.filename
     var interactive = $.mode == "single" && ($.flags & 0x200)
-    $B.file_cache[$.filename] = $.source
+    $B.file_cache[filename] = $.source
+    $B.url2name[filename] = module_name
 
     if(_b_.isinstance($.source, _b_.bytes)){
         var encoding = 'utf-8',
@@ -385,11 +387,11 @@ function compile() {
         $.source = _b_.bytes.decode($.source, encoding)
     }
 
-    if(!_b_.isinstance($.filename, [_b_.bytes, _b_.str])){
+    if(!_b_.isinstance(filename, [_b_.bytes, _b_.str])){
         // module _warning is in builtin_modules.js
         $B.imported._warnings.warn(_b_.DeprecationWarning.$factory(
             `path should be string, bytes, or os.PathLike, ` +
-                `not ${$B.class_name($.filename)}`))
+                `not ${$B.class_name(filename)}`))
     }
     if(interactive && ! $.source.endsWith("\n")){
         // This is used in codeop.py to raise SyntaxError until a block in the
@@ -402,27 +404,52 @@ function compile() {
     }
 
     if($B.parser_to_ast){
-        var _ast = new $B.Parser($.source, $.filename).parse(
-            'file')
-        var symtable = $B._PySymtable_Build(_ast, $.filename)
-        // var js_obj = $B.js_from_root(_ast, symtable, $.filename)
+        var _ast = new $B.Parser($.source, filename).parse('file'),
+            future = $B.future_features(_ast, filename),
+            symtable = $B._PySymtable_Build(_ast, filename),
+            js_obj = $B.js_from_root(_ast, symtable, $.filename)
         if($.flags == $B.PyCF_ONLY_AST){
+            delete $B.url2name[filename]
             return _ast
         }
     }else{
         var root = $B.parser.$create_root_node(
-                {src: $.source, filename: $.filename},
+                {src: $.source, filename},
                 module_name, module_name)
         root.mode = $.mode
         root.parent_block = $B.builtins_scope
         $B.parser.dispatch_tokens(root, $.source)
+        var _ast = root.ast()
+        if($.mode == 'single' && _ast.body.length == 1 &&
+                _ast.body[0] instanceof $B.ast.Expr){
+            // If mode is 'single' and the source is a single expression,
+            // set _ast to an Expression and set attribute .single_expression
+            // to compile() result. This is used in exec() to print the
+            // expression if it is not None
+            root = $B.parser.$create_root_node(
+                {src: $.source, filename},
+                module_name, module_name)
+            root.mode = 'eval'
+            $.single_expression = true
+            root.parent_block = $B.builtins_scope
+            $B.parser.dispatch_tokens(root, $.source)
+            _ast = root.ast()
+        }
+        var future = $B.future_features(_ast, filename),
+            symtable = $B._PySymtable_Build(_ast, filename, future)
+        delete $B.url2name[filename]
+        var js_obj = $B.js_from_root(_ast, symtable, filename)
+
         if($.flags == $B.PyCF_ONLY_AST){
             $B.create_python_ast_classes() // in py_ast
-            var _ast = root.ast(),
-                klass = _ast.constructor.$name
+            var klass = _ast.constructor.$name
             return $B.python_ast_classes[klass].$factory(_ast)
         }
     }
+    delete $B.url2name[filename]
+    // Set attribute ._ast to avoid compiling again if result is passed to
+    // exec()
+    $._ast = _ast
     return $
 }
 
@@ -507,6 +534,7 @@ function dir(obj){
     }catch (err){
         // ignore, default
         //console.log(err)
+        console.log('error in dir', err.message)
     }
 
     var res = [], pos = 0
@@ -606,8 +634,7 @@ function $$eval(src, _globals, _locals){
     }
 
     if(src.__class__ === code){
-        mode = src.mode
-        src = src.source
+        // result of compile()
     }else if((! src.valueOf) || typeof src.valueOf() !== 'string'){
         throw _b_.TypeError.$factory(`${mode}() arg 1 must be a string,` +
             " bytes or code object")
@@ -622,12 +649,14 @@ function $$eval(src, _globals, _locals){
 
     $B.exec_scope = $B.exec_scope || {}
 
-    if(src.endsWith('\\\n')){
-        var exc = _b_.SyntaxError.$factory('')
+    if(typeof src == 'string' && src.endsWith('\\\n')){
+        var exc = _b_.SyntaxError.$factory('unexpected EOF while parsing')
         var lines = src.split('\n'),
             line = lines[lines.length - 2]
         exc.args = ['unexpected EOF while parsing',
             ['<string>', lines.length - 1, 1, line]]
+        exc.filename = '<string>'
+        exc.text = line
         throw exc
     }
 
@@ -642,14 +671,16 @@ function $$eval(src, _globals, _locals){
     var handler = {
         get: function(obj, prop){
             if(prop == '$lineno'){
-                return lineno
+                return obj.$exec_lineno
             }else if(prop == '__file__'){
                 return '<string>'
             }
             return obj[prop]
         },
         set: function(obj, prop, value){
-            if(['__file__', '$lineno'].indexOf(prop) == -1){
+            if(prop == '$lineno'){
+                obj.$exec_lineno = value
+            }else if(['__file__'].indexOf(prop) == -1){
                 obj[prop] = value
             }
         }
@@ -722,28 +753,33 @@ function $$eval(src, _globals, _locals){
     exec_locals.$f_trace = $B.enter_frame(top_frame)
     exec_locals.$lineno = 1
 
-    var filename = '<string>'
+    var filename = '<string>',
+        _ast
+
+    if(src.__class__ === code){
+        _ast = src._ast
+    }
 
     try{
         if($B.parser_to_ast){
-            var _ast = new $B.Parser(src, filename).parse(mode == 'eval' ? 'eval' : 'file')
-            var symtable = $B._PySymtable_Build(_ast, filename)
-            var js_obj = $B.js_from_root(_ast, symtable, filename,
-                    {local_name, exec_locals, global_name, exec_globals})
-            js = js_obj.js
+            if(! _ast){
+                _ast = new $B.Parser(src, filename).parse(mode == 'eval' ? 'eval' : 'file')
+            }
         }else{
-            var root = $B.parser.$create_root_node(src, '<module>', frame[0], frame[2],
-                    1)
-            root.mode = mode
-            root.filename = filename
-            $B.parser.dispatch_tokens(root)
-
-            var _ast = root.ast(),
-                symtable = $B._PySymtable_Build(_ast, filename),
-                js_obj = $B.js_from_root(_ast, symtable, filename,
-                        {local_name, exec_locals, global_name, exec_globals}),
-                js = js_obj.js
+            if(! _ast){
+                var root = $B.parser.$create_root_node(src, '<module>', frame[0], frame[2],
+                        1)
+                root.mode = mode
+                root.filename = filename
+                $B.parser.dispatch_tokens(root)
+                _ast = root.ast()
+            }
         }
+        var future = $B.future_features(_ast, filename),
+            symtable = $B._PySymtable_Build(_ast, filename, future),
+            js_obj = $B.js_from_root(_ast, symtable, filename,
+                    {local_name, exec_locals, global_name, exec_globals}),
+            js = js_obj.js
     }catch(err){
         if(err.args){
             var lineno = err.args[1][1]
@@ -757,23 +793,39 @@ function $$eval(src, _globals, _locals){
 
     if(mode == 'eval'){
         js = 'return ' + js
+    }else if(src.single_expression){
+        js = `var result = ${js}\n` +
+             `if(result !== _b_.None){\n` +
+                 `_b_.print(result)\n` +
+             `}`
     }
 
     try{
         var exec_func = new Function('$B', '_b_', 'locals', local_name, global_name, js)
     }catch(err){
-        console.log('error\n', js)
+        if($B.debug > 1){
+            console.log('eval() error\n', js)
+            console.log('-- python source\n', src)
+        }
         throw err
     }
-    //console.log('exec_func', $B.format_indent(exec_func + '', 0))
 
     try{
         var res = exec_func($B, _b_, exec_locals, exec_locals, exec_globals)
     }catch(err){
-        if(err.$stack){
-            err.$stack = save_frames_stack.concat(err.$stack)
-        }else{
-            err.$stack = save_frames_stack.concat($B.frames_stack)
+        if($B.debug > 2){
+            console.log(
+                'Python code\n', src,
+                '\ninitial stack before exec', save_frames_stack.slice(),
+                '\nstack', $B.frames_stack.slice(),
+                '\nexec func', $B.format_indent(exec_func + '', 0),
+                '\n    filename', filename,
+                '\n    local_name', local_name,
+                '\n    exec_locals', exec_locals,
+                '\n    global_name', global_name,
+                '\n    exec_globals', exec_globals,
+                '\n    frame', frame,
+                '\n    _ast', _ast)
         }
         $B.frames_stack = save_frames_stack
         throw err
@@ -795,6 +847,7 @@ function $$eval(src, _globals, _locals){
     $B.frames_stack = save_frames_stack
     return res
 }
+
 $$eval.$is_func = true
 
 function exec(src, globals, locals){
@@ -926,7 +979,7 @@ $B.$getattr = function(obj, attr, _default){
 
     var klass = obj.__class__
 
-    var $test = false // attr == "strange" // && obj === _b_.list // "Point"
+    var $test = false // attr == "f" // && obj === _b_.list // "Point"
     if($test){console.log("$getattr", attr, '\nobj', obj, '\nklass', klass)}
 
     // Shortcut for classes without parents
@@ -947,6 +1000,9 @@ $B.$getattr = function(obj, attr, _default){
                    klass[attr].__get__)){
             return obj.__dict__.$string_dict[attr][0]
         }else if(klass.hasOwnProperty(attr)){
+            if($test){
+                console.log('class has attr', attr, klass[attr])
+            }
             if(typeof klass[attr] != "function" &&
                     attr != "__dict__" &&
                     klass[attr].__get__ === undefined){
@@ -961,8 +1017,9 @@ $B.$getattr = function(obj, attr, _default){
     if($test){console.log("attr", attr, "of", obj, "class", klass, "isclass", is_class)}
     if(klass === undefined){
         // avoid calling $B.get_class in simple cases for performance
-        if(typeof obj == 'string'){klass = _b_.str}
-        else if(typeof obj == 'number'){
+        if(typeof obj == 'string'){
+            klass = _b_.str
+        }else if(typeof obj == 'number'){
             klass = obj % 1 == 0 ? _b_.int : _b_.float
         }else if(obj instanceof Number){
             klass = _b_.float
@@ -1034,15 +1091,6 @@ $B.$getattr = function(obj, attr, _default){
                   }
               )
           }
-      case '__doc__':
-          // for builtins objects, use $B.builtins_doc
-          for(var i = 0; i < builtin_names.length; i++){
-              if(obj === _b_[builtin_names[i]]){
-                  _get_builtins_doc()
-                  return $B.builtins_doc[builtin_names[i]]
-              }
-          }
-          break
       case '__mro__':
           if(obj.$is_class){
               // The attribute __mro__ of class objects doesn't include the
@@ -1337,6 +1385,12 @@ function _get_builtins_doc(){
         url += '/builtins_docstrings.js'
         var f = _b_.open(url)
         eval(f.$content)
+        // builtins_docstrings defines an objet "docs"
+        for(var key in docs){
+            if(_b_[key]){
+                _b_[key].__doc__ = docs[key]
+            }
+        }
         $B.builtins_doc = docs
     }
 }
@@ -1344,30 +1398,60 @@ function _get_builtins_doc(){
 function help(obj){
     if(obj === undefined){obj = 'help'}
 
-    // if obj is a builtin, lets take a shortcut, and output doc string
-    if(typeof obj == 'string' && _b_[obj] !== undefined) {
-        _get_builtins_doc()
-        var _doc = $B.builtins_doc[obj]
-        if(_doc !== undefined && _doc != ''){
-             _b_.print(_doc)
-             return
-        }
-    }
-    // If obj is a built-in object, also use builtins_doc
-    for(var i = 0; i < builtin_names.length; i++){
-        if(obj === _b_[builtin_names[i]]){
-            _get_builtins_doc()
-            _b_.print(_doc = $B.builtins_doc[builtin_names[i]])
-        }
-    }
     if(typeof obj == 'string'){
-        $B.$import("pydoc");
-        var pydoc = $B.imported["pydoc"]
-        $B.$getattr($B.$getattr(pydoc, "help"), "__call__")(obj)
-        return
+        var lib_url = 'https://docs.python.org/3/library',
+            ref_url = 'https://docs.python.org/3/reference'
+        // search in standard lib
+        var parts = obj.split('.'),
+            head = [],
+            url
+        while(parts.length > 0){
+            head.push(parts.shift())
+            if($B.stdlib[head.join('.')]){
+                url = head.join('.')
+            }else{
+                break
+            }
+        }
+        if(url){
+            var doc_url
+            if(['browser', 'javascript', 'interpreter'].
+                    indexOf(obj.split('.')[0]) > -1){
+                doc_url = '/static_doc/' + ($B.language == 'fr' ? 'fr' : 'en')
+            }else{
+                doc_url = lib_url
+            }
+            window.open(`${doc_url}/${url}.html#` + obj)
+            return
+        }
+        // built-in functions or classes
+        if(_b_[obj]){
+            if(obj == obj.toLowerCase()){
+                url = lib_url + `/functions.html#${obj}`
+            }else if(['False', 'True', 'None', 'NotImplemented', 'Ellipsis', '__debug__'].
+                    indexOf(obj) > -1){
+                url = lib_url + `/constants.html#${obj}`
+            }else if(_b_[obj].$is_class &&
+                    _b_[obj].__bases__.indexOf(_b_.Exception) > -1){
+                url = lib_url + `/exceptions.html#${obj}`
+            }
+            if(url){
+                window.open(url)
+                return
+            }
+        }
+        // use pydoc
+        $B.$import('pydoc')
+        return $B.$call($B.$getattr($B.imported.pydoc, 'help'))(obj)
     }
-    try{return $B.$getattr(obj, '__doc__')}
-    catch(err){return ''}
+    if(obj.__class__ === $B.module){
+        return help(obj.__name__)
+    }
+    try{
+        _b_.print($B.$getattr(obj, '__doc__'))
+    }catch(err){
+        return ''
+    }
 }
 
 help.__repr__ = help.__str__ = function(){
@@ -2271,7 +2355,7 @@ $B.$setattr = function(obj, attr, value){
         }
         if(obj.$infos && obj.$infos.__module__ == "builtins"){
             throw _b_.TypeError.$factory(
-                "can't set attributes of built-in/extension type '" +
+                `cannot set '${attr}' attribute of immutable type '` +
                     obj.$infos.__name__ + "'")
         }
         obj[attr] = value
@@ -2313,10 +2397,6 @@ $B.$setattr = function(obj, attr, value){
     if(res !== undefined && res !== null){
         // descriptor protocol : if obj has attribute attr and this attribute
         // has a method __set__(), use it
-        if(res.__get__ && res.__set__ === undefined){
-            throw _b_.AttributeError.$factory("can't set attribute '" + attr +
-                "'")
-        }
         if(res.__set__ !== undefined){
             res.__set__(res, obj, value); return None
         }
@@ -2503,13 +2583,15 @@ var $$super = $B.make_class("super",
         var no_object_or_type = object_or_type === undefined
         if(_type === undefined && object_or_type === undefined){
             var frame = $B.last($B.frames_stack),
-                pyframe = $B.imported["_sys"].Getframe()
-            if(pyframe.f_code && pyframe.f_code.co_varnames){
+                pyframe = $B.imported["_sys"].Getframe(),
+                code = $B.frame.f_code.__get__(pyframe),
+                co_varnames = code.co_varnames
+            if(co_varnames.length > 0){
                 _type = frame[1].__class__
                 if(_type === undefined){
                     throw _b_.RuntimeError.$factory("super(): no arguments")
                 }
-                object_or_type = frame[1][pyframe.f_code.co_varnames[0]]
+                object_or_type = frame[1][code.co_varnames[0]]
             }else{
                 throw _b_.RuntimeError.$factory("super(): no arguments")
             }
@@ -2678,6 +2760,11 @@ $Reader.__exit__ = function(self){
     return false
 }
 
+$Reader.__init__ = function(_self, initial_value='', newline='\n'){
+    _self.$content = initial_value
+    _self.$counter = 0
+}
+
 $Reader.__iter__ = function(self){
     // Iteration ignores last empty lines (issue #1059)
     return iter($Reader.readlines(self))
@@ -2685,6 +2772,12 @@ $Reader.__iter__ = function(self){
 
 $Reader.__len__ = function(self){
     return self.lines.length
+}
+
+$Reader.__new__ = function(cls){
+    return {
+        __class__: cls
+    }
 }
 
 $Reader.close = function(self){

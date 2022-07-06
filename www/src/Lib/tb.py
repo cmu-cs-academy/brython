@@ -32,7 +32,7 @@ def format_exc():
             src = open(filename, encoding='utf-8').read()
             lines = src.split('\n')
             line = lines[tb.tb_lineno - 1]
-            trace.write(f"    {line}\n")
+            trace.write(f"    {line.strip()}\n")
         tb = tb.tb_next
     trace.write(f"{exc_class}: {exc_msg}\n")
     return trace.format()
@@ -47,7 +47,7 @@ def syntax_error(args):
     info, [filename, lineno, offset, line, *extra] = args
     trace.write(f"  File {filename}, line {lineno}\n")
     indent = len(line) - len(line.lstrip())
-    trace.write("    " + line.lstrip())
+    trace.write("    " + line.lstrip() + "\n")
     nb_marks = 1
     if extra:
         end_lineno, end_offset = extra
@@ -55,6 +55,6 @@ def syntax_error(args):
             nb_marks = len(line) - offset
         else:
             nb_marks = end_offset - offset
-    trace.write("    " + offset * " " + "^" * nb_marks + "\n")
+    trace.write("    " + (offset - 1) * " " + "^" * nb_marks + "\n")
     trace.write("SyntaxError:", info, "\n")
     return trace.buf
