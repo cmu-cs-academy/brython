@@ -217,10 +217,13 @@ var ast_dump = $B.ast_dump = function(tree, indent){
     }
     var proto = Object.getPrototypeOf(tree).constructor
     var res = '  ' .repeat(indent) + proto.$name + '('
+    if($B.ast_classes[proto.$name] === undefined){
+        console.log('no ast class', proto)
+    }
     var attr_names = $B.ast_classes[proto.$name].split(','),
         attrs = []
     // remove trailing * in attribute names
-    attr_names = attr_names.map(x => x.endsWith('*') ?
+    attr_names = attr_names.map(x => (x.endsWith('*') || x.endsWith('?')) ?
                                      x.substr(0, x.length - 1) : x)
     if([ast.Name].indexOf(proto) > -1){
         for(var attr of attr_names){
@@ -358,8 +361,8 @@ function raise_error_known_location(type, filename, lineno, col_offset,
     exc.end_lineno = end_lineno
     exc.end_offset = end_col_offset + 1
     exc.text = line
-    exc.args[1] = [filename, exc.lineno, exc.offset, exc.text,
-                   exc.end_lineno, exc.end_offset]
+    exc.args[1] = $B.fast_tuple([filename, exc.lineno, exc.offset, exc.text,
+                   exc.end_lineno, exc.end_offset])
     throw exc
 }
 
@@ -1266,9 +1269,13 @@ $AsyncCtx.prototype.transition = function(token, value){
     var context = this
     if(token == "def"){
         return $transition(context.parent, token, value)
-    }else if(token == "for" || token == "with"){
+    }else if(token == "with"){
         var ctx = $transition(context.parent, token, value)
-        ctx.parent.async = context // set attr "async" of for/with context
+        ctx.async = context // set attr "async" of with context
+        return ctx
+    }else if(token == "for"){
+        var ctx = $transition(context.parent, token, value)
+        ctx.parent.async = context // set attr "async" of for context
         return ctx
     }
     raise_syntax_error(context)
@@ -2001,17 +2008,6 @@ $ContinueCtx.prototype.transition = function(token, value){
     raise_syntax_error(context)
 }
 
-var $DebuggerCtx = $B.parser.$DebuggerCtx = function(context){
-    // Class for debugger
-    this.type = 'continue'
-    this.parent = context
-    context.tree[context.tree.length] = this
-}
-
-$DebuggerCtx.prototype.transition = function(token, value){
-    var context = this
-}
-
 var $DecoratorCtx = $B.parser.$DecoratorCtx = function(context){
     // Class for decorators
     this.type = 'decorator'
@@ -2023,10 +2019,6 @@ var $DecoratorCtx = $B.parser.$DecoratorCtx = function(context){
 
 $DecoratorCtx.prototype.transition = function(token, value){
     var context = this
-    if(token == 'id' && context.tree.length == 0){
-        return $transition(new $AbstractExprCtx(context, false),
-            token, value)
-    }
     if(token == 'eol') {
         return $transition(context.parent, token)
     }
@@ -2708,6 +2700,12 @@ $ExprCtx.prototype.transition = function(token, value){
         context.$pos = $pos
         raise_syntax_error(context)
     }
+    if(context.parent.expect == 'star_target'){
+        if(['pass', 'in', 'not', 'op', 'augm_assign', '=', ':=', 'if', 'eol'].
+            indexOf(token) > -1){
+            return $transition(context.parent, token, value)
+        }
+    }
     switch(token) {
         case 'bytes':
         case 'float':
@@ -2807,6 +2805,9 @@ $ExprCtx.prototype.transition = function(token, value){
       case '(':
           return new $CallCtx(context)
       case 'op':
+          if(context.parent.type == 'withitem' && context.parent.tree.length == 2){
+              raise_syntax_error(context, "expected ':'")
+          }
           // handle operator precedence ; fasten seat belt ;-)
           var op_parent = context.parent,
               op = value
@@ -3520,7 +3521,7 @@ $FuncArgs.prototype.transition = function(token, value){
                     last.type == 'end_positional'){
                 return
             }
-            if(context.names.indexOf('*') > -1){
+            if(context.has_star_arg){
                 // non-default arg after default arg is allowed for
                 // keyword-only parameters, eg arg "z" in "f(x, *, y=1, z)"
                 return
@@ -4758,8 +4759,6 @@ $NodeCtx.prototype.transition = function(token, value){
             return new $ClassCtx(context)
         case 'continue':
             return new $ContinueCtx(context)
-        case '__debugger__':
-            return new $DebuggerCtx(context)
         case 'def':
             return new $DefCtx(context)
         case 'del':
@@ -4829,7 +4828,7 @@ $NodeCtx.prototype.transition = function(token, value){
                     return new $AbstractExprCtx(
                         new $UnaryCtx(expr, value), false)
                 case '@':
-                    return new $DecoratorCtx(context)
+                    return new $AbstractExprCtx(new $DecoratorCtx(context), false)
             }
             break
         case 'pass':
@@ -4841,7 +4840,7 @@ $NodeCtx.prototype.transition = function(token, value){
         case 'try':
             return new $TryCtx(context)
         case 'with':
-            return new $AbstractExprCtx(new $WithCtx(context),false)
+            return new $WithCtx(context)
         case 'yield':
             return new $AbstractExprCtx(new $YieldCtx(context),true)
         case 'eol':
@@ -6804,7 +6803,7 @@ var $WithCtx = $B.parser.$WithCtx = function(context){
     this.position = $token.value
     context.tree[context.tree.length] = this
     this.tree = []
-    this.expect = 'as'
+    this.expect = 'expr'
     this.scope = $get_scope(this)
 }
 
@@ -6816,13 +6815,8 @@ $WithCtx.prototype.ast = function(){
     // optional_vars is a Name, Tuple or List for the "as foo part", or None
     var withitems = [],
         withitem
-    for(var item of this.tree){
-        withitem = new ast.withitem(item.tree[0].ast())
-        if(item.alias){
-            withitem.optional_vars = item.alias.tree[0].ast()
-            withitem.optional_vars.ctx = new ast.Store()
-        }
-        withitems.push(withitem)
+    for(var withitem of this.tree){
+        withitems.push(withitem.ast())
     }
     var klass = this.async ? ast.AsyncWith : ast.With
     var ast_obj = new klass(withitems, ast_body(this.parent))
@@ -6834,51 +6828,58 @@ $WithCtx.prototype.ast = function(){
 
 $WithCtx.prototype.transition = function(token, value){
     var context = this
+    function check_last(){
+        var last = $B.last(context.tree)
+        if(last.tree.length > 1){
+            var alias = last.tree[1]
+            if(alias.tree.length == 0){
+                raise_syntax_error(context, "expected ':'")
+            }
+            check_assignment(alias)
+        }
+    }
     switch(token) {
+        case '(':
+        case '[':
+            if(this.expect == 'expr' && this.tree.length == 0){
+                // start a parenthesized list of managers
+                context.parenth = token
+                return context
+            }else{
+                raise_syntax_error(context)
+            }
+            break
         case 'id':
-            if(context.expect == 'id'){
-                context.expect = 'as'
+            if(context.expect == 'expr'){
+                // start withitem
+                context.expect = ','
                 return $transition(
-                    new $AbstractExprCtx(context, false), token,
+                    new $AbstractExprCtx(new withitem(context), false), token,
                         value)
             }
             raise_syntax_error(context)
-        case 'as':
-            return new $AbstractExprCtx(new $AliasCtx(context))
         case ':':
-            switch(context.expect) {
-                case 'id':
-                case 'as':
-                case ':':
-                    return $BodyCtx(context)
+            if((! context.parenth) || context.parenth == 'implicit'){
+                check_last()
             }
-            break
-        case '(':
-            if(context.expect == 'id' && context.tree.length == 0){
-                context.parenth = true
-                return context
-            }else if(context.expect == 'alias'){
-               context.expect = ':'
-               return new $TargetListCtx(context, false)
-            }
-            break
+            return $BodyCtx(context)
         case ')':
-            if(context.expect == ',' || context.expect == 'as') {
-               context.expect = ':'
-               return context
+        case ']':
+            if(context.parenth == opening[token]){
+                if(context.expect == ',' || context.expect == 'expr') {
+                    check_last()
+                    context.expect = ':'
+                    return context
+                }
             }
             break
         case ',':
-            if(context.parenth !== undefined &&
-                    context.has_alias === undefined &&
-                    (context.expect == ',' || context.expect == 'as')){
-                context.expect = 'id'
-                return context
-            }else if(context.expect == 'as'){
-                context.expect = 'id'
-                return context
-            }else if(context.expect == ':'){
-                context.expect = 'id'
+            if(context.expect == ','){
+                if(! context.parenth){
+                    context.parenth = 'implicit'
+                }
+                check_last()
+                context.expect = 'expr'
                 return context
             }
             break
@@ -6900,6 +6901,42 @@ $WithCtx.prototype.set_alias = function(ctx){
             }
         }
     }
+}
+
+var withitem = function(context){
+    this.type = 'withitem'
+    this.parent = context
+    context.tree.push(this)
+    this.tree = []
+    this.expect = 'as'
+    this.position = $token.value
+}
+
+withitem.prototype.ast = function(){
+    var ast_obj = new ast.withitem(this.tree[0].ast())
+    if(this.tree[1]){
+        ast_obj.optional_vars = this.tree[1].tree[0].ast()
+        if(ast_obj.optional_vars.elts){
+            for(var elt of ast_obj.optional_vars.elts){
+                elt.ctx = new ast.Store()
+            }
+        }else{
+            ast_obj.optional_vars.ctx = new ast.Store()
+        }
+    }
+    set_position(ast_obj, this.position)
+    return ast_obj
+}
+
+withitem.prototype.transition = function(token, value){
+    var context = this
+    if(token == 'as' && context.expect == 'as'){
+        context.expect = 'star_target'
+        return new $AbstractExprCtx(context, false)
+    }else{
+        return $transition(context.parent, token, value)
+    }
+    raise_syntax_error(context, "expected ':'")
 }
 
 var $YieldCtx = $B.parser.$YieldCtx = function(context, is_await){
@@ -7835,11 +7872,10 @@ function handle_errortoken(context, token, token_reader){
 }
 
 var python_keywords = [
-    "class", "return", "break", "for", "lambda", "try", "finally",
-    "raise", "def", "from", "nonlocal", "while", "del", "global",
-    "with", "as", "elif", "else", "if", "yield", "assert", "import",
-    "except", "raise", "in", "pass", "with", "continue", "__debugger__",
-    "async", "await"
+    "class", "return", "break", "for", "lambda", "try", "finally", "raise",
+    "def", "from", "nonlocal", "while", "del", "global", "with", "as", "elif",
+    "else", "if", "yield", "assert", "import", "except", "raise", "in",
+    "pass", "with", "continue", "async", "await"
 ]
 
 var $token = {}
