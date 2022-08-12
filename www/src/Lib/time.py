@@ -1,4 +1,3 @@
-from browser import self as window
 import _locale
 import javascript
 

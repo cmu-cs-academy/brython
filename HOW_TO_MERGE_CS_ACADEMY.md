@@ -34,7 +34,5 @@ Back in brython:
 In cs-academy:
 
 * Eyeball the changes that were made, especially new files that were added.
-* Run "Build CMU Graphics" in the gui window
+* Run "python build.py cmu-graphics" from the cs-academy folder
 * Run "Test Animation Framework" in the Tests tab of gui window
-
-
