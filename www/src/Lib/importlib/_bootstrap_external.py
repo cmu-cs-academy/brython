@@ -1484,10 +1484,9 @@ class FileFinder:
         for suffix, loader_class in self._loaders:
             full_path = _path_join(self.path, tail_module + suffix)
             _bootstrap._verbose_message('trying {}', full_path, verbosity=2)
-            if cache_module + suffix in cache:
-                if _path_isfile(full_path):
-                    return self._get_spec(loader_class, fullname, full_path,
-                                          None, target)
+            if _path_isfile(full_path):
+                return self._get_spec(loader_class, fullname, full_path,
+                                      None, target)
         if is_namespace:
             _bootstrap._verbose_message('possible namespace for {}', base_path)
             spec = _bootstrap.ModuleSpec(fullname, None)
@@ -1500,7 +1499,8 @@ class FileFinder:
         path = self.path
         try:
             contents = _os.listdir(path or _os.getcwd())
-        except (FileNotFoundError, PermissionError, NotADirectoryError):
+        except (FileNotFoundError, PermissionError, NotADirectoryError, 
+                NotImplementedError):
             # Directory has either been removed, turned into a file, or made
             # unreadable.
             contents = []

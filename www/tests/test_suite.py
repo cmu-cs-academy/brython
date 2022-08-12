@@ -1,4 +1,4 @@
-from tester import assertRaises
+from tester import assert_raises
 
 # numbers
 assert 2 + 2 == 4
@@ -520,20 +520,20 @@ def pos_only_arg(arg, /):
     return arg
 
 pos_only_arg(1)
-assertRaises(TypeError, pos_only_arg, arg=2)
+assert_raises(TypeError, pos_only_arg, arg=2)
 
 def kwd_only_arg(*, arg):
     return arg
 
 assert kwd_only_arg(arg=2) == 2
-assertRaises(TypeError, kwd_only_arg, 1)
+assert_raises(TypeError, kwd_only_arg, 1)
 
 def combined_example(pos_only, /, standard, *, kwd_only):
     return pos_only, standard, kwd_only
 
 assert combined_example(1, 2, kwd_only=3) == (1, 2, 3)
 assert combined_example(1, standard=2, kwd_only=3) == (1, 2, 3)
-assertRaises(TypeError, combined_example, 1, 2, 3)
+assert_raises(TypeError, combined_example, 1, 2, 3)
 
 # del
 attr = 5
@@ -549,15 +549,15 @@ def f(x):
 (y := f(8))
 assert y == 8
 
-assertRaises(SyntaxError, exec, "y0 = y1 := f(5)")
+assert_raises(SyntaxError, exec, "y0 = y1 := f(5)")
 
 y0 = (y1 := f(5))
 assert y0 == 5
 assert y1 == 5
 
-assertRaises(SyntaxError, exec, "foo(x = y := f(x))")
+assert_raises(SyntaxError, exec, "foo(x = y := f(x))")
 
-assertRaises(SyntaxError, exec,
+assert_raises(SyntaxError, exec,
     """def foo(answer = p := 42):
     pass""")
 
@@ -567,7 +567,7 @@ def foo(answer=(p := 42)):
 assert foo() == (42, 42)
 assert foo(5) == (5, 42)
 
-assertRaises(SyntaxError, exec,
+assert_raises(SyntaxError, exec,
     """def foo(answer: p := 42 = 5):
     pass""")
 
@@ -577,8 +577,8 @@ def foo1(answer: (p := 42) = 5):
 assert foo1() == (5, 42)
 assert foo1(8) == (8, 42)
 
-assertRaises(SyntaxError, exec, "lambda x:= 1")
-assertRaises(SyntaxError, exec, "(lambda x:= 1)")
+assert_raises(SyntaxError, exec, "lambda x:= 1")
+assert_raises(SyntaxError, exec, "(lambda x:= 1)")
 
 f = lambda: (x := 1)
 assert f() == 1
@@ -692,17 +692,17 @@ assert lambda:(  # A greeter.
 )() == 'hi'
 
 # issue 1557
-assertRaises(SyntaxError, exec, "a, b += 1")
-assertRaises(SyntaxError, exec, "(a, b) += 1")
-assertRaises(SyntaxError, exec, "[a, b] += 1")
-assertRaises(SyntaxError, exec, "{a, b} += 1")
-assertRaises(SyntaxError, exec, "{a: 0, b: 1} += 1")
-assertRaises(SyntaxError, exec, "{} += 1")
+assert_raises(SyntaxError, exec, "a, b += 1")
+assert_raises(SyntaxError, exec, "(a, b) += 1")
+assert_raises(SyntaxError, exec, "[a, b] += 1")
+assert_raises(SyntaxError, exec, "{a, b} += 1")
+assert_raises(SyntaxError, exec, "{a: 0, b: 1} += 1")
+assert_raises(SyntaxError, exec, "{} += 1")
 
 # issue 1642
-assertRaises(SyntaxError, exec, "(=)")
-assertRaises(SyntaxError, exec, "(=0)")
-assertRaises(SyntaxError, exec, '(=")')
+assert_raises(SyntaxError, exec, "(=)")
+assert_raises(SyntaxError, exec, "(=0)")
+assert_raises(SyntaxError, exec, '(=")')
 
 # issue 1654
 class MyClass(list):
@@ -766,17 +766,197 @@ x = 2
 assert not f()
 
 # issue 1802
-assertRaises(SyntaxError, exec, ".x = 4")
+assert_raises(SyntaxError, exec, ".x = 4")
 
 # issue 1803
-assertRaises(SyntaxError, exec, "050")
+assert_raises(SyntaxError, exec, "050")
 
 # issue 1807
-assertRaises(SyntaxError, exec, '-')
+assert_raises(SyntaxError, exec, '-')
 
 # issue 1819
 assert eval("-5 - 8") == -13
 
 assert [0 < a < 2 for a in (0, 1)] == [False, True]
 
+# unpacking in "for" target
+lists = [
+  [0, 1, 2, 3],
+  ['ab', 'b', 'c']
+  ]
+
+groups = []
+for x, *y, z in lists:
+  groups.append((x, y, z))
+
+assert groups == [(0, [1, 2], 3), ('ab', ['b'], 'c')]
+
+# various flavours of try / except / else / finally
+def try_except1():
+    try:
+        return 1
+    except ZeroDivisionError:
+        return 2
+
+assert try_except1() == 1
+
+def try_except2():
+    try:
+        return 1 / 0
+    except ZeroDivisionError:
+        return 2
+
+assert try_except2() == 2
+
+def try_except_else1():
+    try:
+        return 1
+    except ZeroDivisionError:
+        return 2
+    else:
+        return 3
+
+assert try_except_else1() == 1
+
+def try_except_else2():
+    try:
+        return 1 / 0
+    except ZeroDivisionError:
+        return 2
+    else:
+        return 3
+
+assert try_except_else2() == 2
+
+def try_finally():
+    try:
+        return 1
+    finally:
+        return 4
+
+assert try_finally() == 4
+
+def try_except_else_finally():
+    try:
+        return 1
+    except ZeroDivisionError:
+        return 2
+    else:
+        return 3
+    finally:
+        return 4
+
+#assert try_except_else_finally() == 4
+
+args = ['invalid syntax', ['<string>', 1, 2, 'a f']]
+
+info, [filename, lineno, offset, line] = args
+assert filename == '<string>'
+
+items = [(1, 2), (3, 4)]
+t = []
+for i, (key, value) in enumerate(items):
+  t.append((key, value))
+
+assert t == items
+
+# issue 1961
+src = '''
+xs = ["a", "a", "b", "a", "c"]
+n = 0
+def count(xs):
+    for x in xs:
+        print("So far, n is", n)
+        n += 1
+count(xs)
+'''
+
+try:
+    exec(src)
+    raise Exception('should have raises UnboundLocalError')
+except UnboundLocalError as exc:
+    assert str(exc) == "local variable 'n' referenced before assignment"
+
+# symtable syntax errors
+def test_syntax_error(code, message):
+    try:
+        exec(code)
+        print(f'{code} should have raised\nSyntaxError: {message}')
+    except SyntaxError as exc:
+        if exc.msg != message:
+            print(f'code {code} expected {message}, got {exc.msg}')
+
+tests = [
+    ("[p for n in (p := ['a', 'b', 'c'])]",
+    "assignment expression cannot be used in a comprehension iterable expression"),
+    ("class A:\n [x:=1 for _ in range(5)]",
+    "assignment expression within a comprehension cannot be used in a class body"),
+    ("[i for i in range(5) if (j := 0) for k[j + 1] in range(5)]",
+    "comprehension inner loop cannot rebind assignment expression target 'j'"),
+    ("[(a := 1) for a, (*b, c[d+e::f(g)], h.i) in [1]]",
+    "assignment expression cannot rebind comprehension iteration variable 'a'"),
+    ("[(b := 1) for a, (*b, c[d+e::f(g)], h.i) in [1]]",
+    "assignment expression cannot rebind comprehension iteration variable 'b'"),
+    ("def f(x, x):\n pass",
+    "duplicate argument 'x' in function definition")
+    ]
+
+for code, expected in tests:
+    test_syntax_error(code, expected)
+
+# docstrings
+def f():
+    """Docstring of function f()."""
+
+assert f.__doc__ == "Docstring of function f()."
+
+class A:
+    """Docstring of class A."""
+
+assert A.__doc__ == "Docstring of class A."
+
+# chained assignments and unpacking
+x, y = info = (1, 2)
+assert x == 1
+assert y == 2
+assert info == (1, 2)
+
+# error in function calls
+def f():
+    pass
+
+
+assert_raises(TypeError, f, 1,
+  msg='f() takes 0 positional arguments but 1 was given')
+
+assert_raises(TypeError, f, 1, 2,
+  msg='f() takes 0 positional arguments but 2 were given')
+
+assert_raises(TypeError, f, 1, 2, x=0,
+  msg="f() got an unexpected keyword argument 'x'")
+
+assert_raises(TypeError, f, 1, 2, x=0, y=1,
+  msg="f() got an unexpected keyword argument 'x'")
+
+def f(x=0):
+  pass
+
+
+assert_raises(TypeError, f, 1, 2,
+  msg="f() takes from 0 to 1 positional arguments but 2 were given")
+
+assert_raises(TypeError, f, 1, x=2,
+  msg="f() got multiple values for argument 'x'")
+
+def f(x, *, h):
+  pass
+
+assert_raises(TypeError, f, 1, 2,
+  msg="f() takes 1 positional argument but 2 were given")
+
+assert_raises(TypeError, f, 1, h=2, k=4,
+  msg="f() got an unexpected keyword argument 'k'")
+
+def f(f=5, *g: 6, h): 
+    pass    
 print('passed all tests...')

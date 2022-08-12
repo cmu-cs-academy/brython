@@ -15,6 +15,7 @@ $B.isWebWorker = ('undefined' !== typeof WorkerGlobalScope) &&
                   (navigator instanceof WorkerNavigator)
 $B.isNode = (typeof process !=='undefined') && (process.release.name==='node')
 
+
 var _window
 if($B.isNode){
     _window = {
@@ -65,6 +66,13 @@ if($B.brython_path === undefined){
     $path = $B.brython_path
 }
 
+var parts_re = new RegExp('(.*?)://(.*?)/(.*)'),
+    mo = parts_re.exec($B.brython_path)
+if(mo){
+    $B.full_url = {protocol: mo[1],
+                   host: mo[2],
+                   address: mo[3]}
+}
 
 // Get the URL of the directory where the script stands
 var path = _window.location.origin + _window.location.pathname,
@@ -79,8 +87,11 @@ $B.__ARGV = []
 // script name and its source code
 $B.webworkers = {}
 
-// File cache, indexed by module names
+// File cache, indexed by module paths
 $B.file_cache = {}
+
+// Mapping between script url and script name
+$B.url2name = {}
 
 // Mapping between a Python module name and its source code
 $B.$py_src = {}
@@ -132,6 +143,22 @@ $B.__setattr__ = function(attr, value){
 $B.language = _window.navigator.userLanguage || _window.navigator.language || 'en';
 
 $B.locale = "C" // can be reset by locale.setlocale
+
+// Set attribute "tz_name", used in module time to return the
+// attribute tm_zone of struct_time instances
+var date = new Date()
+var formatter = new Intl.DateTimeFormat($B.language, {timeZoneName: 'short'}),
+    short = formatter.format(date)
+formatter = new Intl.DateTimeFormat($B.language, {timeZoneName: 'long'})
+var long = formatter.format(date)
+var ix = 0,
+    minlen = Math.min(short.length, long.length)
+while(ix < minlen && short[ix] == long[ix]){
+    ix++
+}
+$B.tz_name = long.substr(ix).trim()
+
+
 $B.PyCF_ONLY_AST = 1024 // compiler flag, used in libs/_ast.js
 
 if($B.isWebWorker){
@@ -283,7 +310,7 @@ $B.python_to_js = function(src, script_id){
     if(!$B.use_VFS){$B.meta_path.shift()}
     if(script_id === undefined){script_id = "__main__"}
 
-    var root = __BRYTHON__.py2js(src, script_id, script_id),
+    var root = __BRYTHON__.py2js({src, filename: '<string>'}, script_id, script_id, __BRYTHON__.builtins_scope),
         js = root.to_js()
 
     js = "(function() {\n var $locals_" + script_id + " = {}\n" + js + "\n}())"

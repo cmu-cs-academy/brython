@@ -218,7 +218,9 @@ class Tester:
 
     def run(self, *methods):
         if not methods:
-            methods = [m for m in dir(self) if m.startswith('test_')
+            # don't use dir(self) but type(self).__dict__ to preserve methods
+            # order
+            methods = [m for m in type(self).__dict__ if m.startswith('test_')
                 and callable(getattr(self, m))]
         report = TestReport(type(self).__name__)
         for method in methods:
@@ -359,6 +361,21 @@ class Support:
         return func
 
 support = Support()
+
+def assert_raises(exc_type, func, *args, msg=None, **kw):
+    try:
+        func(*args, **kw)
+    except exc_type as exc:
+        if msg is not None:
+            if isinstance(msg, str):
+                if exc.args[0] != msg:
+                    raise AssertionError('correct exception type, but wrong message\n' +
+                        f'    Expected: {msg}\n' +
+                        f'    Got     : {exc.args[0]}')
+            elif isinstance(msg, re.Pattern):
+                assert msg.match(exc.args[0])
+    else:
+        raise AssertionError(f'should have raised {exc_type.__name__}')
 
 if __name__=='__main__':
     t = 1, 2

@@ -91,7 +91,10 @@ def run():
         'py_dom',
         'py_pattern_matching',
         'builtin_modules',
-        'async'
+        'builtins_docstrings',
+        'async',
+        'ast_to_js',
+        'symtable'
     ]
 
     res = """// brython.js brython.info
@@ -129,6 +132,26 @@ def run():
 
     print(('size : originals %s compact %s gain %.2f' %
           (src_size, len(res), 100 * (src_size - len(res)) / src_size)))
+
+    # add scripts that use Python grammar to parse source code and produce
+    # the Abstract Syntax Tree
+    import transform_full_grammar # creates full_grammar.js from Python.gram
+    transform_full_grammar.generate_javascript()
+
+    src = ''
+    for fname in ['string_parser', 'number_parser', 'action_helpers',
+            'python_parser', 'full_grammar']:
+        src = open(abs_path(fname)+'.js').read() + '\n'
+        try:
+            mini = javascript_minifier.minify(src) + ";\n"
+        except:
+            print('error in', fname)
+            raise
+        res += mini
+
+    with open(abs_path('brython_standard_parser.js'), 'w', newline="\n") as out:
+        out.write(res)
+
 
     sys.path.append("scripts")
 

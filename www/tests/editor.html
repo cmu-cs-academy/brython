@@ -37,6 +37,8 @@
 <script type="text/javascript" src="../src/py_pattern_matching.js"></script>
 <script type="text/javascript" src="../src/builtin_modules.js"></script>
 <script type="text/javascript" src="../src/async.js"></script>
+<script type="text/javascript" src="/src/ast_to_js.js"></script>
+<script type="text/javascript" src="/src/symtable.js"></script>
 
 <script type="text/javascript" src="../src/brython_stdlib.js"></script>
 
@@ -78,6 +80,8 @@ doc['share_code'].bind('click', editor.share_code)
 # Create a lambda around editor.run() so that the event object is not passed to it
 doc['run'].bind('click',lambda *args: editor.run())
 doc['show_console'].bind('click', editor.show_console)
+
+editor.reset()
 
 </script>
 

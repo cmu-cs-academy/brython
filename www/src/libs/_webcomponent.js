@@ -20,6 +20,8 @@ function define(tag_name, cls){
             "must be a class, not '" + $B.class_name(tag_name) + "'")
     }
 
+    cls.$webcomponent = true
+
     // Create the Javascript class used for the component. It must have
     // the same name as the Python class
     var src = String.raw`var WebComponent = class extends HTMLElement {
@@ -83,16 +85,20 @@ function define(tag_name, cls){
     // Override __getattribute__ to handle DOMNode attributes such as
     // attachShadow
     cls.__getattribute__ = function(self, attr){
-        try{
-            return $B.DOMNode.__getattribute__(self, attr)
-        }catch(err){
-            if(err.__class__ === _b_.AttributeError){
-                var ga = $B.$getattr(cls, "__getattribute__")
-                return ga(self, attr)
+        if($B.DOMNode[attr]){
+            if(typeof $B.DOMNode[attr] == 'function'){
+                return function(){
+                    var args = [self]
+                    for(var i = 0, len = arguments.length; i < len; i++){
+                        args.push(arguments[i])
+                    }
+                    return $B.DOMNode[attr].apply(null, args)
+                }
             }else{
-                throw err
+                return $B.DOMNode[attr]
             }
         }
+        return $B.DOMNode.__getattribute__(self, attr)
     }
 
     var mro = [cls].concat(cls.__mro__)
@@ -100,11 +106,18 @@ function define(tag_name, cls){
         var pcls = mro[i]
         for(var key in pcls){
             if(webcomp.prototype[key] === undefined &&
-                    typeof pcls[key] == "function"){
+                    typeof pcls[key] == "function" &&
+                    // don't set $factory (would make it a class)
+                    key !== '$factory'
+                    ){
                 webcomp.prototype[key] = (function(attr, klass){
                     return function(){
-                        return $B.pyobj2jsobj(klass[attr]).call(null,
-                            $B.DOMNode.$factory(this), ...arguments)
+                        try{
+                            return $B.pyobj2jsobj(klass[attr]).call(null,
+                                $B.DOMNode.$factory(this), ...arguments)
+                        }catch(err){
+                            $B.show_error(err)
+                        }
                     }
                 })(key, pcls)
             }

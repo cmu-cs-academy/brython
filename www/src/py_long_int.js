@@ -679,6 +679,17 @@ long_int.__xor__ = function(self, other){
     return intOrLong(long_int.$factory(res, 2))
 }
 
+long_int.bit_count = function(self){
+    var s = _b_.bin(_b_.abs(self)),
+        nb = 0
+    for(var x of s){
+        if(x == '1'){
+            nb++
+        }
+    }
+    return nb
+}
+
 long_int.bit_length = function(self){
     return binary(self).length
 }
@@ -972,14 +983,14 @@ function extended_euclidean_algorithm(a, b){
         tmp
 
     while($B.rich_comp('__ne__', r, 0)){
-        quotient = $B.rich_op('floordiv', old_r, r)
-        tmp = $B.rich_op('sub', old_r, $B.rich_op('mul', quotient, r))
+        quotient = $B.rich_op('__floordiv__', old_r, r)
+        tmp = $B.rich_op('__sub__', old_r, $B.rich_op('__mul__', quotient, r))
         old_r = r
         r = tmp
-        tmp = $B.rich_op('sub', old_s, $B.rich_op('mul', quotient, s))
+        tmp = $B.rich_op('__sub__', old_s, $B.rich_op('__mul__', quotient, s))
         old_s = s
         s = tmp
-        tmp = $B.rich_op('sub', old_t, $B.rich_op('mul', quotient, t))
+        tmp = $B.rich_op('__sub__', old_t, $B.rich_op('__mul__', quotient, t))
         old_t = t
         t = tmp
    }
@@ -1003,7 +1014,7 @@ function inverse_of(n, p){
             `${n} has no multiplicative inverse '
             'modulo ${p}`)
     }else{
-        return $B.rich_op('mod', x, p)
+        return $B.rich_op('__mod__', x, p)
     }
 }
 

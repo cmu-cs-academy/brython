@@ -77,10 +77,13 @@ mutable_methods.forEach(function(method){
     })(method)
 })
 
+bytearray.__hash__ = _b_.None
+
 var bytearray_iterator = $B.make_iterator_class('bytearray_iterator')
 bytearray.__iter__ = function(self){
     return bytearray_iterator.$factory(self.source)
 }
+
 bytearray.__mro__ = [_b_.object]
 
 bytearray.__repr__ = bytearray.__str__ = function(self){
@@ -233,7 +236,9 @@ bytes.__iter__ = function(self){
 }
 
 bytes.__eq__ = function(self, other){
-    if(invalid(other)){return false}
+    if(invalid(other)){
+        return false
+    }
     return $B.$getattr(self.source, '__eq__')(other.source)
 }
 
@@ -346,7 +351,9 @@ bytes.__mul__ = function(){
     return res
 }
 
-bytes.__ne__ = function(self,other){return ! bytes.__eq__(self, other)}
+bytes.__ne__ = function(self,other){
+    return ! bytes.__eq__(self, other)
+}
 
 bytes.__new__ = function(cls, source, encoding, errors){
     var $ = $B.args("__new__", 4,
@@ -1275,7 +1282,7 @@ function _int(hex){return parseInt(hex, 16)}
 function normalise(encoding){
     var enc = encoding.toLowerCase()
     if(enc.substr(0, 7) == "windows"){enc = "cp" + enc.substr(7)}
-    if(enc.startsWith("cp") || enc.startsWith("iso")){
+    if(enc.startsWith("cp-") || enc.startsWith("iso-")){
         enc = enc.replace("-", "") // first hyphen, like in cp-1250
     }
     enc = enc.replace(/-/g, "_") // second, like in iso-8859-1
@@ -1553,10 +1560,26 @@ var encode = $B.encode = function(){
             }
             break
         case "ascii":
-          for(var i = 0, len = s.length; i < len; i++){
-              var cp = s.charCodeAt(i) // code point
-              if(cp <= 127){t[pos++] = cp}
-              else if(errors != "ignore"){$UnicodeEncodeError(encoding, i)}
+          for(var i = 0, len = _b_.str.__len__(s); i < len; i++){
+              var cp = s.charCodeAt(i), // code point
+                  char = _b_.str.__getitem__(s, i)
+              if(cp <= 127){
+                  t[pos++] = cp
+              }else if(errors == "backslashreplace"){
+                  var hex = _b_.hex(_b_.ord(char))
+                  if(hex.length < 5){
+                      hex = '\\x' + '0'.repeat(4 - hex.length) + hex.substr(2)
+                  }else if(hex.length < 7){
+                      hex = '\\u' + '0'.repeat(6 - hex.length) + hex.substr(2)
+                  }else{
+                      hex = '\\U' + '0'.repeat(10 - hex.length) + hex.substr(2)
+                  }
+                  for(var char of hex){
+                      t[pos++] = char.charCodeAt(0)
+                  }
+              }else if(errors !== 'ignore'){
+                  $UnicodeEncodeError(encoding, i)
+              }
           }
           break
         case "raw_unicode_escape":

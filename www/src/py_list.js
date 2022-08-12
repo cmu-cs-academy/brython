@@ -134,7 +134,7 @@ list.__delitem__ = function(self, arg){
 }
 
 list.__eq__ = function(self, other){
-    if(isinstance(self, list)){var klass = list}else{var klass = tuple}
+    var klass = isinstance(self, list) ? list : tuple
     if(isinstance(other, klass)){
        if(other.length == self.length){
             var i = self.length
@@ -145,7 +145,9 @@ list.__eq__ = function(self, other){
             }
             return true
        }
+       return false
     }
+    // not the same class
     return _b_.NotImplemented
 }
 
@@ -533,7 +535,10 @@ list.clear = function(){
 list.copy = function(){
     var $ = $B.args("copy", 1, {self: null}, ["self"],
         arguments, {}, null, null)
-    return $.self.slice()
+    var res = $.self.slice()
+    res.__class__ = self.__class__
+    res.__brython__ = true
+    return res
 }
 
 list.count = function(){
@@ -860,6 +865,26 @@ list.$factory = function(){
     }
     res.__brython__ = true // false for Javascript arrays - used in sort()
     return res
+}
+
+list.$unpack = function(obj){
+    // Used for instances of ast.Starred, to generate a specific error message
+    // if obj is not iterable
+    try{
+        return _b_.list.$factory(obj)
+    }catch(err){
+        try{
+            var it = $B.$iter(obj),
+                next_func = $B.$call($B.$getattr(it, "__next__"))
+        }catch(err1){
+            if($B.is_exc(err1, [_b_.TypeError])){
+                throw _b_.TypeError.$factory(
+                    `Value after * must be an iterable, not ${$B.class_name(obj)}`)
+            }
+            throw err1
+        }
+        throw err
+    }
 }
 
 $B.set_func_names(list, "builtins")

@@ -20,36 +20,39 @@ a.sort_link{
 
 </style>
 
-<script type="text/javascript" src="../src/brython_builtins.js"></script>
-<script type="text/javascript" src="../src/version_info.js"></script>
-<script type="text/javascript" src="../src/python_tokenizer.js"></script>
-<script type="text/javascript" src="../src/py2js.js"></script>
-<script type="text/javascript" src="../src/loaders.js"></script>
-<script type="text/javascript" src="../src/py_object.js"></script>
-<script type="text/javascript" src="../src/py_type.js"></script>
-<script type="text/javascript" src="../src/py_utils.js"></script>
-<script type="text/javascript" src="../src/py_sort.js"></script>
-<script type="text/javascript" src="../src/py_builtin_functions.js"></script>
-<script type="text/javascript" src="../src/py_exceptions.js"></script>
-<script type="text/javascript" src="../src/py_range_slice.js"></script>
-<script type="text/javascript" src="../src/py_bytes.js"></script>
-<script type="text/javascript" src="../src/py_set.js"></script>
-<script type="text/javascript" src="../src/js_objects.js"></script>
-<script type="text/javascript" src="../src/stdlib_paths.js"></script>
-<script type="text/javascript" src="../src/py_import.js"></script>
-<script type="text/javascript" src="../src/unicode_data.js"></script>
-<script type="text/javascript" src="../src/py_string.js"></script>
-<script type="text/javascript" src="../src/py_int.js"></script>
-<script type="text/javascript" src="../src/py_long_int.js"></script>
-<script type="text/javascript" src="../src/py_float.js"></script>
-<script type="text/javascript" src="../src/py_complex.js"></script>
-<script type="text/javascript" src="../src/py_dict.js"></script>
-<script type="text/javascript" src="../src/py_list.js"></script>
-<script type="text/javascript" src="../src/py_generator.js"></script>
-<script type="text/javascript" src="../src/py_dom.js"></script>
-<script type="text/javascript" src="../src/py_pattern_matching.js"></script>
-<script type="text/javascript" src="../src/builtin_modules.js"></script>
-<script type="text/javascript" src="../src/async.js"></script>
+<script type="text/javascript" src="/src/brython_builtins.js"></script>
+<script type="text/javascript" src="/src/version_info.js"></script>
+<script type="text/javascript" src="/src/python_tokenizer.js"></script>
+<script type="text/javascript" src="/src/py_ast.js"></script>
+<script type="text/javascript" src="/src/py2js.js"></script>
+<script type="text/javascript" src="/src/loaders.js"></script>
+<script type="text/javascript" src="/src/py_object.js"></script>
+<script type="text/javascript" src="/src/py_type.js"></script>
+<script type="text/javascript" src="/src/py_utils.js"></script>
+<script type="text/javascript" src="/src/py_sort.js"></script>
+<script type="text/javascript" src="/src/py_builtin_functions.js"></script>
+<script type="text/javascript" src="/src/py_exceptions.js"></script>
+<script type="text/javascript" src="/src/py_range_slice.js"></script>
+<script type="text/javascript" src="/src/py_bytes.js"></script>
+<script type="text/javascript" src="/src/py_set.js"></script>
+<script type="text/javascript" src="/src/js_objects.js"></script>
+<script type="text/javascript" src="/src/stdlib_paths.js"></script>
+<script type="text/javascript" src="/src/py_import.js"></script>
+<script type="text/javascript" src="/src/unicode_data.js"></script>
+<script type="text/javascript" src="/src/py_string.js"></script>
+<script type="text/javascript" src="/src/py_int.js"></script>
+<script type="text/javascript" src="/src/py_long_int.js"></script>
+<script type="text/javascript" src="/src/py_float.js"></script>
+<script type="text/javascript" src="/src/py_complex.js"></script>
+<script type="text/javascript" src="/src/py_dict.js"></script>
+<script type="text/javascript" src="/src/py_list.js"></script>
+<script type="text/javascript" src="/src/py_generator.js"></script>
+<script type="text/javascript" src="/src/py_dom.js"></script>
+<script type="text/javascript" src="/src/py_pattern_matching.js"></script>
+<script type="text/javascript" src="/src/builtin_modules.js"></script>
+<script type="text/javascript" src="/src/async.js"></script>
+<script type="text/javascript" src="/src/ast_to_js.js"></script>
+<script type="text/javascript" src="/src/symtable.js"></script>
 
 <script type="text/python" src="show_source.py"></script>
 
@@ -84,17 +87,27 @@ a.sort_link{
 
 <child-component data="initial" id="child"></child-component>
 
+
+<p>
+<issue-demo>Blue text</issue-demo>
+
+<p>
+<issue-demo2></issue-demo2>
+<issue-demo2></issue-demo2>
+<p><pre id="issue-demo2">Demo data</pre>
+
 <p style="margin-top: 5em;">Change attribute value <button id="change_data">change</button>
 
 <ui-page></ui-page>
 <div id="trace"></div>
+
 </td>
 </tr>
 </table>
 
 
 <script type="text/python">
-from browser import bind, document, window, html, webcomponent
+from browser import bind, console, document, window, aio, html, webcomponent
 import javascript
 
 style_str = """
@@ -278,7 +291,51 @@ class Page(BaseComponent):
         return x * 2
 
 BaseComponent.register()
+
+class IssueDemo:
+
+    def connectedCallback(self):
+        self.load_list_items()
+
+    def callback_test(self, callback):
+        callback()
+
+    def load_list_items(self):
+        def callback():
+            self.style.color = 'blue'
+        self.callback_test(callback)
+
+webcomponent.define("issue-demo", IssueDemo)
+
+class IssueDemo2:
+
+    def connectedCallback(self):
+        aio.run(self.load_list_items())
+
+    def _set_obj_data(self, element, data: dict):
+        if not isinstance(data, dict) and hasattr(data, "to_dict"):
+            data = data.to_dict()
+        document["issue-demo2"].text += "\n" + "{oid0}".format_map(data)
+        for attr_name, value in data.items():
+            document["issue-demo2"].text += '\n' + f'{attr_name}: {value}'
+
+    async def load_list_items(self):
+        url = f"demo_data"
+        req = await aio.ajax("GET", url)
+        if req.status == 200:
+            data = req.data
+            obj = javascript.JSON.parse(data)
+            for list_item in obj:
+                self._set_obj_data(None, list_item)
+        elif req.status == 404:
+            console.error(f"404: {url} not found!")
+        elif req.status == 500:
+            console.error(f"500: {url} internal server error!")
+        console.debug("="*20)
+
+webcomponent.define("issue-demo2", IssueDemo2)
 </script>
+
 
 </body>
 </html>

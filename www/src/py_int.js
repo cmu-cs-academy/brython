@@ -367,7 +367,9 @@ int.__new__ = function(cls, value){
     }else if(! _b_.isinstance(cls, _b_.type)){
         throw _b_.TypeError.$factory("int.__new__(X): X is not a type object")
     }
-    if(cls === int){return int.$factory(value)}
+    if(cls === int){
+        return int.$factory(value)
+    }
     return {
         __class__: cls,
         __dict__: $B.empty_dict(),
@@ -559,8 +561,19 @@ int.__truediv__ = function(self, other){
     return _b_.NotImplemented
 }
 
+int.bit_count = function(self){
+    var s = _b_.bin(_b_.abs(self)),
+        nb = 0
+    for(var x of s){
+        if(x == '1'){
+            nb++
+        }
+    }
+    return nb
+}
+
 int.bit_length = function(self){
-    s = _b_.bin(self)
+    var s = _b_.bin(self)
     s = $B.$getattr(s, "lstrip")("-0b") // remove leading zeros and minus sign
     return s.length       // len('100101') --> 6
 }
@@ -751,7 +764,12 @@ int.$factory = function(value, base){
         value = value.valueOf()
     }
     if(typeof value == "string") {
-        var _value = value.trim()    // remove leading/trailing whitespace
+        var _value = value.trim(),    // remove leading/trailing whitespace
+            sign = ''
+        if(_value.startsWith('+') || value.startsWith('-')){
+            var sign = _value[0]
+            _value = _value.substr(1)
+        }
         if(_value.length == 2 && base == 0 &&
                 (_value == "0b" || _value == "0o" || _value == "0x")){
            throw _b_.ValueError.$factory("invalid value")
@@ -786,7 +804,7 @@ int.$factory = function(value, base){
         if(base <= 10 && ! isFinite(value)){
             invalid(_value, base)
         }
-        var res = parseInt(value, base)
+        var res = parseInt(sign + value, base)
         if(res < $B.min_int || res > $B.max_int){
             return $B.long_int.$factory(value, base)
         }

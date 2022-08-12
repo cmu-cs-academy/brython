@@ -24,7 +24,10 @@ dont_write_bytecode = True
 
 exec_prefix = __BRYTHON__.brython_path
 
-executable = __BRYTHON__.brython_path + '/brython.js'
+if hasattr(__BRYTHON__, 'full_url'):
+    executable = __BRYTHON__.full_url.address + 'brython.js'
+else:
+    executable = __BRYTHON__.brython_path + 'brython.js'
 
 argv = [__BRYTHON__.script_path]
 
@@ -32,6 +35,8 @@ argv = [__BRYTHON__.script_path]
 def displayhook(value):
     if value is not None:
         stdout.write(repr(value))
+
+__displayhook__ = displayhook
 
 def exit(i=None):
     raise SystemExit('')
@@ -51,6 +56,10 @@ class flag_class:
       self.bytes_warning = 0
       self.quiet = 0
       self.hash_randomization = 1
+      self.isolated = 0
+      self.dev_mode = False
+      self.utf8_mode = 0
+      self.warn_default_encoding = 0
 
 flags = flag_class()
 
@@ -84,6 +93,8 @@ maxsize = 2 ** 63 - 1
 maxunicode = 1114111
 
 platform = "brython"
+
+platlibdir = __BRYTHON__.brython_path + 'Lib'
 
 prefix = __BRYTHON__.brython_path
 

@@ -173,4 +173,12 @@ assert Square2(20).f() == 400
 
 # issue 1696
 window.jsFunction1696('asdf'.isupper)
+
+# issue 1918
+assert isinstance(window.test_jsobj, javascript.JSObject)
+
+# import Javascript modules
+javascript.import_js('js_test.js')
+assert js_test.x == 1
+
 print("all tests ok...")

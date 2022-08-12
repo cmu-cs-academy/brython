@@ -79,7 +79,7 @@ try:
     raise AssertionError('should have raised ValueError')
 except ValueError:
     pass
-    
+
 # issue 994
 d = {False: "Test", True: "Test2"}
 assert d[False] == "Test"
@@ -202,5 +202,21 @@ assert str(d) == "{'a': 1, 1: 4, 'b': 3}"
 
 d = {'a': 1, True: 2, 'b': 3, 1: 4}
 assert str(d) == "{'a': 1, True: 4, 'b': 3}"
+
+# issue 1859
+assert 'constructor' not in {}
+
+# syntax errors in comprehensions
+from tester import assert_raises
+
+assert_raises(SyntaxError,
+              exec,
+              "{**t for x in y}",
+              msg='dict unpacking cannot be used in dict comprehension')
+
+assert_raises(SyntaxError,
+              exec,
+              "{*t for x in y}",
+              msg='iterable unpacking cannot be used in comprehension')
 
 print("passed all tests..")

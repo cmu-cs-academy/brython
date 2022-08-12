@@ -61,6 +61,7 @@ function to_json(obj, level){
     for(var key in kw){
         kwarg.kw[key] = kw[key]
     }
+
     switch(typeof obj){
         case 'string':
             var res = JSON.stringify(obj)
@@ -93,6 +94,38 @@ function to_json(obj, level){
             }
             return obj.toString()
     }
+    if(obj instanceof String){
+        // string with surrogate pairs. cf. issue #1903.
+        var res = ''
+        if(obj.surrogates){
+            var s_ix = 0,
+                s_pos = obj.surrogates[s_ix]
+            for(var i = 0, len = obj.length; i < len; i++){
+                if(i == s_pos){
+                    var code = obj.codePointAt(i) - 0x10000
+                    res += '\\u' + (0xD800 | (code >> 10)).toString(16) +
+                           '\\u' + (0xDC00 | (code & 0x3FF)).toString(16)
+                    i++
+                    s_ix++
+                    s_pos = obj.surrogates[s_ix]
+                }else{
+                    var code = obj.charCodeAt(i)
+                    if(code < 127){
+                        var x = _b_.repr(obj[i])
+                        res += x.substr(1, x.length - 2)
+                    }else{
+                        var x = code.toString(16)
+                        while(x.length < 4){
+                            x = '0' + x
+                        }
+                        res += '\\u' + x
+                    }
+                }
+            }
+        }
+        return '"' + res.replace(new RegExp('"', "g"), '\\"') + '"'
+    }
+
     if(_b_.isinstance(obj, _b_.list)){
         var res = []
         var sep = item_separator,
@@ -191,7 +224,6 @@ function to_py(obj, kw){
             for(var i = 0, len = obj.keys.length; i < len; i++){
                 _b_.dict.$setitem(dict, obj.keys[i], to_py(obj.values[i], kw))
             }
-
             return kw.object_hook === _b_.None ? dict :
                 $B.$call(kw.object_hook)(dict)
         }
@@ -233,27 +265,47 @@ function to_py(obj, kw){
     }
 }
 
+var escapes = {'n': '\n',
+               't': '\t',
+               'b': '\b',
+               'r': '\r',
+               'f': '\f',
+               '\\': '\\',
+               '"': '\"',
+               "'": "\\'",
+               '/': '/'
+               }
 
 function string_at(s, i){
     var error = $B.$call($B.imported["json"].JSONDecodeError)
 
     var j = i + 1,
         escaped = false,
-        len = s.length
+        len = s.length,
+        value = ''
     while(j < len){
         if(s[j] == '"' && ! escaped){
-            return [{type: 'str', value: s.substring(i + 1, j)}, j + 1]
-        }else if(s[j] == '\\'){
+            return [{type: 'str', value}, j + 1]
+        }else if(! escaped && s[j] == '\\'){
             escaped = ! escaped
             j++
         }else if(escaped){
-            if('"/bfn'.indexOf(s[j]) > -1){
+            var esc = escapes[s[j]]
+            if(esc){
+                value += esc
                 j++
+                escaped = false
+            }else if(s[j] == 'u' &&
+                    s.substr(j + 1, 4).match(/[0-9a-fA-f]{4}/)){
+                // unicode escape
+                value += String.fromCharCode(parseInt(s.substr(j + 1, 4), 16))
+                j += 5
                 escaped = ! escaped
             }else{
                 throw error('invalid escape "' + s[j] + '"', s, j)
             }
         }else{
+            value += s[j]
             j++
         }
     }
@@ -432,7 +484,7 @@ function List(parent){
 List.prototype.transition = function(token){
     if(this.expect == 'item'){
         this.expect = ','
-        if([true, false].indexOf(token) > -1){
+        if([true, false, _b_.None].indexOf(token) > -1){
             this.items.push(token)
             return this
         }else if(token.type == 'num' || token.type == 'str'){
@@ -444,6 +496,9 @@ List.prototype.transition = function(token){
             return new List(this)
         }else if(token == ']'){
             if(this.items.length == 0){
+                if(this.parent instanceof Dict){
+                    this.parent.values.push(this)
+                }
                 return this.parent
             }
             throw Error('unexpected ]')
@@ -478,6 +533,9 @@ function parse(s){
       try{
           node = node.transition(token)
       }catch(err){
+          console.log('error, item', item)
+          console.log(err, err.message)
+          console.log('node', node)
           if(err.__class__){
               throw err
           }else{

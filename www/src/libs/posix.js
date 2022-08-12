@@ -40,7 +40,7 @@ var stat_result = $B.make_class("stat_result",
                 st_uid: -1,
                 st_gid: -1,
                 st_ino: -1,
-                st_mode: 0,
+                st_mode: filename.endsWith('/') ? 16895 : 33206,
                 st_size: 1
             };
             ["mtime", "ctime", "atime_ns", "mtime_ns", "ctime_ns"].
@@ -88,7 +88,7 @@ var $module = {
     },
     getcwd: function(){return $B.brython_path},
     getpid: function(){return 0},
-    lstat: function(){return stat_result.$factory()},
+    lstat: function(filename){return stat_result.$factory(filename)},
     open: function(path, flags){return _b_.open(path, flags)},
     stat: function(filename){return stat_result.$factory(filename)},
     stat_result: function(filename){return stat_result.$factory(filename)},

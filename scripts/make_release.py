@@ -22,6 +22,9 @@ from make_dist import run, pdir, vname, vname1, vname2, abs_path
 # make minified version with terser
 import make_minified
 
+# make builtins_docstrings.js (docstring for all builtins)
+import make_builtins_docstrings
+
 run()
 
 release_dir = os.path.join(pdir, "releases")
@@ -53,6 +56,7 @@ with open(README_page, encoding="utf-8") as f:
         content)
     content = re.sub("npm/brython@\d\.x\.y", "npm/brython@" + vname1 + '.x.y',
         content)
+    content = re.sub("3\.\d+\.x", f'3.{version.version[1]}.x', content)
 
 with open(README_page, "w", encoding="utf-8") as out:
     out.write(content)

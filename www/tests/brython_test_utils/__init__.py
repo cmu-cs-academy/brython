@@ -56,6 +56,7 @@ def discover_brython_test_modules():
           ("test_datetime.py", "datetime"),
           ("test_decimals.py", "decimals"),
           ("test_functools.py", "functools"),
+          ("test_compression.py", "gzip / zlib"),
           ("test_hashlib.py", "hashlib"),
           ("test_io.py", "io"),
           ("test_itertools.py", "itertools"),
@@ -93,6 +94,50 @@ def populate_testmod_input(elem, selected=None):
                 o = html.OPTION(caption, value=filenm)
             g <= o
 
+def trace_exc(run_frame):
+    exc_type, exc_value, traceback = sys.exc_info()
+    
+    this_frame = sys._getframe()
+
+    def show_line(filename, lineno):
+        if filename.startswith('<'):
+            return
+        src = open(filename, encoding='utf-8').read()
+        lines = src.split('\n')
+        line = lines[lineno - 1]
+        print('    ' + line.strip())
+        return line
+
+    print('Traceback (most recent call last):')
+    show = False
+    started = False
+
+    while traceback:
+        frame = traceback.tb_frame
+        if frame is run_frame:
+            started = True
+        elif started:
+            lineno = traceback.tb_lineno
+            filename = frame.f_code.co_filename
+            if filename == '<string>':
+                show = True
+            if show:
+                print(f'  File {filename}, line {lineno}')
+                show_line(filename, lineno)
+        traceback = traceback.tb_next
+
+    if isinstance(exc_value, [SyntaxError, IndentationError]):
+        filename = exc_value.args[1][0]
+        lineno = exc_value.args[1][1]
+        if filename != '<string>' or not show:
+            print(f'  File {filename}, line {lineno}')
+        line = show_line(filename, lineno)
+        if line:
+            indent = len(line) - len(line.lstrip())
+            col_offset = exc_value.args[1][2]
+            print('    ' +  (col_offset - indent - 1) * ' ' + '^')
+    print(f'{exc_type.__name__}: {exc_value}')
+
 def run(src, file_path=None):
     t0 = time.perf_counter()
     msg = ''
@@ -103,8 +148,10 @@ def run(src, file_path=None):
         exec(src, ns)
         state = 1
     except Exception as exc:
-        msg = traceback.format_exc()
-        print(msg, file=sys.stderr)
+        #msg = traceback.format_exc()
+        #print(msg, file=sys.stderr)
+        console.log('exc in run', getattr(exc, 'args', None))
+        trace_exc(sys._getframe())
         state = 0
     t1 = time.perf_counter()
     return state, t0, t1, msg

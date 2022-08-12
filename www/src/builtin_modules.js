@@ -92,14 +92,23 @@
         delete browser.win
         // browser.send is an alias for postMessage
         browser.self.send = self.postMessage
-    } else {
+        browser.document = _b_.property.$factory(
+            function(){
+                throw _b_.ValueError.$factory(
+                    "'document' is not available in Web Workers")
+            },
+            function(self, value){
+                browser.document = value
+            }
+        )
+    }else{
         browser.is_webworker = false
         update(browser, {
             "alert":function(message){
                 window.alert($B.builtins.str.$factory(message || ""))
             },
             confirm: $B.JSObj.$factory(window.confirm),
-            "document":$B.DOMNode.$factory(document),
+            "document": $B.DOMNode.$factory(document),
             doc: $B.DOMNode.$factory(document), // want to use document instead of doc
             DOMEvent:$B.DOMEvent,
             DOMNode: $B.DOMNode,
@@ -126,7 +135,6 @@
                         }
                     }
                 })
-                console.log(js_scripts)
                 // Check if imported scripts have been modified
                 for(var mod in $B.imported){
                     if($B.imported[mod].$last_modified){
@@ -346,20 +354,21 @@
     modules['browser'] = browser
 
     // Class for Javascript "undefined"
-    $B.UndefinedClass = $B.make_class("Undefined",
+    $B.UndefinedType = $B.make_class("UndefinedType",
         function(){return $B.Undefined}
     )
-    $B.UndefinedClass.__mro__ = [_b_.object]
-    $B.UndefinedClass.__bool__ = function(self){
+    $B.UndefinedType.__mro__ = [_b_.object]
+    $B.UndefinedType.__bool__ = function(self){
         return false
     }
-    $B.UndefinedClass.__repr__ = $B.UndefinedClass.__str__ = function(self){
+    $B.UndefinedType.__repr__ = function(self){
         return "<Javascript undefined>"
     }
+    $B.UndefinedType.__str__ = $B.UndefinedType.__repr__;
 
-    $B.Undefined = {__class__: $B.UndefinedClass}
+    $B.Undefined = {__class__: $B.UndefinedType}
 
-    $B.set_func_names($B.UndefinedClass, "javascript")
+    $B.set_func_names($B.UndefinedType, "javascript")
 
     // Class used by javascript.super()
     var super_class = $B.make_class("JavascriptSuper",
@@ -437,6 +446,54 @@
                 }
             }
         },
+        import_js: function(url, name){
+            // load JS script at specified url
+            // If it exposes a variable $module, use it as the namespace of imported
+            // module named "name"
+            var $ = $B.args('import_js', 2, {url: null, alias: null},
+                    ['url', 'alias'], arguments, {alias: _b_.None}, null, null),
+                url = $.url
+                alias = $.alias
+            var xhr = new XMLHttpRequest(),
+                result
+            xhr.open('GET', url, false)
+            xhr.onreadystatechange = function(){
+                if(this.readyState == 4){
+                    if(this.status == 200){
+                        eval(this.responseText)
+                        if(typeof $module !== 'undefined'){
+                            result = $B.module.$factory(name)
+                            for(var key in $module){
+                                result[key] = $B.jsobj2pyobj($module[key])
+                            }
+                            result.__file__ = url
+                        }else{
+                            result = _b_.ImportError.$factory('Javascript ' +
+                                `module at ${url} doesn't define $module`)
+                        }
+                    }else{
+                        result = _b_.ModuleNotFoundError.$factory(name)
+                    }
+                }
+            }
+            xhr.send()
+            if(_b_.isinstance(result, _b_.BaseException)){
+                $B.handle_error(result)
+            }else{
+                if(alias === _b_.None){
+                    // set module name from url
+                    alias = url.split('.')
+                    if(alias.length > 1){
+                        alias.pop() // remove extension
+                    }
+                    alias = alias.join('.')
+                }
+                $B.imported[alias] = result
+                var frame = $B.last($B.frames_stack)
+                frame[1][alias] = result
+            }
+        },
+        JSObject: $B.JSObj,
         JSON: {
             __class__: $B.make_class("JSON"),
             parse: function(){
@@ -460,12 +517,13 @@
         },
         "Math": self.Math && $B.JSObj.$factory(self.Math),
         NULL: null,
+        NullType: $B.make_class('NullType'),
         "Number": self.Number && $B.JSObj.$factory(self.Number),
         py2js: function(src, module_name){
             if(module_name === undefined){
                 module_name = '__main__' + $B.UUID()
             }
-            var js = $B.py2js(src, module_name, module_name,
+            var js = $B.py2js({src, filename: '<string>'}, module_name, module_name,
                 $B.builtins_scope).to_js()
             return $B.format_indent(js, 0)
         },
@@ -474,8 +532,11 @@
         "String": self.String && $B.JSObj.$factory(self.String),
         "super": super_class,
         UNDEFINED: $B.Undefined,
-        UndefinedType: $B.UndefinedClass
+        UndefinedType: $B.UndefinedType
     }
+
+    modules.javascript.NullType.$infos.__module__ = 'javascript'
+    modules.javascript.UndefinedType.$infos.__module__ = 'javascript'
 
     var arraybuffers = ["Int8Array", "Uint8Array", "Uint8ClampedArray",
         "Int16Array", "Uint16Array", "Int32Array", "Uint32Array",
@@ -498,8 +559,7 @@
             var $ = $B.args("_getframe", 1, {depth: null}, ['depth'],
                     arguments, {depth: 0}, null, null),
                 depth = $.depth
-            return $B._frame.$factory($B.frames_stack,
-                $B.frames_stack.length - depth - 1)
+            return $B.frames_stack[$B.frames_stack.length - depth - 1]
         },
         breakpointhook: function(){
             var hookname = $B.$options.breakpoint,
@@ -689,17 +749,18 @@
                 syntax_error.line = message.line
                 throw syntax_error
             }
-            var frame = $B.imported._sys.Getframe()
+            var frame = $B.imported._sys.Getframe(),
+                category = message.__class__ || $B.get_class(message),
                 warning_message = {
                     __class__: WarningMessage,
                     message: message,
-                    category: message.__class__,
+                    category,
                     filename: message.filename || frame.f_code.co_filename,
                     lineno: message.lineno || frame.f_lineno,
                     file: _b_.None,
                     line: _b_.None,
                     source: _b_.None,
-                    _category_name: message.__class__.__name__
+                    _category_name: category.__name__
                 }
             if($B.imported.warnings){
                 $B.imported.warnings._showwarnmsg_impl(warning_message)
@@ -840,13 +901,6 @@
 
     $B.AST = {
         __class__: _b_.type,
-        __getattr__: function(self, attr){
-            var res = self.js_node[attr]
-            if(res === undefined){
-                throw $B.attr_error(attr, self)
-            }
-            return $B.AST.$convert(res)
-        },
         __mro__: [_b_.object],
         $infos:{
             __qualname__: 'AST',
@@ -859,19 +913,24 @@
             }
             var constr = js_node.constructor
             if(constr && constr.$name){
+                $B.create_python_ast_classes()
                 return $B.python_ast_classes[constr.$name].$factory(js_node)
             }else if(Array.isArray(js_node)){
                 return js_node.map($B.AST.$convert)
             }else if(js_node.type){
-                // numeric constant
+                // literal constant
                 switch(js_node.type){
                     case 'int':
                         var res = parseInt(js_node.value[1], js_node.value[0])
                         if(res < $B.min_int || res > $B.max_int){
-                            return $B.long_int.$factory(js_node.value[1],
+                            var res = $B.long_int.$factory(js_node.value[1],
                                 js_node.value[0])
+                            if(js_node.sign == '-'){
+                                res.pos = false
+                            }
+                            return res
                         }
-                        return res
+                        return js_node.sign == '-' ? -res : res
                     case 'float':
                         return new Number(js_node.value)
                     case 'imaginary':
@@ -879,6 +938,16 @@
                             $B.AST.$convert(js_node.value))
                     case 'ellipsis':
                         return _b_.Ellipsis
+                    case 'str':
+                        if(js_node.is_bytes){
+                            return _b_.bytes.$factory(js_node.value, 'latin-1')
+                        }
+                        return js_node.value
+                    case 'id':
+                        if(['False', 'None', 'True'].indexOf(js_node.value) > -1){
+                            return _b_[js_node.value]
+                        }
+                        break
                 }
             }else if(['string', 'number'].indexOf(typeof js_node) > -1){
                 return js_node

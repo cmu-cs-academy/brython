@@ -279,8 +279,8 @@ var type = $B.make_class("type",
     function(obj, bases, cl_dict){
         var len = arguments.length
         if(len == 1){
-            if(obj === undefined){
-                return $B.UndefinedClass
+            if(obj === undefined || obj === null){
+                return $B.get_class(obj)
             }
             return obj.__class__ || $B.get_class(obj)
         }else if(len == 3){
@@ -300,6 +300,7 @@ type.__call__ = function(){
         extra_args.push(arguments[i])
     }
     var new_func = _b_.type.__getattribute__(klass, "__new__")
+
     // create an instance with __new__
     var instance = new_func.apply(null, arguments),
         instance_class = instance.__class__ || $B.get_class(instance)
@@ -325,35 +326,8 @@ type.__format__ = function(klass, fmt_spec){
 
 type.__getattribute__ = function(klass, attr){
     switch(attr) {
-        case "__annotations__":
-            var mro = [klass].concat(klass.__mro__),
-                res
-            for(var i = 0, len = mro.length; i < len; i++){
-                if(mro[i].__dict__){
-                    var ann = mro[i].__dict__.$string_dict.__annotations__[0]
-                    if(ann){
-                        if(res === undefined){
-                            res = ann
-                        }else if(res.__class__ === _b_.dict &&
-                                ann.__class__ === _b_.dict){
-                            // Inherit annotations that are implemented as
-                            // dictionaries
-                            for(var key in ann.$string_dict){
-                                res.$string_dict[key] = ann.$string_dict[key]
-                            }
-                        }
-                    }
-                }
-            }
-            if(res === undefined){res = $B.empty_dict()}
-            return res
         case "__bases__":
-            var res = klass.__bases__ // || _b_.tuple.$factory()
-            res.__class__ = _b_.tuple
-            if(res.length == 0){
-                // res.push(_b_.object)
-            }
-            return res
+            return $B.fast_tuple(klass.__bases__ || [_b_.object])
         case "__class__":
             return klass.__class__
         case "__doc__":
@@ -375,7 +349,7 @@ type.__getattribute__ = function(klass, attr){
                 function(key){delete klass[key]})
     }
     var res = klass[attr]
-    var $test = false // attr == "__init__" // && klass.$infos.__name__ == "generator"
+    var $test = false // attr == "f" // && klass === _b_.list
     if($test){
         console.log("attr", attr, "of", klass, res, res + "")
     }
@@ -440,6 +414,10 @@ type.__getattribute__ = function(klass, attr){
                         __qualname__: klass.$infos.__name__ + "." + attr,
                         __module__: res.$infos ? res.$infos.__module__ : ""
                     }
+                    if($test){
+                        console.log('return method from meta', meta_method,
+                            meta_method + '')
+                    }
                     return meta_method
                 }
             }
@@ -470,6 +448,13 @@ type.__getattribute__ = function(klass, attr){
         }
         if(res.__get__){
             if(res.__class__ === method){
+                if($test){
+                    console.log('__get__ of method', res.$infos.__self__, klass)
+                }
+                if(res.$infos.__self__){
+                    // method is already bound
+                    return res
+                }
                 var result = res.__get__(res.__func__, klass)
                 result.$infos = {
                     __func__: res,
@@ -653,7 +638,7 @@ type.__or__ = function(){
                 arguments, {}, null, null),
         cls = $.cls,
         other = $.other
-    if(! _b_.isinstance(other, type)){
+    if(other !== _b_.None && ! _b_.isinstance(other, type)){
         return _b_.NotImplemented
     }
     return $B.UnionType.$factory([cls, other])
@@ -714,7 +699,6 @@ type.mro = function(cls){
     for(var i = 0; i < bases.length; i++){
         // We can't simply push bases[i].__mro__
         // because it would be modified in the algorithm
-        if(bases[i] === _b_.str){bases[i] = $B.StringSubclass}
         var bmro = [],
             pos = 0
         if(bases[i] === undefined ||
@@ -867,10 +851,17 @@ var $instance_creator = $B.$instance_creator = function(klass){
     }else{
         call_func = _b_.type.__getattribute__(metaclass, "__call__")
         var factory = function(){
+            if(call_func.$is_class){
+                return $B.$call(call_func)(...arguments)
+            }
             return call_func.bind(null, klass).apply(null, arguments)
         }
     }
     factory.__class__ = $B.Function
+    if(klass.$infos === undefined){
+        console.log('no klaas $infos', klass)
+        console.log($B.frames_stack.slice())
+    }
     factory.$infos = {
         __name__: klass.$infos.__name__,
         __module__: klass.$infos.__module__
@@ -1007,6 +998,9 @@ $B.GenericAlias.__call__ = function(self, ...args){
 }
 
 $B.GenericAlias.__eq__ = function(self, other){
+    if(! _b_.isinstance(other, $B.GenericAlias)){
+        return false
+    }
     return $B.rich_comp("__eq__", self.origin_class, other.origin_class) &&
         $B.rich_comp("__eq__", self.items, other.items)
 }
@@ -1015,6 +1009,12 @@ $B.GenericAlias.__getitem__ = function(self, item){
     throw _b_.TypeError.$factory("descriptor '__getitem__' for '" +
         self.origin_class.$infos.__name__ +"' objects doesn't apply to a '" +
         $B.class_name(item) +"' object")
+}
+
+$B.GenericAlias.__or__ = function(self, other){
+    var $ = $B.args('__or__', 2, {self: null, other: null}, ['self', 'other'],
+                    arguments, {}, null, null)
+    return $B.UnionType.$factory([self, other])
 }
 
 $B.GenericAlias.__origin__ = {
@@ -1059,6 +1059,18 @@ $B.UnionType = $B.make_class("UnionType",
         }
     }
 )
+
+$B.UnionType.__args__ = {
+    __get__: function(self){
+        return $B.fast_tuple(self.items)
+    }
+}
+
+$B.UnionType.__parameters__ = {
+    __get__: function(){
+        return $B.fast_tuple([])
+    }
+}
 
 $B.UnionType.__repr__ = function(self){
     var t = []

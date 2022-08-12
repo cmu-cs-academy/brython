@@ -321,8 +321,9 @@ $B.set_func_names(classmethod, "builtins")
 
 var code = $B.code = $B.make_class("code")
 
-code.__repr__ = code.__str__ = function(self){
-    return '<code object ' + self.co_name + ', file ' + self.co_filename + '>'
+code.__repr__ = code.__str__ = function(_self){
+    return `<code object ${_self.co_name}, file '${_self.co_filename}', ` +
+        `line ${_self.co_firstlineno || 1}>`
 }
 
 code.__getattribute__ = function(self, attr){
@@ -345,9 +346,53 @@ function compile() {
     var module_name = '$exec_' + $B.UUID()
     $.__class__ = code
     $.co_flags = $.flags
-    $.name = "<module>"
+    $.co_name = "<module>"
+    var filename = $.co_filename = $.filename
     var interactive = $.mode == "single" && ($.flags & 0x200)
+    $B.file_cache[filename] = $.source
+    $B.url2name[filename] = module_name
 
+    if(_b_.isinstance($.source, _b_.bytes)){
+        var encoding = 'utf-8',
+            lfpos = $.source.source.indexOf(10),
+            first_line,
+            second_line
+        if(lfpos == -1){
+            first_line = $.source
+        }else{
+            first_line = _b_.bytes.$factory($.source.source.slice(0, lfpos))
+        }
+        // decode with a safe decoder
+        first_line = _b_.bytes.decode(first_line, 'latin-1')
+        // search encoding (PEP263)
+        var encoding_re = /^[ \t\f]*#.*?coding[:=][ \t]*([-_.a-zA-Z0-9]+)/
+        var mo = first_line.match(encoding_re)
+        if(mo){
+            encoding = mo[1]
+        }else if(lfpos > -1){
+            // try second line
+            var rest = $.source.source.slice(lfpos + 1)
+            lfpos = rest.indexOf(10)
+            if(lfpos > -1){
+                second_line = _b_.bytes.$factory(rest.slice(0, lfpos))
+            }else{
+                second_line = _b_.bytes.$factory(rest)
+            }
+            second_line = _b_.bytes.decode(second_line, 'latin-1')
+            var mo = second_line.match(encoding_re)
+            if(mo){
+                encoding = mo[1]
+            }
+        }
+        $.source = _b_.bytes.decode($.source, encoding)
+    }
+
+    if(!_b_.isinstance(filename, [_b_.bytes, _b_.str])){
+        // module _warning is in builtin_modules.js
+        $B.imported._warnings.warn(_b_.DeprecationWarning.$factory(
+            `path should be string, bytes, or os.PathLike, ` +
+                `not ${$B.class_name(filename)}`))
+    }
     if(interactive && ! $.source.endsWith("\n")){
         // This is used in codeop.py to raise SyntaxError until a block in the
         // interactive interpreter ends with "\n"
@@ -358,18 +403,53 @@ function compile() {
         }
     }
 
-    // Run py2js to detect potential syntax errors
-    var root = $B.parser.$create_root_node(
-            {src: $.source, filename: $.filename},
-            module_name, module_name)
-    root.parent_block = $B.builtins_scope
-    $B.parser.dispatch_tokens(root, $.source)
-    if($.flags == $B.PyCF_ONLY_AST){
-        var ast = root.ast(),
-            klass = ast.constructor.$name
-        $B.create_python_ast_classes()
-        return $B.python_ast_classes[klass].$factory(ast)
+    if($B.parser_to_ast){
+        var _ast = new $B.Parser($.source, filename).parse('file'),
+            future = $B.future_features(_ast, filename),
+            symtable = $B._PySymtable_Build(_ast, filename),
+            js_obj = $B.js_from_root(_ast, symtable, $.filename)
+        if($.flags == $B.PyCF_ONLY_AST){
+            delete $B.url2name[filename]
+            return _ast
+        }
+    }else{
+        var root = $B.parser.$create_root_node(
+                {src: $.source, filename},
+                module_name, module_name)
+        root.mode = $.mode
+        root.parent_block = $B.builtins_scope
+        $B.parser.dispatch_tokens(root, $.source)
+        var _ast = root.ast()
+        if($.mode == 'single' && _ast.body.length == 1 &&
+                _ast.body[0] instanceof $B.ast.Expr){
+            // If mode is 'single' and the source is a single expression,
+            // set _ast to an Expression and set attribute .single_expression
+            // to compile() result. This is used in exec() to print the
+            // expression if it is not None
+            root = $B.parser.$create_root_node(
+                {src: $.source, filename},
+                module_name, module_name)
+            root.mode = 'eval'
+            $.single_expression = true
+            root.parent_block = $B.builtins_scope
+            $B.parser.dispatch_tokens(root, $.source)
+            _ast = root.ast()
+        }
+        var future = $B.future_features(_ast, filename),
+            symtable = $B._PySymtable_Build(_ast, filename, future)
+        delete $B.url2name[filename]
+        var js_obj = $B.js_from_root(_ast, symtable, filename)
+
+        if($.flags == $B.PyCF_ONLY_AST){
+            $B.create_python_ast_classes() // in py_ast
+            var klass = _ast.constructor.$name
+            return $B.python_ast_classes[klass].$factory(_ast)
+        }
     }
+    delete $B.url2name[filename]
+    // Set attribute ._ast to avoid compiling again if result is passed to
+    // exec()
+    $._ast = _ast
     return $
 }
 
@@ -454,6 +534,7 @@ function dir(obj){
     }catch (err){
         // ignore, default
         //console.log(err)
+        console.log('error in dir', err.message)
     }
 
     var res = [], pos = 0
@@ -509,6 +590,28 @@ enumerate.__next__ = function(self){
 
 $B.set_func_names(enumerate, "builtins")
 
+function make_proxy(dict, lineno){
+    // return a proxy to a Python dict
+    const handler = {
+      get: function(target, prop) {
+          console.log('get proxy attr', prop, target)
+          if(prop == '__class__'){
+              return _b_.dict
+          }else if(prop == '$lineno'){
+              return lineno
+          }
+          if(target.$string_dict.hasOwnProperty(prop)){
+              return target.$string_dict[prop][0]
+          }
+          return undefined
+      },
+      set: function(target, prop, value){
+        _b_.dict.$setitem(target, prop, value)
+      }
+    }
+    return new Proxy(dict, handler)
+}
+
 //eval() (built in function)
 function $$eval(src, _globals, _locals){
     if ($B.lockdown && src.indexOf('__import__') >= 0) {
@@ -531,8 +634,7 @@ function $$eval(src, _globals, _locals){
     }
 
     if(src.__class__ === code){
-        mode = src.mode
-        src = src.source
+        // result of compile()
     }else if((! src.valueOf) || typeof src.valueOf() !== 'string'){
         throw _b_.TypeError.$factory(`${mode}() arg 1 must be a string,` +
             " bytes or code object")
@@ -542,386 +644,210 @@ function $$eval(src, _globals, _locals){
         src = src.valueOf()
     }
 
-    var current_frame = $B.frames_stack[$B.frames_stack.length - 1]
-    if(current_frame !== undefined){
-        var current_locals_id = current_frame[0].replace(/\./g, '_'),
-            current_globals_id = current_frame[2].replace(/\./g, '_')
+    var frame = $B.last($B.frames_stack)
+    var lineno = frame[1].$lineno
+
+    $B.exec_scope = $B.exec_scope || {}
+
+    if(typeof src == 'string' && src.endsWith('\\\n')){
+        var exc = _b_.SyntaxError.$factory('unexpected EOF while parsing')
+        var lines = src.split('\n'),
+            line = lines[lines.length - 2]
+        exc.args = ['unexpected EOF while parsing',
+            ['<string>', lines.length - 1, 1, line]]
+        exc.filename = '<string>'
+        exc.text = line
+        throw exc
     }
 
-    var stack_len = $B.frames_stack.length
+    var local_name = 'locals_exec',
+        global_name = 'globals_exec',
+        exec_locals = {},
+        exec_globals = {},
+        __name__ = '<module>'
 
-    // code will be run in a specific block
-    var globals_id = '$exec_' + $B.UUID(),
-        globals_name = globals_id,
-        locals_id = '$exec_' + $B.UUID(),
-        parent_scope
+    // proxy around globals.$jsobj, to avoid modifying __file__ and
+    // $lineno
+    var handler = {
+        get: function(obj, prop){
+            if(prop == '$lineno'){
+                return obj.$exec_lineno
+            }else if(prop == '__file__'){
+                return '<string>'
+            }
+            return obj[prop]
+        },
+        set: function(obj, prop, value){
+            if(prop == '$lineno'){
+                obj.$exec_lineno = value
+            }else if(['__file__'].indexOf(prop) == -1){
+                obj[prop] = value
+            }
+        }
+    }
 
     if(_globals === _b_.None){
-        if(current_locals_id == current_globals_id){
-            locals_id = globals_id
-        }
-
-        var local_scope = {
-            module: globals_id,
-            id: locals_id,
-            binding: {},
-            bindings: {}
-        }
-        for(var attr in current_frame[1]){
-            local_scope.binding[attr] = true
-            local_scope.bindings[attr] = true
-        }
-        var global_scope = {
-            module: globals_id,
-            id: globals_id,
-            binding: {},
-            bindings: {}
-        }
-        for(var attr in current_frame[3]){
-            global_scope.binding[attr] = true
-            global_scope.bindings[attr] = true
-        }
-        local_scope.parent_block = global_scope
-        global_scope.parent_block = $B.builtins_scope
-
-        parent_scope = local_scope
-        // restore parent scope object
-        eval("$locals_" + parent_scope.id + " = current_frame[1]")
-
+        // create a copy of locals
+        exec_locals = new Proxy(frame[1], handler)
+        exec_globals = new Proxy(frame[3], handler)
     }else{
-        // If a _globals dictionary is provided, set or reuse its attribute
-        // globals_id
-        if(_globals.__class__ != _b_.dict){
-            throw _b_.TypeError.$factory("exec() globals must be a dict, not "+
-                $B.class_name(_globals))
+        if(_globals.__class__ !== _b_.dict){
+            throw _b_.TypeError.$factory(`${mode}() globals must be ` +
+                "a dict, not " + $B.class_name(_globals))
         }
-        if(_globals.globals_id){
-            globals_id = globals_name = _globals.globals_id
-        }
-        _globals.globals_id = globals_id
-
-        if(_locals === _globals || _locals === _b_.None){
-            locals_id = globals_id
-            parent_scope = $B.builtins_scope
+        // _globals is used for both globals and locals
+        exec_globals = {}
+        if(_globals.$jsobj){ // eg globals()
+            exec_globals = new Proxy(_globals.$jsobj, handler)
         }else{
-            // The parent block of locals must be set to globals
-            var grandparent_scope = {
-                id: globals_id,
-                parent_block: $B.builtins_scope,
-                binding: {}
+            // The globals object must be the same across calls to exec()
+            // with the same dictionary (cf. issue 690)
+            if(_globals.$jsobj){
+                exec_globals = _globals.$jsobj
+            }else{
+                exec_globals = _globals.$jsobj = {}
             }
-            parent_scope = {
-                id: locals_id,
-                parent_block: grandparent_scope,
-                binding: {}
+            for(var key in _globals.$string_dict){
+                _globals.$jsobj[key] = _globals.$string_dict[key][0]
+                if(key == '__name__'){
+                    __name__ = _globals.$jsobj[key]
+                }
             }
-            for(var attr in _globals.$string_dict){
-                grandparent_scope.binding[attr] = true
+        }
+        if(exec_globals.__builtins__ === undefined){
+            exec_globals.__builtins__ = _b_.__builtins__
+        }
+        if(_locals === _b_.None){
+            exec_locals = exec_globals
+        }else{
+            if(global_name == local_name){
+                // running exec at module level
+                global_name += '_globals'
             }
-            for(var attr in _locals.$string_dict){
-                parent_scope.binding[attr] = true
+            if(_locals.$jsobj){
+                for(var key in _locals.$jsobj){
+                    exec_globals[key] = _locals.$jsobj[key]
+                }
+            }else{
+                if(_locals.$jsobj){
+                    exec_locals = _locals.$jsobj
+                }else{
+                    exec_locals = _locals.$jsobj = {$dict: _locals}
+                }
+                for(var key in _locals.$string_dict){
+                    _locals.$jsobj[key] = _locals.$string_dict[key][0]
+                }
+                exec_locals.$getitem = $B.$call($B.$getattr(_locals.__class__, '__getitem__'))
+                var missing = $B.$getattr(_locals.__class__, '__missing__', null)
+                if(missing){
+                    exec_locals.$missing = $B.$call(missing)
+                }
             }
         }
     }
 
-    // Initialise the object for block namespaces
-    eval('var $locals_' + globals_id + ' = {}\nvar $locals_' +
-        locals_id + ' = {}')
+    var save_frames_stack = $B.frames_stack.slice()
 
-    // Initialise block globals
-    if(_globals === _b_.None){
-        var gobj = current_frame[3],
-            ex = 'var $locals_' + globals_id + ' = gobj;',
-            obj = {}
-        eval(ex) // needed for generators
-        for(var attr in gobj){
-            if(attr.startsWith("$")){continue}
-            obj[attr] = gobj[attr]
-        }
-        eval("$locals_" + globals_id +" = obj")
-    }else{
-        var globals_is_dict = false
-        if(_globals.$jsobj){
-            var items = _globals.$jsobj
-        }else{
-            var items = _b_.dict.$to_obj(_globals)
-            _globals.$jsobj = items
-            globals_is_dict = true
-        }
-        eval("$locals_" + globals_id + " = _globals.$jsobj")
-        for(var item in items){
-            try{
-                eval('$locals_' + globals_id + '["' + item + '"] = items.' + item)
-            }catch(err){
-                console.log(err)
-                console.log('error setting', item)
-                break
-            }
-        }
-    }
-    _globals.$is_namespace = true
+    var top_frame = [__name__, exec_locals, __name__, exec_globals]
+    top_frame.is_exec_top = true
+    exec_locals.$f_trace = $B.enter_frame(top_frame)
+    exec_locals.$lineno = 1
 
-    // Initialise block locals
+    var filename = '<string>',
+        _ast
 
-    if(_locals === _b_.None){
-        if(_globals !== _b_.None){
-            eval('var $locals_' + locals_id + ' = $locals_' + globals_id)
-        }else{
-            var lobj = current_frame[1],
-                ex = '',
-                obj = {}
-            for(var attr in current_frame[1]){
-                if(attr.startsWith("$")){continue}
-                obj[attr] = lobj[attr]
-            }
-            eval('$locals_' + locals_id + " = obj")
-        }
-    }else{
-        var items
-        if(_locals.$jsobj){
-            items = _locals.$jsobj
-        }else if(_locals.__class__ !== _b_.dict){
-            items = _locals
-        }else{
-            items = _b_.dict.$to_obj(_locals)
-            _locals.$jsobj = items
-        }
-        for(var item in items){
-            try{
-                eval('$locals_' + locals_id + '["' + item + '"] = items.' + item)
-            }catch(err){
-                console.log(err)
-                console.log('error setting', item)
-                break
-            }
-        }
-        // Attribute $exec_locals is used in py_utils.$search to raise
-        // NameError instead of UnboundLocalError
-        eval("$locals_" + locals_id + ".$exec_locals = true")
-        eval("$locals_" + locals_id + ".$is_not_dict = " +
-            (_locals.__class__ !== _b_.dict))
-
-    }
-    _locals.$is_namespace = true
-
-    if(_globals === _b_.None && _locals === _b_.None &&
-            current_frame[0] == current_frame[2]){
-    }else{
-        eval("$locals_" + locals_id + ".$src = src")
-    }
-
-    var root = $B.py2js(src, globals_id, locals_id, parent_scope),
-        js, gns, lns
-    if(_globals !== _b_.None &&
-            (_locals === _b_.None || _locals === _globals)){
-        for(var attr in _globals.$string_dict){
-            root.binding[attr] = true
-        }
-    }
-
-    function update_namespaces(){
-        var gns = eval("$locals_" + globals_id)
-        if($B.frames_stack[$B.frames_stack.length - 1][2] == globals_id){
-            gns = $B.frames_stack[$B.frames_stack.length - 1][3]
-        }
-
-        if(_locals !== _b_.None){
-            var lns = eval("$locals_" + locals_id)
-        }
-
-        if(_globals !== _b_.None){
-            // Update _globals with the namespace after execution
-            if(globals_is_dict){
-                var jsobj = _globals.$jsobj
-                delete _globals.$jsobj
-            }
-            for(var attr in gns){
-                if(attr.charAt(0) != '$'){
-                    if(globals_is_dict){
-                        _b_.dict.$setitem(_globals, attr, gns[attr])
-                    }else{
-                        _globals.$jsobj[attr] = gns[attr]
-                    }
-                }
-            }
-            // Remove attributes starting with $
-            for(var attr in _globals.$string_dict){
-                if(attr.startsWith("$")){
-                    delete _globals.$string_dict[attr]
-                }
-            }
-        }else{
-            for(var attr in gns){
-                if(attr !== "$src"){
-                    current_frame[3][attr] = gns[attr]
-                }
-            }
-        }
-
-        // Update _locals with the namespace after execution
-        if(_locals !== _b_.None){
-            for(var attr in lns){
-                if(attr.charAt(0) != '$'){
-                    if(_locals.$jsobj){
-                        _locals.$jsobj[attr] = lns[attr]
-                    }else if(_locals.__class__ !== _b_.dict){
-                        $B.$setitem(_locals, attr, lns[attr])
-                    }else{
-                        _b_.dict.$setitem(_locals, attr, lns[attr])
-                    }
-                }
-            }
-        }else{
-            for(var attr in lns){
-                if(attr !== "$src"){
-                    current_frame[1][attr] = lns[attr]
-                }
-            }
-        }
+    if(src.__class__ === code){
+        _ast = src._ast
     }
 
     try{
-        // The result of py2js ends with
-        // try{
-        //     (block code)
-        //     $B.leave_frame($local_name)
-        // }catch(err){
-        //     $B.leave_frame($local_name)
-        //     throw err
-        // }
-        var try_node = root.children[root.children.length - 2],
-            instr = try_node.children[try_node.children.length - 2]
-        // type of the last instruction in (block code)
-        var type = instr.context.tree[0].type
-
-        // If the Python function is eval(), not exec(), check that the source
-        // is an expression
-
-        switch(type){
-
-            case 'expr':
-            case 'list_or_tuple':
-            case 'op':
-            case 'ternary':
-            case 'unary':
-                // If the source is an expression, what we must execute is the
-                // block inside the "try" clause : if we run root, since it's
-                // wrapped in try / finally, the value produced by
-                // eval(root.to_js()) will be None
-                var children = try_node.children
-                root.children.splice(root.children.length - 2, 2)
-                for(var i = 0; i < children.length - 1; i++){
-                    root.add(children[i])
-                }
-                break
-            default:
-                if(mode == "eval"){
-                    throw _b_.SyntaxError.$factory(
-                        "eval() argument must be an expression",
-                        '<string>', 1, 1, src)
-                }
-        }
-
-
-        if(mode != "eval"){
-            // The last instruction is transformed to return its result
-            var last = $B.last(root.children),
-                js = last.to_js()
-            if(["node_js"].indexOf(last.context.type) == -1){
-                last.to_js = function(){
-                    while(js.endsWith("\n")){js = js.substr(0, js.length - 1)}
-                    while(js.endsWith(";")){js = js.substr(0, js.length - 1)}
-                    return "return (" + js + ")"
-                }
-            }
-            js = root.to_js()
-
-            // console.log('js', $B.format_indent(js, 0))
-
-            var locals_obj = eval("$locals_" + locals_id),
-                globals_obj = eval("$locals_" + globals_id)
-            if(_globals === _b_.None){
-                var res = new Function("$locals_" + globals_id,
-                    "$locals_" + locals_id, js)(
-                        globals_obj, locals_obj)
-
-            }else{
-                current_globals_obj = current_frame[3]
-                current_locals_obj = current_frame[1]
-                var res = new Function("$locals_" + globals_id,
-                    "$locals_" + locals_id,
-                    "$locals_" + current_globals_id,
-                    "$locals_" + current_locals_id,
-                    js)(globals_obj, locals_obj,
-                        current_globals_obj, current_locals_obj)
-            }
-            if($.src.mode && $.src.mode == "single" &&
-                    $.src.filename == "<stdin>"){
-                if(res !== _b_.None && res !== undefined){
-                    _b_.print(_b_.repr(res))
-                }
+        if($B.parser_to_ast){
+            if(! _ast){
+                _ast = new $B.Parser(src, filename).parse(mode == 'eval' ? 'eval' : 'file')
             }
         }else{
-            js = root.to_js()
-            var res = eval(js)
-        }
-
-        if($.src.filename == "<console>" && $.src.mode == "single" &&
-                res !== undefined && res !== _b_.None){
-            _b_.print(res)
-        }
-
-        update_namespaces()
-
-        if(res === undefined){return _b_.None}
-        return res
-    }catch(err){
-        
-        update_namespaces() // cf. issue #1852
-
-        err.src = src
-        err.module = globals_id
-        if(err.$py_error === undefined){
-            console.log('Javascript error', Object.getPrototypeOf(err).name,
-                err.message)
-            var lineNumber = err.lineNumber
-            if(lineNumber !== undefined){
-                console.log('around JS line', lineNumber)
-                console.log(js.split('\n').
-                    slice(lineNumber-5, lineNumber+5).join('\n'))
-                var lines_before = js.split('\n').slice(0, lineNumber),
-                    re = new RegExp('line_info = "(.*?)"', 'g'),
-                    matches = (new String(lines_before)).matchAll(re),
-                    line_info
-                for(var match of matches){
-                    line_info = match[1]
-                }
-                if(line_info){
-                    console.log('around source line', line_info.split(',')[0])
-                }
+            if(! _ast){
+                var root = $B.parser.$create_root_node(src, '<module>', frame[0], frame[2],
+                        1)
+                root.mode = mode
+                root.filename = filename
+                $B.parser.dispatch_tokens(root)
+                _ast = root.ast()
             }
-            throw $B.exception(err)
         }
-        if(globals_is_dict){
-            delete _globals.$jsobj
+        var future = $B.future_features(_ast, filename),
+            symtable = $B._PySymtable_Build(_ast, filename, future),
+            js_obj = $B.js_from_root(_ast, symtable, filename,
+                    {local_name, exec_locals, global_name, exec_globals}),
+            js = js_obj.js
+    }catch(err){
+        if(err.args){
+            var lineno = err.args[1][1]
+            exec_locals.$lineno = lineno
+        }else{
+            console.log('JS Error', err.message)
+        }
+        $B.frames_stack = save_frames_stack
+        throw err
+    }
+
+    if(mode == 'eval'){
+        js = 'return ' + js
+    }else if(src.single_expression){
+        js = `var result = ${js}\n` +
+             `if(result !== _b_.None){\n` +
+                 `_b_.print(result)\n` +
+             `}`
+    }
+
+    try{
+        var exec_func = new Function('$B', '_b_', 'locals', local_name, global_name, js)
+    }catch(err){
+        if($B.debug > 1){
+            console.log('eval() error\n', js)
+            console.log('-- python source\n', src)
         }
         throw err
-    }finally{
-        // "leave_frame" was removed so we must execute it here
-        if($B.frames_stack.length == stack_len + 1){
-            $B.frames_stack.pop()
-        }
-
-        root = null
-        js = null
-        gns = null
-        lns = null
-
-        $B.clear_ns(globals_id)
-        $B.clear_ns(locals_id)
-
     }
+
+    try{
+        var res = exec_func($B, _b_, exec_locals, exec_locals, exec_globals)
+    }catch(err){
+        if($B.debug > 2){
+            console.log(
+                'Python code\n', src,
+                '\ninitial stack before exec', save_frames_stack.slice(),
+                '\nstack', $B.frames_stack.slice(),
+                '\nexec func', $B.format_indent(exec_func + '', 0),
+                '\n    filename', filename,
+                '\n    local_name', local_name,
+                '\n    exec_locals', exec_locals,
+                '\n    global_name', global_name,
+                '\n    exec_globals', exec_globals,
+                '\n    frame', frame,
+                '\n    _ast', _ast)
+        }
+        $B.frames_stack = save_frames_stack
+        throw err
+    }
+    if(_globals !== _b_.None){
+        for(var key in exec_globals){
+            if(! key.startsWith('$')){
+                _b_.dict.$setitem(_globals, key, exec_globals[key])
+            }
+        }
+        if(_locals !== _b_.None){
+            for(var key in exec_locals){
+                if(! key.startsWith('$')){
+                    _b_.dict.$setitem(_locals, key, exec_locals[key])
+                }
+            }
+        }
+    }
+    $B.frames_stack = save_frames_stack
+    return res
 }
+
 $$eval.$is_func = true
 
 function exec(src, globals, locals){
@@ -1029,7 +955,7 @@ function in_mro(klass, attr){
 
 $B.$getattr = function(obj, attr, _default){
     // Used internally to avoid having to parse the arguments
-
+    var res
     if(obj.$method_cache &&
             obj.$method_cache[attr] &&
             obj.__class__ &&
@@ -1053,7 +979,7 @@ $B.$getattr = function(obj, attr, _default){
 
     var klass = obj.__class__
 
-    var $test = false // attr == "__update" // && obj === $B // "Point"
+    var $test = false // attr == "f" // && obj === _b_.list // "Point"
     if($test){console.log("$getattr", attr, '\nobj', obj, '\nklass', klass)}
 
     // Shortcut for classes without parents
@@ -1074,6 +1000,9 @@ $B.$getattr = function(obj, attr, _default){
                    klass[attr].__get__)){
             return obj.__dict__.$string_dict[attr][0]
         }else if(klass.hasOwnProperty(attr)){
+            if($test){
+                console.log('class has attr', attr, klass[attr])
+            }
             if(typeof klass[attr] != "function" &&
                     attr != "__dict__" &&
                     klass[attr].__get__ === undefined){
@@ -1088,8 +1017,9 @@ $B.$getattr = function(obj, attr, _default){
     if($test){console.log("attr", attr, "of", obj, "class", klass, "isclass", is_class)}
     if(klass === undefined){
         // avoid calling $B.get_class in simple cases for performance
-        if(typeof obj == 'string'){klass = _b_.str}
-        else if(typeof obj == 'number'){
+        if(typeof obj == 'string'){
+            klass = _b_.str
+        }else if(typeof obj == 'number'){
             klass = obj % 1 == 0 ? _b_.int : _b_.float
         }else if(obj instanceof Number){
             klass = _b_.float
@@ -1098,7 +1028,7 @@ $B.$getattr = function(obj, attr, _default){
             if(klass === undefined){
                 // for native JS objects used in Python code
                 if($test){console.log("no class", attr, obj.hasOwnProperty(attr), obj[attr])}
-                var res = obj[attr]
+                res = obj[attr]
                 if(res !== undefined){
                     if(typeof res == "function"){
                         var f = function(){
@@ -1125,7 +1055,7 @@ $B.$getattr = function(obj, attr, _default){
     switch(attr) {
       case '__call__':
           if(typeof obj == 'function'){
-              var res = function(){return obj.apply(null, arguments)}
+              res = function(){return obj.apply(null, arguments)}
               res.__class__ = method_wrapper
               res.$infos = {__name__: "__call__"}
               return res
@@ -1161,15 +1091,6 @@ $B.$getattr = function(obj, attr, _default){
                   }
               )
           }
-      case '__doc__':
-          // for builtins objects, use $B.builtins_doc
-          for(var i = 0; i < builtin_names.length; i++){
-              if(obj === _b_[builtin_names[i]]){
-                  _get_builtins_doc()
-                  return $B.builtins_doc[builtin_names[i]]
-              }
-          }
-          break
       case '__mro__':
           if(obj.$is_class){
               // The attribute __mro__ of class objects doesn't include the
@@ -1285,13 +1206,13 @@ $B.$getattr = function(obj, attr, _default){
     if($test){console.log("attr_func is odga ?", attr_func,
         attr_func === odga, '\nobj[attr]', obj[attr])}
     if(attr_func === odga){
-        var res = obj[attr]
+        res = obj[attr]
         if(Array.isArray(obj) && Array.prototype[attr] !== undefined){
             // Special case for list subclasses. Cf issue 1081.
             res = undefined
         }else if(res === null){
             return null
-        }else if(res === undefined && obj[attr] !== undefined){
+        }else if(false && res === undefined && obj[attr] !== undefined){
             if(_default === undefined){
                 throw $B.attr_error(attr, obj)
             }
@@ -1310,11 +1231,49 @@ $B.$getattr = function(obj, attr, _default){
             }
         }
     }
+    if($test){
+        console.log('no result with object.__getattribute__')
+    }
 
     try{
-        var res = attr_func(obj, attr)
+        res = attr_func(obj, attr)
         if($test){console.log("result of attr_func", res)}
     }catch(err){
+        var getattr
+        if(klass === $B.module){
+            // try __getattr__ at module level (PEP 562)
+            getattr = obj.__getattr__
+            if(getattr){
+                try{
+                    return getattr(attr)
+                }catch(err){
+                    if(_default !== undefined){
+                        return _default
+                    }
+                    throw err
+                }
+            }
+        }else{
+            var getattr = in_mro(klass, '__getattr__')
+            if(getattr){
+                if(attr == 'strange'){
+                    console.log('essaie getattr', obj, klass, attr)
+                }
+                try{
+                    if(klass === $B.module){
+                        res = getattr(attr)
+                    }else{
+                        res = getattr(obj, attr)
+                    }
+                    return res
+                }catch(err){
+                    if(_default !== undefined){
+                        return _default
+                    }
+                    throw err
+                }
+            }
+        }
         if(_default !== undefined){
             return _default
         }
@@ -1426,6 +1385,12 @@ function _get_builtins_doc(){
         url += '/builtins_docstrings.js'
         var f = _b_.open(url)
         eval(f.$content)
+        // builtins_docstrings defines an objet "docs"
+        for(var key in docs){
+            if(_b_[key]){
+                _b_[key].__doc__ = docs[key]
+            }
+        }
         $B.builtins_doc = docs
     }
 }
@@ -1433,30 +1398,60 @@ function _get_builtins_doc(){
 function help(obj){
     if(obj === undefined){obj = 'help'}
 
-    // if obj is a builtin, lets take a shortcut, and output doc string
-    if(typeof obj == 'string' && _b_[obj] !== undefined) {
-        _get_builtins_doc()
-        var _doc = $B.builtins_doc[obj]
-        if(_doc !== undefined && _doc != ''){
-             _b_.print(_doc)
-             return
-        }
-    }
-    // If obj is a built-in object, also use builtins_doc
-    for(var i = 0; i < builtin_names.length; i++){
-        if(obj === _b_[builtin_names[i]]){
-            _get_builtins_doc()
-            _b_.print(_doc = $B.builtins_doc[builtin_names[i]])
-        }
-    }
     if(typeof obj == 'string'){
-        $B.$import("pydoc");
-        var pydoc = $B.imported["pydoc"]
-        $B.$getattr($B.$getattr(pydoc, "help"), "__call__")(obj)
-        return
+        var lib_url = 'https://docs.python.org/3/library',
+            ref_url = 'https://docs.python.org/3/reference'
+        // search in standard lib
+        var parts = obj.split('.'),
+            head = [],
+            url
+        while(parts.length > 0){
+            head.push(parts.shift())
+            if($B.stdlib[head.join('.')]){
+                url = head.join('.')
+            }else{
+                break
+            }
+        }
+        if(url){
+            var doc_url
+            if(['browser', 'javascript', 'interpreter'].
+                    indexOf(obj.split('.')[0]) > -1){
+                doc_url = '/static_doc/' + ($B.language == 'fr' ? 'fr' : 'en')
+            }else{
+                doc_url = lib_url
+            }
+            window.open(`${doc_url}/${url}.html#` + obj)
+            return
+        }
+        // built-in functions or classes
+        if(_b_[obj]){
+            if(obj == obj.toLowerCase()){
+                url = lib_url + `/functions.html#${obj}`
+            }else if(['False', 'True', 'None', 'NotImplemented', 'Ellipsis', '__debug__'].
+                    indexOf(obj) > -1){
+                url = lib_url + `/constants.html#${obj}`
+            }else if(_b_[obj].$is_class &&
+                    _b_[obj].__bases__.indexOf(_b_.Exception) > -1){
+                url = lib_url + `/exceptions.html#${obj}`
+            }
+            if(url){
+                window.open(url)
+                return
+            }
+        }
+        // use pydoc
+        $B.$import('pydoc')
+        return $B.$call($B.$getattr($B.imported.pydoc, 'help'))(obj)
     }
-    try{return $B.$getattr(obj, '__doc__')}
-    catch(err){return ''}
+    if(obj.__class__ === $B.module){
+        return help(obj.__name__)
+    }
+    try{
+        _b_.print($B.$getattr(obj, '__doc__'))
+    }catch(err){
+        return ''
+    }
 }
 
 help.__repr__ = help.__str__ = function(){
@@ -1531,10 +1526,11 @@ function isinstance(obj, cls){
         throw _b_.TypeError.$factory(
             'isinstance() arg 2 cannot be a parameterized generic')
     }
-    if(!cls.__class__ ||
-            !(cls.$factory !== undefined || cls.$is_class !== undefined)){
-        throw _b_.TypeError.$factory("isinstance() arg 2 must be a type " +
-            "or tuple of types")
+    if((!cls.__class__) || (! cls.$is_class)){
+        if(! $B.$getattr(cls, '__instancecheck__', false)){
+            throw _b_.TypeError.$factory("isinstance() arg 2 must be a type " +
+                "or tuple of types")
+        }
     }
 
     if(cls === _b_.int && (obj === True || obj === False)){return True}
@@ -2075,7 +2071,7 @@ function pow() {
         z = $.mod
     var klass = x.__class__ || $B.get_class(x)
     if(z === _b_.None){
-        return $B.rich_op('pow', x, y)
+        return $B.rich_op('__pow__', x, y)
     }else{
         if(x != _b_.int.$factory(x) || y != _b_.int.$factory(y)){
             throw _b_.TypeError.$factory("pow() 3rd argument not allowed " +
@@ -2299,7 +2295,9 @@ function setattr(){
 }
 
 $B.$setattr = function(obj, attr, value){
-
+    if(obj === undefined){
+        console.log('obj undef', attr, value)
+    }
     // Used in the code generated by py2js. Avoids having to parse the
     // since we know we will get the 3 values
     var $test = false // attr === "x" // && value == "my doc."
@@ -2357,7 +2355,7 @@ $B.$setattr = function(obj, attr, value){
         }
         if(obj.$infos && obj.$infos.__module__ == "builtins"){
             throw _b_.TypeError.$factory(
-                "can't set attributes of built-in/extension type '" +
+                `cannot set '${attr}' attribute of immutable type '` +
                     obj.$infos.__name__ + "'")
         }
         obj[attr] = value
@@ -2399,10 +2397,6 @@ $B.$setattr = function(obj, attr, value){
     if(res !== undefined && res !== null){
         // descriptor protocol : if obj has attribute attr and this attribute
         // has a method __set__(), use it
-        if(res.__get__ && res.__set__ === undefined){
-            throw _b_.AttributeError.$factory("can't set attribute '" + attr +
-                "'")
-        }
         if(res.__set__ !== undefined){
             res.__set__(res, obj, value); return None
         }
@@ -2454,36 +2448,50 @@ $B.$setattr = function(obj, attr, value){
     var special_attrs = ["__module__"]
     if(klass && klass.__slots__ && special_attrs.indexOf(attr) == -1 &&
             ! _setattr){
-        function mangled_slots(klass){
-            if(klass.__slots__){
-                if(Array.isArray(klass.__slots__)){
-                    return klass.__slots__.map(function(item){
-                        if(item.startsWith("__") && ! item.endsWith("_")){
-                            return "_" + klass.$infos.__name__ + item
-                        }else{
-                            return item
-                        }
-                    })
-                }else{
-                    return klass.__slots__
-                }
+        var _slots = true
+        for(var kl of klass.__mro__){
+            if(kl === _b_.object || kl === _b_.type){
+                break
             }
-            return []
-        }
-        var has_slot = false
-        if(mangled_slots(klass).indexOf(attr) > -1){
-            has_slot = true
-        }else{
-            for(var i = 0; i < klass.__mro__.length; i++){
-                var kl = klass.__mro__[i]
-                if(mangled_slots(kl).indexOf(attr) > - 1){
-                    has_slot = true
-                    break
-                }
+            if(! kl.__slots__){
+                // If class inherits from a class without __slots__, allow
+                // setattr for any attribute
+                _slots = false
+                break
             }
         }
-        if(! has_slot){
-            throw $B.attr_error(attr, klass)
+        if(_slots){
+            function mangled_slots(klass){
+                if(klass.__slots__){
+                    if(Array.isArray(klass.__slots__)){
+                        return klass.__slots__.map(function(item){
+                            if(item.startsWith("__") && ! item.endsWith("_")){
+                                return "_" + klass.$infos.__name__ + item
+                            }else{
+                                return item
+                            }
+                        })
+                    }else{
+                        return klass.__slots__
+                    }
+                }
+                return []
+            }
+            var has_slot = false
+            if(mangled_slots(klass).indexOf(attr) > -1){
+                has_slot = true
+            }else{
+                for(var i = 0; i < klass.__mro__.length; i++){
+                    var kl = klass.__mro__[i]
+                    if(mangled_slots(kl).indexOf(attr) > - 1){
+                        has_slot = true
+                        break
+                    }
+                }
+            }
+            if(! has_slot){
+                throw $B.attr_error(attr, klass)
+            }
         }
     }
     if($test){console.log("attr", attr, "use _setattr", _setattr)}
@@ -2497,6 +2505,9 @@ $B.$setattr = function(obj, attr, value){
             console.log("no setattr, obj", obj)
         }
     }else{
+        if($test){
+            console.log('apply _setattr', obj, attr)
+        }
         _setattr(obj, attr, value)
     }
 
@@ -2572,13 +2583,15 @@ var $$super = $B.make_class("super",
         var no_object_or_type = object_or_type === undefined
         if(_type === undefined && object_or_type === undefined){
             var frame = $B.last($B.frames_stack),
-                pyframe = $B.imported["_sys"].Getframe()
-            if(pyframe.f_code && pyframe.f_code.co_varnames){
+                pyframe = $B.imported["_sys"].Getframe(),
+                code = $B.frame.f_code.__get__(pyframe),
+                co_varnames = code.co_varnames
+            if(co_varnames.length > 0){
                 _type = frame[1].__class__
                 if(_type === undefined){
                     throw _b_.RuntimeError.$factory("super(): no arguments")
                 }
-                object_or_type = frame[1][pyframe.f_code.co_varnames[0]]
+                object_or_type = frame[1][code.co_varnames[0]]
             }else{
                 throw _b_.RuntimeError.$factory("super(): no arguments")
             }
@@ -2747,6 +2760,11 @@ $Reader.__exit__ = function(self){
     return false
 }
 
+$Reader.__init__ = function(_self, initial_value='', newline='\n'){
+    _self.$content = initial_value
+    _self.$counter = 0
+}
+
 $Reader.__iter__ = function(self){
     // Iteration ignores last empty lines (issue #1059)
     return iter($Reader.readlines(self))
@@ -2754,6 +2772,12 @@ $Reader.__iter__ = function(self){
 
 $Reader.__len__ = function(self){
     return self.lines.length
+}
+
+$Reader.__new__ = function(cls){
+    return {
+        __class__: cls
+    }
 }
 
 $Reader.close = function(self){
@@ -2924,9 +2948,25 @@ $Reader.writable = function(self){
 
 $B.set_func_names($Reader, "builtins")
 
-var $BufferedReader = $B.make_class('_io.BufferedReader')
+var $BufferedReader = $B.make_class('_io.BufferedReader',
+    function(content){
+        return {
+            __class__: $BufferedReader,
+            $binary: true,
+            $content: content,
+            $read_func: $B.$getattr(content, 'read')
+        }
+    }
+)
 
 $BufferedReader.__mro__ = [$Reader, _b_.object]
+
+$BufferedReader.read = function(self, size){
+    if(self.$read_func === undefined){
+        return $Reader.read(self, size === undefined ? -1 : size)
+    }
+    return self.$read_func(size || -1)
+}
 
 var $TextIOWrapper = $B.make_class('_io.TextIOWrapper',
     function(){
@@ -2966,6 +3006,10 @@ function $url_open(){
         mode = $.mode,
         encoding = $.encoding,
         result = {}
+    if(encoding == 'locale'){
+        // cf. PEP 597
+        encoding = 'utf-8'
+    }
     if(mode.search('w') > -1){
         throw _b_.IOError.$factory("Browsers cannot write on disk")
     }else if(['r', 'rb'].indexOf(mode) == -1){
