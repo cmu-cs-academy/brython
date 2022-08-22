@@ -327,7 +327,7 @@ function fnv(p){
     return x
 }
 
-str.__hash__ = function(_self) {
+str.__hash__ = function(_self){
     if(str_hash_cache[_self] !== undefined){
         return str_hash_cache[_self]
     }
@@ -1795,7 +1795,7 @@ str.isnumeric = function(){
     Numeric_Type=Decimal or Numeric_Type=Numeric.*/
     var $ = $B.args("isnumeric", 1, {self: null}, ["self"],
             arguments, {}, null, null),
-        _self = to_string(self)
+        _self = to_string($.self)
     for(var char of to_chars(_self)){
         if(! unicode_tables.numeric[_b_.ord(char)]){
             return false
@@ -2582,8 +2582,7 @@ str.$factory = function(arg, encoding, errors){
                 method === _b_.object.__str__)){
             var method = $B.$getattr(klass, "__repr__")
         }
-    }
-    catch(err){
+    }catch(err){
         console.log("no __str__ for", arg)
         console.log("err ", err)
         if($B.debug > 1){console.log(err)}
@@ -2591,7 +2590,12 @@ str.$factory = function(arg, encoding, errors){
             "default to toString", arg)
         throw err
     }
-    return $B.$call(method)(arg)
+    var res = $B.$call(method)(arg)
+    if(typeof res == "string" || _b_.isinstance(res, str)){
+        return res
+    }
+    throw _b_.TypeError.$factory("__str__ returned non-string " +
+        `(type ${$B.class_name(res)})`)
 }
 
 

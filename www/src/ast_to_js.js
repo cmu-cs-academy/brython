@@ -98,6 +98,17 @@ function qualified_scope_name(scopes, scope){
     return names.join('_').replace(/\./g, '_')
 }
 
+function module_name(scopes){
+    var _scopes = scopes.slice()
+    var names = []
+    for(var _scope of _scopes){
+        if(! _scope.parent){
+            names.push(_scope.name)
+        }
+    }
+    return names.join('.')
+}
+
 function make_scope_name(scopes, scope){
     // Return the name of the locals object for a scope in scopes
     // scope defaults to the last item in scopes
@@ -187,23 +198,23 @@ var DEF_GLOBAL = 1,           /* global stmt */
     DEF_ANNOT = 2<<7,         /* this name is annotated */
     DEF_COMP_ITER = 2<<8     /* this name is a comprehension iteration variable */
 
-function name_reference(name, scopes){
+function name_reference(name, scopes, position){
     var scope = name_scope(name, scopes)
-    return make_ref(name, scopes, scope)
+    return make_ref(name, scopes, scope, position)
 }
 
-function make_ref(name, scopes, scope){
+function make_ref(name, scopes, scope, position){
     if(scope.found){
         return reference(scopes, scope.found, name)
     }else if(scope.resolve == 'all'){
         var scope_names = make_search_namespaces(scopes)
-        return `$B.resolve_in_scopes('${name}', [${scope_names}])`
+        return `$B.resolve_in_scopes('${name}', [${scope_names}], [${position}])`
     }else if(scope.resolve == 'local'){
-        return `$B.resolve_local('${name}')`
+        return `$B.resolve_local('${name}', [${position}])`
     }else if(scope.resolve == 'global'){
         return `$B.resolve_global('${name}')`
     }else if(Array.isArray(scope.resolve)){
-        return `$B.resolve_in_scopes('${name}', [${scope.resolve}])`
+        return `$B.resolve_in_scopes('${name}', [${scope.resolve}], [${position}])`
     }else if(scope.resolve == 'own_class_name'){
         return `$B.own_class_name('${name}')`
     }
@@ -418,7 +429,7 @@ $B.resolve = function(name){
     throw $B.name_error(name)
 }
 
-$B.resolve_local = function(name){
+$B.resolve_local = function(name, position){
     // Translation of a reference to "name" when symtable reports that "name"
     // is local, but it has not been bound in scope locals
     var frame = $B.last($B.frames_stack)
@@ -435,11 +446,15 @@ $B.resolve_local = function(name){
             return value
         }
     }
-    throw _b_.UnboundLocalError.$factory(`local variable '${name}' ` +
+    var exc = _b_.UnboundLocalError.$factory(`local variable '${name}' ` +
         'referenced before assignment')
+    if(position){
+        $B.set_exception_offsets(exc, position)
+    }
+    throw exc
 }
 
-$B.resolve_in_scopes = function(name, namespaces){
+$B.resolve_in_scopes = function(name, namespaces, position){
     for(var ns of namespaces){
         if(ns === $B.exec_scope){
             var exec_top
@@ -464,7 +479,11 @@ $B.resolve_in_scopes = function(name, namespaces){
             }
         }
     }
-    throw $B.name_error(name)
+    var exc = $B.name_error(name)
+    if(position){
+        $B.set_exception_offsets(exc, position)
+    }
+    throw exc
 }
 
 $B.resolve_global = function(name){
@@ -696,7 +715,10 @@ function init_scopes(type, scopes){
         name = name.replace(/-/g, '_') // issue 1958
     }else if(filename.startsWith('<') && filename.endsWith('>')){
         name = 'exec'
+    }else{
+        name = filename.replace(/\./g, '_')
     }
+    
     var top_scope = new Scope(name, `${type}`, this),
         block = scopes.symtable.table.blocks.get(_b_.id(this))
     if(block && block.$has_import_star){
@@ -980,6 +1002,12 @@ $B.ast.AsyncWith.prototype.to_js = function(scopes){
 
 $B.ast.Attribute.prototype.to_js = function(scopes){
     var attr = mangle(scopes, last_scope(scopes), this.attr)
+    if($B.pep657){
+        return `$B.$getattr_pep657(${$B.js_from_ast(this.value, scopes)}, ` +
+               `'${attr}', ` +
+               `[${this.value.col_offset}, ${this.value.col_offset}, ` +
+               `${this.end_col_offset}])`
+    }
     return `$B.$getattr(${$B.js_from_ast(this.value, scopes)}, ` +
         `'${attr}')`
 }
@@ -1000,7 +1028,7 @@ $B.ast.AugAssign.prototype.to_js = function(scopes){
         var scope = name_scope(this.target.id, scopes)
         if(! scope.found){
             // The left part of the assignment must be an attribute of a
-            // namesapce (global or local), not a call to $B.resolve
+            // namespace (global or local), not a call to $B.resolve
             var left_scope = scope.resolve == 'global' ?
                 make_scope_name(scopes, scopes[0]) : 'locals'
             return `${left_scope}.${this.target.id} = $B.augm_assign(` +
@@ -1021,10 +1049,11 @@ $B.ast.AugAssign.prototype.to_js = function(scopes){
             `(locals.$key = ${this.target.slice.to_js(scopes)}), ` +
             `$B.augm_assign($B.$getitem(locals.$tg, locals.$key), '${iop}', ${value}))`
     }else if(this.target instanceof $B.ast.Attribute){
-        var op = opclass2dunder[this.op.constructor.$name]
+        var op = opclass2dunder[this.op.constructor.$name],
+            mangled = mangle(scopes, last_scope(scopes), this.target.attr)
         js = `$B.$setattr((locals.$tg = ${this.target.value.to_js(scopes)}), ` +
-            `'${this.target.attr}', $B.augm_assign(` +
-            `$B.$getattr(locals.$tg, '${this.target.attr}'), '${iop}', ${value}))`
+            `'${mangled}', $B.augm_assign(` +
+            `$B.$getattr(locals.$tg, '${mangled}'), '${iop}', ${value}))`
     }else{
         var target = $B.js_from_ast(this.target, scopes),
             value = $B.js_from_ast(this.value, scopes)
@@ -1046,8 +1075,13 @@ $B.ast.BinOp.prototype.to_js = function(scopes){
     // temporarily support old (py2js.js) and new (python_parser.js) versions
     var name = this.op.$name ? this.op.$name : this.op.constructor.$name
     var op = opclass2dunder[name]
-    return `$B.rich_op('${op}', ${$B.js_from_ast(this.left, scopes)}, ` +
-        `${$B.js_from_ast(this.right, scopes)})`
+    var res = `$B.rich_op('${op}', ${$B.js_from_ast(this.left, scopes)}, ` +
+        `${$B.js_from_ast(this.right, scopes)}`
+    if($B.pep657){
+        res += `, [${this.left.col_offset}, ${this.col_offset}, ` +
+               `${this.end_col_offset}, ${this.right.end_col_offset}]`
+    }
+    return res + ')'
 }
 
 $B.ast.BoolOp.prototype.to_js = function(scopes){
@@ -1099,9 +1133,12 @@ $B.ast.Break.prototype.to_js = function(scopes){
 }
 
 $B.ast.Call.prototype.to_js = function(scopes){
-    var js = '$B.$call(' + $B.js_from_ast(this.func, scopes) + ')'
+    var js = '$B.$call(' + $B.js_from_ast(this.func, scopes)
+    if($B.pep657){
+        js += `, [${this.col_offset}, ${this.col_offset}, ${this.end_col_offset}]`
+    }
     var args = make_args.bind(this)(scopes)
-    return js + (args.has_starred ? `.apply(null, ${args.js})` :
+    return js + ')' + (args.has_starred ? `.apply(null, ${args.js})` :
                                     `(${args.js})`)
 }
 
@@ -1353,6 +1390,14 @@ $B.ast.Constant.prototype.to_js = function(scopes){
             value = this.value
     }else if(this.value.__class__ === _b_.bytes){
         return `_b_.bytes.$factory([${this.value.source}])`
+    }else if(typeof this.value == "number"){
+        return this.value
+    }else if(this.value.__class__ === $B.long_int){
+        return `$B.fast_long_int('${this.value.value}', ${this.value.pos})`
+    }else if(this.value instanceof Number){
+        return `new Number(${this.value})`
+    }else if(this.value.__class__ === _b_.complex){
+        return `$B.make_complex(${this.value.$real}, ${this.value.$imag})`
     }else{
         var type = this.value.type,
             value = this.value.value
@@ -1380,21 +1425,12 @@ $B.ast.Constant.prototype.to_js = function(scopes){
             return `_b_.Ellipsis`
         case 'str':
             var lines = value.split('\n')
-            lines = lines.map(line => line.replace(/\\/g, '\\\\'))
+            // lines = lines.map(line => line.replace(/\\/g, '\\\\'))
             value = lines.join('\\n\\\n')
             value = value.replace(new RegExp('\r', 'g'), '\\r').
                           replace(new RegExp('\t', 'g'), '\\t').
                           replace(new RegExp('\x07', 'g'), '\\x07')
-
-
-            if(value.indexOf("'") == -1){
-                return `$B.String('${value}')`
-            }else if(value.indexOf('"') == -1){
-                return `$B.String("${value}")`
-            }else{
-                value = value.replace(new RegExp("'", "g"), "\\'")
-                return `$B.String('${value}')`
-            }
+            return `$B.String(${value})`
     }
     console.log('unknown constant', this, value, value === true)
     return '// unknown'
@@ -1990,27 +2026,6 @@ $B.ast.ImportFrom.prototype.to_js = function(scopes){
                 $B.last(this.names))
         }
     }
-    if(this.level == 0){
-        module = this.module
-    }else{
-        var scope = last_scope(scopes),
-            parts = scope.name.split('.')
-        if(this.level > parts.length){
-            return `throw _b_.ImportError.$factory(` +
-                `"Parent module '' not loaded, cannot perform relative import")`
-        }
-        for(var i = 0; i < this.level - 1; i++){
-            parts.pop()
-        }
-        var top_module = $B.imported[parts.join('.')]
-        if(top_module && ! top_module.$is_package){
-            parts.pop()
-        }
-        var module = parts.join('.')
-        if(this.module){
-            module += '.' + this.module
-        }
-    }
 
     var js = `$B.set_lineno(locals, ${this.lineno})\n` +
              `var module = $B.$import_from("${this.module || ''}", `
@@ -2362,12 +2377,14 @@ $B.ast.Module.prototype.to_js = function(scopes){
         namespaces = scopes.namespaces
 
     var module_id = name,
-        global_name = make_scope_name(scopes)
+        global_name = make_scope_name(scopes),
+        mod_name = module_name(scopes)
 
     var js = `// Javascript code generated from ast\n` +
              `var $B = __BRYTHON__,\n_b_ = $B.builtins,\n`
     if(! namespaces){
-        js += `${global_name} = {},\nlocals = ${global_name},\n` +
+        js += `${global_name} = $B.imported["${mod_name}"],\n` +
+              `locals = ${global_name},\n` +
               `$top_frame = ["${module_id}", locals, "${module_id}", locals]`
     }else{
         js += `locals = ${namespaces.local_name},\n` +
@@ -2410,7 +2427,7 @@ $B.ast.Name.prototype.to_js = function(scopes){
         }
         return reference(scopes, scope, this.id)
     }else if(this.ctx instanceof $B.ast.Load){
-        var res = name_reference(this.id, scopes)
+        var res = name_reference(this.id, scopes, [this.col_offset, this.col_offset, this.end_col_offset])
         if(this.id == '__debugger__' && res.startsWith('$B.resolve_in_scopes')){
             // Special case : name __debugger__ is translated to Javascript
             // "debugger" if not bound in Brython code
@@ -2515,6 +2532,11 @@ $B.ast.Subscript.prototype.to_js = function(scopes){
     if(this.slice instanceof $B.ast.Slice){
         return `$B.getitem_slice(${value}, ${slice})`
     }else{
+        if($B.pep657){
+            return `$B.$getitem(${value}, ${slice}, ` +
+                `[${this.value.col_offset}, ${this.slice.col_offset}, ` +
+                `${this.slice.end_col_offset}])`
+        }
         return `$B.$getitem(${value}, ${slice})`
     }
 }

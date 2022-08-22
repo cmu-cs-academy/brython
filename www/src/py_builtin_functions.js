@@ -98,7 +98,7 @@ function __build_class__(){
 function abs(obj){
     check_nb_args('abs', 1, arguments)
     check_no_kw('abs', obj)
-
+    
     if(isinstance(obj, _b_.int)){
         if(obj.__class__ === $B.long_int){
             return {
@@ -403,6 +403,14 @@ function compile() {
         }
     }
 
+    if($.source.__class__ && $.source.__class__.__module__ == 'ast'){
+        // compile an ast instance
+        $B.imported._ast._validate($.source)
+        $._ast = $.source
+        delete $.source
+        return $
+    }
+
     if($B.parser_to_ast){
         var _ast = new $B.Parser($.source, filename).parse('file'),
             future = $B.future_features(_ast, filename),
@@ -410,7 +418,9 @@ function compile() {
             js_obj = $B.js_from_root(_ast, symtable, $.filename)
         if($.flags == $B.PyCF_ONLY_AST){
             delete $B.url2name[filename]
-            return _ast
+            var res = $B.ast_js_to_py(_ast)
+            res.$js_ast = _ast
+            return res
         }
     }else{
         var root = $B.parser.$create_root_node(
@@ -441,15 +451,19 @@ function compile() {
         var js_obj = $B.js_from_root(_ast, symtable, filename)
 
         if($.flags == $B.PyCF_ONLY_AST){
-            $B.create_python_ast_classes() // in py_ast
+            $B.create_python_ast_classes() // in py_ast.js
             var klass = _ast.constructor.$name
-            return $B.python_ast_classes[klass].$factory(_ast)
+            // Transform _ast (JS version) into a Python ast instance
+            var res = $B.ast_js_to_py(_ast) // in py_ast.js
+            res.$js_ast = _ast
+            return res
         }
     }
     delete $B.url2name[filename]
     // Set attribute ._ast to avoid compiling again if result is passed to
     // exec()
-    $._ast = _ast
+    $._ast = $B.ast_js_to_py(_ast)
+    $._ast.$js_ast = _ast
     return $
 }
 
@@ -758,6 +772,11 @@ function $$eval(src, _globals, _locals){
 
     if(src.__class__ === code){
         _ast = src._ast
+        if(_ast.$js_ast){
+            _ast = _ast.$js_ast
+        }else{
+            _ast = $B.ast_py_to_js(_ast)
+        }
     }
 
     try{
@@ -782,8 +801,10 @@ function $$eval(src, _globals, _locals){
             js = js_obj.js
     }catch(err){
         if(err.args){
-            var lineno = err.args[1][1]
-            exec_locals.$lineno = lineno
+            if(err.args[1]){
+                var lineno = err.args[1][1]
+                exec_locals.$lineno = lineno
+            }
         }else{
             console.log('JS Error', err.message)
         }
@@ -979,8 +1000,11 @@ $B.$getattr = function(obj, attr, _default){
 
     var klass = obj.__class__
 
-    var $test = false // attr == "f" // && obj === _b_.list // "Point"
-    if($test){console.log("$getattr", attr, '\nobj', obj, '\nklass', klass)}
+    var $test = false // attr == "A" // && obj === _b_.list // "Point"
+    if($test){
+        console.log("$getattr", attr, '\nobj', obj, '\nklass', klass)
+        alert()
+    }
 
     // Shortcut for classes without parents
     if(klass !== undefined && (! klass.$native) && klass.__bases__ &&
@@ -1212,11 +1236,6 @@ $B.$getattr = function(obj, attr, _default){
             res = undefined
         }else if(res === null){
             return null
-        }else if(false && res === undefined && obj[attr] !== undefined){
-            if(_default === undefined){
-                throw $B.attr_error(attr, obj)
-            }
-            return _default
         }else if(res !== undefined){
             if($test){console.log(obj, attr, obj[attr],
                 res.__set__ || res.$is_class)}
@@ -1231,14 +1250,14 @@ $B.$getattr = function(obj, attr, _default){
             }
         }
     }
-    if($test){
-        console.log('no result with object.__getattribute__')
-    }
 
     try{
         res = attr_func(obj, attr)
         if($test){console.log("result of attr_func", res)}
     }catch(err){
+        if($test){
+            console.log('attr_func raised error', err.args)
+        }
         var getattr
         if(klass === $B.module){
             // try __getattr__ at module level (PEP 562)
@@ -1253,25 +1272,24 @@ $B.$getattr = function(obj, attr, _default){
                     throw err
                 }
             }
-        }else{
-            var getattr = in_mro(klass, '__getattr__')
-            if(getattr){
-                if(attr == 'strange'){
-                    console.log('essaie getattr', obj, klass, attr)
+        }
+        var getattr = in_mro(klass, '__getattr__')
+        if(getattr){
+            if($test){
+                console.log('try with getattr', getattr)
+            }
+            try{
+                if(false && klass === $B.module){
+                    res = getattr(attr)
+                }else{
+                    res = getattr(obj, attr)
                 }
-                try{
-                    if(klass === $B.module){
-                        res = getattr(attr)
-                    }else{
-                        res = getattr(obj, attr)
-                    }
-                    return res
-                }catch(err){
-                    if(_default !== undefined){
-                        return _default
-                    }
-                    throw err
+                return res
+            }catch(err){
+                if(_default !== undefined){
+                    return _default
                 }
+                throw err
             }
         }
         if(_default !== undefined){
