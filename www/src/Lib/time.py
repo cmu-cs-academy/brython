@@ -227,13 +227,9 @@ def process_time():
 def time():
     return float(date().getTime() / 1000)
 
-def sleep(secs):
-    """Javascript can't block execution for a given time, expect by an
-    infinite loop that freezes the browser. It's better to raise an
-    exception"""
-    raise NotImplementedError("Blocking functions like time.sleep() are not "
-        "supported in the browser. Use functions in module browser.timer "
-        "instead.")
+def sleep(*args):
+    raise Exception("Sorry, you cannot use time.sleep in CMU CS Academy. "
+        "Please use sleep(seconds) instead.")
 
 def strftime(_format,t = None):
     def ns(t, nb):
