@@ -2042,12 +2042,7 @@ b2 = B()
 assert b2.show() == 8
 
 # issue 1059
-import os
-try:
-    issues_py_dir = os.path.dirname(__file__)
-    z_txt_path = os.path.join(issues_py_dir, "..", "z.txt")
-except NameError:
-    z_txt_path = "z.txt"
+z_txt_path = "z.txt"
 
 with open(z_txt_path, encoding="utf-8") as f:
     t = [line for line in f]
