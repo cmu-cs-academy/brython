@@ -94,7 +94,7 @@ def populate_testmod_input(elem, selected=None):
                 o = html.OPTION(caption, value=filenm)
             g <= o
 
-def trace_exc(run_frame, src, ns):
+def trace_exc(run_frame, src, src_filename):
     result_lines = []
     exc_type, exc_value, traceback = sys.exc_info()
 
@@ -102,8 +102,8 @@ def trace_exc(run_frame, src, ns):
         console.log(exc_value)
 
     def show_line(filename, lineno, src):
-        if filename == ns['__file__']:
-            source = src
+        if filename == src_filename:
+            pass
         elif filename.startswith('<'):
             return '-- from ' + filename
         else:
@@ -166,12 +166,17 @@ def run(src, filename='editor'):
     msg = ''
     ns = {'__name__':'__main__', '__file__': filename}
     state = 1
+
+    with open(filename, 'w') as f:
+        f.write(src)
+
     try:
         exec(src, ns)
     except Exception as exc:
         #msg = traceback.format_exc()
         #print(msg, file=sys.stderr)
-        print(trace_exc(sys._getframe(), src, ns))
+        msg = trace_exc(sys._getframe(), src, filename)
+        print(msg)
         state = 0
     t1 = time.perf_counter()
     return state, t0, t1, msg

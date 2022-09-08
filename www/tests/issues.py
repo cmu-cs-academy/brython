@@ -3095,6 +3095,18 @@ except SyntaxError as exc:
 # issue 2015
 assert_raises(SyntaxError, exec, "f(x=not)")
 
+# issue 2021
+def f(): f()
+
+try:
+    f()
+except RecursionError:
+    import traceback
+    the_traceback = traceback.format_exc()
+    assert 'def f(): f()' in the_traceback
+    assert ', in f' in the_traceback
+    assert '[Previous line repeated' in the_traceback
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================
