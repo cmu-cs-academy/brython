@@ -2,6 +2,7 @@ import sys
 import time
 
 from browser import console
+import editor
 
 def discover_brython_test_modules():
     # TODO : Test discovery based on file system paths
@@ -94,10 +95,16 @@ def populate_testmod_input(elem, selected=None):
                 o = html.OPTION(caption, value=filenm)
             g <= o
 
+
+    with open(filename, 'w') as f:
+        f.write(src)
+
+        print(msg)
+
 def run_test_module(filename, base_path=''):
     if base_path and not base_path.endswith('/'):
         base_path += '/'
     file_path = base_path + filename
     src = open(file_path).read()
-    return run(src, file_path.replace('/', '__'))
+    return editor.run(src, file_path.replace('/', '__'))
 
