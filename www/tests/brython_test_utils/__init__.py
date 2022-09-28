@@ -14,6 +14,7 @@ def discover_brython_test_modules():
           ("test_decorators.py", "decorators"),
           ("test_descriptors.py", "descriptors"),
           ("test_dict.py", "dicts"),
+          ("test_exceptions.py", "exceptions"),
           ("test_exec.py", "exec / eval"),
           ("test_file.py", "file open / read"),
           ("test_generators.py", "generators"),
@@ -94,70 +95,17 @@ def populate_testmod_input(elem, selected=None):
                 o = html.OPTION(caption, value=filenm)
             g <= o
 
-def trace_exc(run_frame):
-    result_lines = []
-    exc_type, exc_value, traceback = sys.exc_info()
-
-    this_frame = sys._getframe()
-
-    def show_line(filename, lineno):
-        if filename.startswith('<'):
-            return
-        src = open(filename, encoding='utf-8').read()
-        lines = src.split('\n')
-        line = lines[lineno - 1]
-        result_lines.append('    ' + line.strip())
-        return line
-
-    result_lines.append('Traceback (most recent call last):')
-    show = False
-    started = False
-
-    while traceback:
-        frame = traceback.tb_frame
-        if frame is run_frame:
-            started = True
-        elif started:
-            lineno = traceback.tb_lineno
-            filename = frame.f_code.co_filename
-            if filename == '<string>':
-                show = True
-            if show:
-                result_lines.append(f'  File {filename}, line {lineno}')
-                show_line(filename, lineno)
-        traceback = traceback.tb_next
-
-    if isinstance(exc_value, [SyntaxError, IndentationError]):
-        filename = exc_value.args[1][0]
-        lineno = exc_value.args[1][1]
-        if filename != '<string>' or not show:
-            result_lines.append(f'  File {filename}, line {lineno}')
-        line = show_line(filename, lineno)
-        if line:
-            indent = len(line) - len(line.lstrip())
-            col_offset = exc_value.args[1][2]
-            result_lines.append('    ' +  (col_offset - indent - 1) * ' ' + '^')
-    result_lines.append(f'{exc_type.__name__}: {exc_value}')
-    return '\n'.join(result_lines)
-
-def run(src, file_path=None):
+def run(src, filename='editor'):
     t0 = time.perf_counter()
     msg = ''
+    ns = {'__name__':'__main__', '__file__': filename}
+    state = 1
     try:
-        ns = {'__name__':'__main__'}
-        if file_path is not None:
-            ns['__file__'] = file_path
         exec(src, ns)
-        state = 1
     except Exception as exc:
-        #msg = traceback.format_exc()
-        #print(msg, file=sys.stderr)
-        console.log('exc in run',
-            getattr(exc, 'args', None),
-            getattr(exc, '__class__', None),
-            getattr(exc, 'message', None))
-        msg = trace_exc(sys._getframe())
-        print(msg)
+        import traceback
+        msg = traceback.format_exc()
+        print(msg, file=sys.stderr)
         state = 0
     t1 = time.perf_counter()
     return state, t0, t1, msg
@@ -167,5 +115,5 @@ def run_test_module(filename, base_path=''):
         base_path += '/'
     file_path = base_path + filename
     src = open(file_path).read()
-    return run(src, file_path)
+    return run(src, file_path.replace('/', '__'))
 

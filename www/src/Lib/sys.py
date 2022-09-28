@@ -66,12 +66,6 @@ class flag_class:
 
 flags = flag_class()
 
-class float_info:
-    mant_dig = 53
-    max = javascript.Number.MAX_VALUE
-    min = javascript.Number.MIN_VALUE
-    radix = 2
-
 def getfilesystemencoding(*args, **kw):
     """getfilesystemencoding() -> string
     Return the encoding used to convert Unicode filenames in
@@ -80,9 +74,6 @@ def getfilesystemencoding(*args, **kw):
 
 def getfilesystemencodeerrors():
     return "utf-8"
-
-def getrecursionlimit():
-    return 200
 
 def intern(string):
     return string
@@ -269,10 +260,10 @@ class _float_info:
         self.dig = 15
         self.epsilon = 2 ** -52
         self.mant_dig = 53
-        self.max = __BRYTHON__.max_float
+        self.max = __BRYTHON__.MAX_VALUE
         self.max_exp = 2 ** 10
         self.max_10_exp = 308
-        self.min = 2 ** (-1022)
+        self.min = __BRYTHON__.MIN_VALUE
         self.min_exp = -1021
         self.min_10_exp = -307
         self.radix=2

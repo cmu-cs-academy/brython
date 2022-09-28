@@ -70,7 +70,7 @@ editor_ns = {
     '__annotations__': {},
     '__builtins__': builtins,
     '__doc__': None,
-    '__file__': __BRYTHON__.brython_path + 'Lib/interpreter.py',
+    '__file__': '<stdin>',
     '__name__': '__main__'
 }
 
@@ -89,6 +89,9 @@ class Output:
 
     def __init__(self, interpreter):
         self.interpreter = interpreter
+
+    def flush(self, *args, **kw):
+        self.interpreter.flush(*args, **kw)
 
     def write(self, *args, **kw):
         self.interpreter.write(*args, **kw)

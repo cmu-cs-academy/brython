@@ -286,11 +286,7 @@ $B.get_class = function(obj){
     if(klass === undefined){
         switch(typeof obj) {
             case "number":
-                if(obj % 1 === 0){ // this is an int
-                   return _b_.int
-                }
-                // this is a float
-                return _b_.float
+                return Number.isInteger(obj) ? _b_.int : _b_.float
             case "string":
                 return _b_.str
             case "boolean":
@@ -309,8 +305,6 @@ $B.get_class = function(obj){
                         obj.__class__ = _b_.list
                         return _b_.list
                     }
-                }else if(obj.constructor === Number){
-                    return _b_.float
                 }else if(typeof Node !== "undefined" // undefined in Web Workers
                         && obj instanceof Node){
                     if(obj.tagName){
@@ -366,16 +360,20 @@ $B.next_of = function(iterator){
 
 $B.unpacker = function(obj, nb_targets, has_starred, nb_after_starred){
     // Used in unpacking target of a "for" loop if it is a tuple or list
+    // For "[a, b] = t", nb_targets is 2, has_starred is false
+    // For "[a, *b, c]", nb_targets is 1 (a), has_starred is true (*b),
+    // nb_after_starred is 1 (c)
     var t = _b_.list.$factory(obj),
-        len = t.length,
-        min_len = has_starred ? len - 1 : len
-    if(len < min_len){
-        throw _b_.ValueError.$factory(
-            `not enough values to unpack (expected ${min_length}, got ${len})`)
+        right_length = t.length,
+        left_length = nb_targets + (has_starred ? nb_after_starred - 1 : 0)
+
+    if(right_length < left_length){
+        throw _b_.ValueError.$factory(`not enough values to unpack ` +
+            `(expected ${left_length}, got ${right_length})`)
     }
-    if((! has_starred) && len > nb_targets){
-        throw _b_.ValueError.$factory(
-            `too many values to unpack (expected ${nb_targets})`)
+    if((! has_starred) && right_length > left_length){
+        throw _b_.ValueError.$factory("too many values to unpack " +
+            `(expected ${left_length})`)
     }
     t.index = -1
     t.read_one = function(){
@@ -383,6 +381,8 @@ $B.unpacker = function(obj, nb_targets, has_starred, nb_after_starred){
         return t[t.index]
     }
     t.read_rest = function(){
+        // For the starred item: read the correct number of items in the
+        // right-hand side iterator
         t.index++
         var res = t.slice(t.index, t.length - nb_after_starred)
         t.index = t.length - nb_after_starred - 1
@@ -407,9 +407,9 @@ $B.rest_iter = function(next_func){
     }
 }
 
-$B.set_lineno = function(locals, lineno){
-    locals.$lineno = lineno
-    if(locals.$f_trace !== _b_.None){
+$B.set_lineno = function(frame, lineno){
+    frame.$lineno = lineno
+    if(frame[1].$f_trace !== _b_.None){
         $B.trace_line()
     }
     return true
@@ -488,6 +488,11 @@ $B.$JS2Py = function(src){
     return src
 }
 
+// warning
+$B.warn = function(klass, message){
+    $B.imported._warnings.warn(klass.$factory(message))
+}
+
 // get item
 function index_error(obj){
     var type = typeof obj == "string" ? "string" : "list"
@@ -522,7 +527,7 @@ $B.$getitem = function(obj, item, position){
     if(obj.$is_class){
         var class_gi = $B.$getattr(obj, "__class_getitem__", _b_.None)
         if(class_gi !== _b_.None){
-            return class_gi(item)
+            return $B.$call(class_gi)(item)
         }else if(obj.__class__){
             class_gi = $B.$getattr(obj.__class__, "__getitem__", _b_.None)
             if(class_gi !== _b_.None){
@@ -566,12 +571,20 @@ $B.getitem_slice = function(obj, slice){
                 res = obj.slice().reverse()
             }
         }else if(slice.step === _b_.None){
-            if(slice.start === _b_.None){slice.start = 0}
-            if(slice.stop === _b_.None){slice.stop = obj.length}
+            if(slice.start === _b_.None){
+                slice.start = 0
+            }
+            if(slice.stop === _b_.None){
+                slice.stop = obj.length
+            }
             if(typeof slice.start == "number" &&
                     typeof slice.stop == "number"){
-                if(slice.start < 0){slice.start += obj.length}
-                if(slice.stop < 0){slice.stop += obj.length}
+                if(slice.start < 0){
+                    slice.start += obj.length
+                }
+                if(slice.stop < 0){
+                    slice.stop += obj.length
+                }
                 res = obj.slice(slice.start, slice.stop)
             }
         }
@@ -581,6 +594,36 @@ $B.getitem_slice = function(obj, slice){
             return res
         }else{
             return _b_.list.$getitem(obj, slice)
+        }
+    }else if(typeof obj == "string"){
+        if(slice.start === _b_.None && slice.stop === _b_.None){
+            if(slice.step === _b_.None || slice.step == 1){
+                res = obj
+            }else if(slice.step == -1){
+                res = obj.split("").reverse().join("");
+            }
+        }else if(slice.step === _b_.None){
+            if(slice.start === _b_.None){
+                slice.start = 0
+            }
+            if(slice.stop === _b_.None){
+                slice.stop = obj.length
+            }
+            if(typeof slice.start == "number" &&
+                    typeof slice.stop == "number"){
+                if(slice.start < 0){
+                    slice.start += obj.length
+                }
+                if(slice.stop < 0){
+                    slice.stop += obj.length
+                }
+                res = obj.substring(slice.start, slice.stop)
+            }
+        }
+        if(res !== undefined){
+            return res
+        }else{
+            return _b_.str.__getitem__(obj, slice)
         }
     }
     return $B.$getattr(obj, "__getitem__")(slice)
@@ -709,37 +752,23 @@ $B.$delitem = function(obj, item){
 
 $B.augm_assign = function(left, op, right){
     // augmented assignment
-    var op1 = op.substr(0, op.length - 1)
-    if(typeof left == 'number' && typeof right == 'number'
-            && op != '//='  // operator "//" not supported by Javascript
-            && op != '%='   // % doesn't work the same in JS and Python for ints < 0
-            ){
-        var res = eval(left + ' ' + op1 + ' ' + right)
-        if(res <= $B.max_int && res >= $B.min_int &&
-                res.toString().search(/e/i) == -1){
-            return res
-        }else{
-            res = eval(`${BigInt(left)}n ${op1} ${BigInt(right)}n`)
-            var pos = res > 0n,
-                res = res + ''
-            return pos ? $B.fast_long_int(res, true) :
-                         $B.fast_long_int(res.substr(1), false) // remove "-"
+    var op1 = op.substr(0, op.length - 1),
+        method = $B.op2method.augmented_assigns[op],
+        augm_func = $B.$getattr(left, '__' + method + '__', null)
+    if(augm_func !== null){
+        var res = $B.$call(augm_func)(right)
+        if(res === _b_.NotImplemented){
+            throw _b_.TypeError.$factory(`unsupported operand type(s)` +
+                ` for ${op}: '${$B.class_name(left)}' ` +
+                `and '${$B.class_name(right)}'`)
         }
-    }else if(typeof left == 'string' && typeof right == 'string' &&
-            op == '+='){
-        return left + right
+        return res
     }else{
-        var method = $B.op2method.augmented_assigns[op],
-            augm_func = $B.$getattr(left, '__' + method + '__', null)
-        if(augm_func !== null){
-            return $B.$call(augm_func)(right)
-        }else{
-            var method1 = $B.op2method.operations[op1]
-            if(method1 === undefined){
-                method1 = $B.op2method.binary[op1]
-            }
-            return $B.rich_op(`__${method1}__`, left, right)
+        var method1 = $B.op2method.operations[op1]
+        if(method1 === undefined){
+            method1 = $B.op2method.binary[op1]
         }
+        return $B.rich_op(`__${method1}__`, left, right)
     }
 }
 
@@ -777,11 +806,12 @@ $B.extend = function(fname, arg){
 
 $B.$is = function(a, b){
     // Used for Python "is". In most cases it's the same as Javascript ===,
-    // but new Number(1) === new Number(1) is false, and so is
-    // new Number(1) == new Number(1) !!!
     // Cf. issue 669
-    if(a instanceof Number && b instanceof Number){
-        return a.valueOf() == b.valueOf()
+    if(a.__class__ === _b_.float && b.__class__ === _b_.float){
+        if(isNaN(a.value) && isNaN(b.value)){
+            return true
+        }
+        return a.value == b.value
     }
     if((a === _b_.int && b == $B.long_int) ||
             (a === $B.long_int && b === _b_.int)){
@@ -792,6 +822,11 @@ $B.$is = function(a, b){
         return true
     }
     return a === b
+}
+
+$B.is_or_equals = function(x, y){
+    // used to test membership in lists, sets, dicts
+    return $B.$is(x, y) || $B.rich_comp('__eq__', x, y)
 }
 
 $B.$is_member = function(item, _set){
@@ -889,7 +924,7 @@ $B.$call = function(callable, position){
 
 // Default standard output and error
 // Can be reset by sys.stdout or sys.stderr
-var $io = $B.make_class("io",
+var $io = $B.$io = $B.make_class("io",
     function(out){
         return {
             __class__: $io,
@@ -900,8 +935,10 @@ var $io = $B.make_class("io",
 )
 
 $io.flush = function(self){
-    console[self.out](self.buf.join(''))
-    self.buf = []
+    if(self.buf){
+        console[self.out](self.buf.join(''))
+        self.buf = []
+    }
 }
 
 $io.write = function(self, msg){
@@ -1123,6 +1160,11 @@ $B.int_or_bool = function(v){
 
 $B.enter_frame = function(frame){
     // Enter execution frame : save on top of frames stack
+    if($B.frames_stack.length > 1000){
+        var exc = _b_.RecursionError.$factory("maximum recursion depth exceeded")
+        $B.set_exc(exc)
+        throw exc
+    }
     frame.__class__ = $B.frame
     $B.frames_stack.push(frame)
     if($B.tracefunc && $B.tracefunc !== _b_.None){
@@ -1155,32 +1197,32 @@ $B.enter_frame = function(frame){
 }
 
 $B.trace_exception = function(){
-    var top_frame = $B.last($B.frames_stack)
-    if(top_frame[0] == $B.tracefunc.$current_frame_id){
+    var frame = $B.last($B.frames_stack)
+    if(frame[0] == $B.tracefunc.$current_frame_id){
         return _b_.None
     }
-    var trace_func = top_frame[1].$f_trace,
-        exc = top_frame[1].$current_exception,
+    var trace_func = frame[1].$f_trace,
+        exc = frame[1].$current_exception,
         frame_obj = $B.last($B.frames_stack)
     return trace_func(frame_obj, 'exception', $B.fast_tuple([
         exc.__class__, exc, $B.traceback.$factory(exc)]))
 }
 
 $B.trace_line = function(){
-    var top_frame = $B.last($B.frames_stack)
-    if(top_frame[0] == $B.tracefunc.$current_frame_id){
+    var frame = $B.last($B.frames_stack)
+    if(frame[0] == $B.tracefunc.$current_frame_id){
         return _b_.None
     }
-    var trace_func = top_frame[1].$f_trace,
+    var trace_func = frame[1].$f_trace,
         frame_obj = $B.last($B.frames_stack)
     return trace_func(frame_obj, 'line', _b_.None)
 }
 
 $B.trace_return = function(value){
-    var top_frame = $B.last($B.frames_stack),
-        trace_func = top_frame[1].$f_trace,
+    var frame = $B.last($B.frames_stack),
+        trace_func = frame[1].$f_trace,
         frame_obj = $B.last($B.frames_stack)
-    if(top_frame[0] == $B.tracefunc.$current_frame_id){
+    if(frame[0] == $B.tracefunc.$current_frame_id){
         // don't call trace func when returning from the frame where
         // sys.settrace was called
         return _b_.None
@@ -1190,7 +1232,10 @@ $B.trace_return = function(value){
 
 $B.leave_frame = function(arg){
     // Leave execution frame
-    if($B.frames_stack.length == 0){console.log("empty stack"); return}
+    if($B.frames_stack.length == 0){
+        //console.log("empty stack");
+        return
+    }
 
     // When leaving a module, arg is set as an object of the form
     // {$locals, value: _b_.None}
@@ -1383,26 +1428,60 @@ $B.rich_op = function(op, x, y, position){
 
 $B.rich_op1 = function(op, x, y){
     // shortcuts
-    if((typeof x == "number" || x instanceof Number) &&
-            (typeof y == "number" || y instanceof Number)){
+    var res_is_int,
+        res_is_float,
+        x_num,
+        y_num
+    if(typeof x == "number"){
+        x_num = x
+        if(typeof y == "number"){
+            res_is_int = true
+            y_num = y
+        }else if(y.__class__ === _b_.float){
+            res_is_float = true
+            y_num = y.value
+        }
+    }else if(x.__class__ === _b_.float){
+        x_num = x.value
+        if(typeof y == "number"){
+            y_num = y
+            res_is_float = true
+        }else if(y.__class__ === _b_.float){
+            res_is_float = true
+            y_num = y.value
+        }
+    }
+    if(res_is_int || res_is_float){
         var z
         switch(op){
             case "__add__":
-                z = x + y
+                z = x_num + y_num
                 break
             case "__sub__":
-                z = x - y
+                z = x_num - y_num
                 break
             case "__mul__":
-                z = x * y
+                z = x_num * y_num
                 break
+            case '__pow__':
+                if(res_is_int && y_num >= 0){
+                    return _b_.int.$int_or_long(BigInt(x_num) ** BigInt(y_num))
+                }
+                break
+            case "__truediv__":
+                if(y_num == 0){
+                    throw _b_.ZeroDivisionError.$factory("division by zero")
+                }
+                // always returns a float
+                z = x_num / y_num
+                return {__class__: _b_.float, value: z}
         }
-        if(typeof x == "number" && typeof y == "number"){
-            if(Number.isSafeInteger(z)){
+        if(z){
+            if(res_is_int && Number.isSafeInteger(z)){
                 return z
+            }else if(res_is_float){
+                return {__class__: _b_.float, value: z}
             }
-        }else if(z !== undefined){
-            return new Number(z)
         }
     }else if(typeof x == "string" && typeof y == "string" && op == "__add__"){
         return x + y
@@ -1505,6 +1584,10 @@ $B.repr = {
             return true
         }else{
             repr_stack.add(obj)
+            if(repr_stack.size > $B.recursion_limit){
+                throw _b_.RecursionError.$factory("maximum recursion depth " +
+                    "exceeded while getting the repr of an object")
+            }
         }
     },
     leave: function(obj){

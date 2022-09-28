@@ -363,6 +363,7 @@ function raise_error_known_location(type, filename, lineno, col_offset,
     exc.text = line
     exc.args[1] = $B.fast_tuple([filename, exc.lineno, exc.offset, exc.text,
                    exc.end_lineno, exc.end_offset])
+    exc.$stack = $B.frames_stack.slice()
     throw exc
 }
 
@@ -937,7 +938,8 @@ $AbstractExprCtx.prototype.transition = function(token, value){
                 context.op = 'is_not'
                 return context
             }
-            return new $NotCtx(new $ExprCtx(context, 'not', commas))
+            return new $AbstractExprCtx(
+                new $NotCtx(new $ExprCtx(context, 'not', commas)), false)
         case 'lambda':
             return new $LambdaCtx(new $ExprCtx(context, 'lambda', commas))
         case 'op':
@@ -4187,7 +4189,7 @@ JoinedStrCtx.prototype.ast = function(){
             var conv_num = {a: 97, r: 114, s: 115},
                 format = item.elt.format
             format = format === undefined ? format : format.ast()
-                value = new ast.FormattedValue(
+            var value = new ast.FormattedValue(
                     item.ast(),
                     conv_num[item.elt.conversion] || -1,
                     format)
@@ -4986,7 +4988,7 @@ $NumberCtx.prototype.ast = function(){
     if(this.type == 'int'){
         var value = parseInt(this.value[1], this.value[0])
         if(! Number.isSafeInteger(value)){
-            value = $B.long_int.$factory(this.value[1], this.value[0])
+            value = _b_.int.$factory(this.value[1], this.value[0])
         }
         ast_obj.value = value
     }else if(this.type == 'float'){
@@ -4998,7 +5000,7 @@ $NumberCtx.prototype.ast = function(){
             position: this.position
         }
         var imag_value = $NumberCtx.prototype.ast.bind(imag)().value
-        ast_obj.value = $B.make_complex(0, imag_value)
+        ast_obj.value = $B.make_complex(0, +imag_value)
     }
     set_position(ast_obj, this.position)
     return ast_obj
@@ -5261,6 +5263,7 @@ var $PatternCaptureCtx = function(context, value){
     context.parent.tree.push(this)
     this.tree = [value]
     this.position = $token.value
+    this.positions = [this.position]
     this.expect = '.'
     this.$pos = $pos
 }
@@ -5269,9 +5272,9 @@ $PatternCaptureCtx.prototype.ast = function(){
     var ast_obj
     try{
         if(this.tree.length > 1){
-            var pattern = new ast.Name(this.tree[0].value, new ast.Load())
+            var pattern = new ast.Name(this.tree[0], new ast.Load())
             set_position(pattern, this.position)
-            for(var i = 1; i < this.tree.length; i += 2){
+            for(var i = 1; i < this.tree.length; i++){
                 pattern = new ast.Attribute(pattern, this.tree[i], new ast.Load())
                 copy_position(pattern, pattern.value)
             }
@@ -5337,12 +5340,6 @@ $PatternCaptureCtx.prototype.transition = function(token, value){
             if(token == '.'){
                 context.type = "value_pattern"
                 context.expect = 'id'
-                if(context.tree.length == 1){
-                    // create an $IdCtx to resolve the name correctly
-                    new $IdCtx(context, context.tree.pop())
-                }else{
-                    context.tree.push('.')
-                }
                 return context
             }else if(token == '('){
                 // open class pattern
@@ -5360,6 +5357,7 @@ $PatternCaptureCtx.prototype.transition = function(token, value){
         case 'id':
             if(token == 'id'){
                 context.tree.push(value)
+                context.positions.push($token.value)
                 context.expect = '.'
                 return context
             }
@@ -5374,7 +5372,8 @@ $PatternClassCtx = function(context){
     this.parent = context.parent
     this.position = $token.value
     // create an id for class name
-    this.class_id = new $IdCtx(context, context.tree[0])
+    this.class_id = context.tree.slice()
+    this.positions = context.positions
     // remove this instance of $dCtx from tree
     context.tree.pop()
     // get possible attributes of id
@@ -5394,7 +5393,23 @@ $PatternClassCtx.prototype.ast = function(){
     //   class defined sequence of pattern matching attributes
     // `kwd_attrs` is a sequence of additional attributes to be matched
     // `kwd_patterns` are the corresponding patterns
-    var cls = new ast.Name(this.class_id.value)
+    if(this.class_id.length == 1){
+        var cls = new ast.Name(this.class_id[0])
+    }else{
+        // attribute, eg "case ast.Expr(expr)": class_id is
+        // ['ast', '.', 'Expr']
+        var cls
+        for(var i = 0, len = this.class_id.length; i < len - 1; i++){
+            var value = new ast.Name(this.class_id[i], new ast.Load())
+            set_position(value, this.positions[i])
+            if(i == 0){
+                cls = new ast.Attribute(value, this.class_id[i + 1])
+            }else{
+                cls = new ast.Attribute(cls, this.class_id[i + 1])
+            }
+            set_position(cls, this.positions[i])
+        }
+    }
     set_position(cls, this.position)
     cls.ctx = new ast.Load()
     var patterns = [],
@@ -7968,7 +7983,14 @@ var dispatch_tokens = $B.parser.dispatch_tokens = function(root){
                 if(err_msg == 'EOF in multi-line statement'){
                     err_msg = 'unexpected EOF while parsing'
                 }
-                raise_syntax_error(context, err_msg)
+                if(err.lineno){
+                    raise_error_known_location(_b_.SyntaxError,
+                        root.filename, err.lineno, err.col_offset,
+                        err.end_lineno, err.end_col_offset, err.line,
+                        err.message)
+                }else{
+                    raise_syntax_error(context, err_msg)
+                }
             }
             throw err
         }
@@ -8206,7 +8228,6 @@ $B.py2js = function(src, module, locals_id, parent_scope){
     //
     // Returns the Javascript code
 
-    var test = false // locals_id == "items_en"
     $pos = 0
 
     if(typeof module == "object"){
@@ -8219,14 +8240,10 @@ $B.py2js = function(src, module, locals_id, parent_scope){
     parent_scope = parent_scope || $B.builtins_scope
 
     var t0 = Date.now(),
-        has_annotations = true, // determine if __annotations__ is created
-        line_info, // set for generator expression
         ix, // used for generator expressions
         filename
     if(typeof src == 'object'){
-        var has_annotations = src.has_annotations,
-            line_info = src.line_info || `1,${locals_id}`
-            ix = src.ix,
+        var ix = src.ix,
             filename = src.filename
         src = src.src
     }
@@ -8239,21 +8256,10 @@ $B.py2js = function(src, module, locals_id, parent_scope){
     if($B.parser_to_ast){
         var _ast = new $B.Parser(src, filename).parse('file')
     }else{
-        var root = $create_root_node(
-                {src: src, has_annotations: has_annotations,
-                    filename: filename},
-                module, locals_id, parent_scope)
-        if(test){
-            console.log('before dispatch tokens', Date.now() - t0)
-        }
+        var root = $create_root_node({src, filename},
+                                     module, locals_id, parent_scope)
         dispatch_tokens(root)
-        if(test){
-            console.log('after dispatch tokens', Date.now() - t0)
-        }
         var _ast = root.ast()
-        if(test){
-            console.log('afetr ast()', Date.now() - t0)
-        }
     }
     var future = $B.future_features(_ast, filename)
     var symtable = $B._PySymtable_Build(_ast, filename, future)
@@ -8361,7 +8367,8 @@ $B.parse_options = function(options){
     $B.set_import_paths()
 
     // URL of the script where function brython() is called
-    var $href = $B.script_path = _window.location.href,
+    // Remove part after # (cf. issue #2035)
+    var $href = $B.script_path = _window.location.href.split('#')[0],
         $href_elts = $href.split('/')
     $href_elts.pop()
     if($B.isWebWorker || $B.isNode){$href_elts.pop()} // WebWorker script is in the web_workers subdirectory

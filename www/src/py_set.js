@@ -17,6 +17,7 @@ function create_type(obj){
 function clone(obj){
     var res = create_type(obj)
     res.$items = obj.$items.slice()
+    res.$numbers = obj.$numbers.slice()
     for(key in obj.$hashes){
         res.$hashes[key] = obj.$hashes[key]
     }
@@ -34,9 +35,7 @@ var set = {
 }
 
 set.__and__ = function(self, other, accept_iter){
-    try{
-        $test(accept_iter, other)
-    }catch(err){
+    if(! _b_.isinstance(other, [set, frozenset])){
         return _b_.NotImplemented
     }
     var res = create_type(self)
@@ -58,18 +57,18 @@ set.__class_getitem__ = function(cls, item){
 }
 
 set.__contains__ = function(self, item){
-    if(typeof item == "number" || item instanceof Number){
-        if(isNaN(item)){ // special case for NaN
+    if(typeof item == "number"){
+        return self.$numbers.indexOf(item) > -1
+    }else if(_b_.isinstance(item, _b_.float)){
+        if(isNaN(item.value)){ // special case for NaN
             for(var i = self.$items.length-1; i >= 0; i--){
-                if(isNaN(self.$items[i])){
+                if(isNaN(self.$items[i].value)){
                     return true
                 }
             }
             return false
-        }else if(item instanceof Number){
-            return self.$numbers.indexOf(item.valueOf()) > -1
         }else{
-            return self.$items.indexOf(item) > -1
+            return self.$numbers.indexOf(item.value) > -1
         }
     }else if(typeof item == "string"){
         return self.$items.indexOf(item) > -1
@@ -150,6 +149,7 @@ set.__init__ = function(self, iterable, second){
 
     if(_b_.isinstance(iterable, [set, frozenset])){
         self.$items = iterable.$items.slice()
+        self.$numbers = iterable.$numbers.slice()
         self.$hashes = {}
         for(var key in iterable.$hashes){
             self.$hashes[key] = iterable.$hashes[key]
@@ -214,13 +214,15 @@ set.__new__ = function(cls){
     return {
         __class__: cls,
         $items: [],
-        $numbers: [], // stores integers, and floats equal to integers
+        $numbers: [], // stores integers and floats
         $hashes: {}
     }
 }
 
 set.__or__ = function(self, other, accept_iter){
-    //$test(accept_iter, other)  <===  is this needed?  causes some dict unittests to fail
+    if(! _b_.isinstance(other, [set, frozenset])){
+        return _b_.NotImplemented
+    }
     var res = clone(self),
         func = _b_.getattr($B.$iter(other), "__next__")
     while(1){
@@ -293,9 +295,14 @@ function set_repr(self){
     return head + res + tail
 }
 
+set.__ror__ = function(self, other){
+    // Used when other.__or__(self) is NotImplemented
+    return set.__or__(self, other)
+}
+
 set.__rsub__ = function(self, other){
     // Used when other.__sub__(self) is NotImplemented
-    return set.__sub__(other, self)
+    return set.__sub__(self, other)
 }
 
 set.__rxor__ = function(self, other){
@@ -305,8 +312,9 @@ set.__rxor__ = function(self, other){
 
 set.__sub__ = function(self, other, accept_iter){
     // Return a new set with elements in the set that are not in the others
-    try{$test(accept_iter, other, "-")}
-    catch(err){return _b_.NotImplemented}
+    if(! _b_.isinstance(other, [set, frozenset])){
+        return _b_.NotImplemented
+    }
     var res = create_type(self),
         cfunc = _b_.getattr(other, "__contains__"),
         items = []
@@ -321,8 +329,9 @@ set.__sub__ = function(self, other, accept_iter){
 
 set.__xor__ = function(self, other, accept_iter){
     // Return a new set with elements in either the set or other but not both
-    try{$test(accept_iter, other, "^")}
-    catch(err){return _b_.NotImplemented}
+    if(! _b_.isinstance(other, [set, frozenset])){
+        return _b_.NotImplemented
+    }
     var res = create_type(self),
         cfunc = _b_.getattr(other, "__contains__")
     for(var i = 0, len = self.$items.length; i < len; i++){
@@ -338,44 +347,34 @@ set.__xor__ = function(self, other, accept_iter){
     return res
 }
 
-function $test(accept_iter, other, op){
-    if(accept_iter === undefined &&
-            ! _b_.isinstance(other, [set, frozenset])){
-        throw _b_.TypeError.$factory("unsupported operand type(s) for " + op +
-            ": 'set' and '" + $B.class_name(other) + "'")
-    }
-}
-
 // add "reflected" methods
 $B.make_rmethods(set)
 
 function $add(self, item){
     var $simple = false
     if(typeof item === "string" || typeof item === "number" ||
-            item instanceof Number){
+            item.__class__ === _b_.float){
         $simple = true
     }
 
     if($simple){
-        var ix = self.$items.indexOf(item)
-        if(ix == -1){
-            if(item instanceof Number &&
-                    self.$numbers.indexOf(item.valueOf()) > -1){
-                // do nothing
-            }else if(typeof item == "number" &&
-                    self.$numbers.indexOf(item) > -1){
-                // do nothing
-            }else{
+        if(item.__class__ === _b_.float){
+            if(self.$numbers.indexOf(item.value) == -1){
+                self.$numbers.push(item.value)
                 self.$items.push(item)
-                var value = item.valueOf()
-                if(typeof value == "number"){
-                    self.$numbers.push(value)
-                }
+            }
+        }else if(typeof item == "number"){
+            if(self.$numbers.indexOf(item) == -1){
+                self.$numbers.push(item)
+                self.$items.push(item)
             }
         }else{
+            var ix = self.$items.indexOf(item)
             // issue 543 : for some Javascript implementations,
             // [''].indexOf(0) is 0, not -1, so {''}.add(0) is {''}
-            if(item !== self.$items[ix]){self.$items.push(item)}
+            if(item !== self.$items[ix]){
+                self.$items.push(item)
+            }
         }
     }else{
         // Compute hash of item : raises an exception if item is not hashable,
@@ -440,7 +439,7 @@ set.copy = function(){
 
 set.difference_update = function(self){
     var $ = $B.args("difference_update", 1, {self: null}, ["self"],
-        arguments, {}, "args", null)
+            arguments, {}, "args", null)
     for(var i = 0; i < $.args.length; i++){
         var s = set.$factory($.args[i]),
             _next = _b_.getattr($B.$iter(s), "__next__"),
@@ -675,7 +674,7 @@ set.difference = function(){
 
     var res = clone($.self)
     for(var i = 0; i < $.args.length; i++){
-        res = set.__sub__(res, set.$factory($.args[i]), true)
+        res = set.__sub__(res, set.$factory($.args[i]))
     }
     return res
 }
@@ -716,6 +715,14 @@ set.issuperset = function(){
     return true
 }
 
+function $test(accept_iter, other, op){
+    if(accept_iter === undefined &&
+            ! _b_.isinstance(other, [set, frozenset])){
+        throw _b_.TypeError.$factory("unsupported operand type(s) for " + op +
+            ": 'set' and '" + $B.class_name(other) + "'")
+    }
+}
+
 function $accept_only_set(f, op) {
     return function(self, other, accept_iter) {
         $test(accept_iter, other, op)
@@ -724,10 +731,38 @@ function $accept_only_set(f, op) {
     }
 }
 
-set.__iand__ = $accept_only_set(set.intersection_update, "&=")
-set.__isub__ = $accept_only_set(set.difference_update, "-=")
-set.__ixor__ = $accept_only_set(set.symmetric_difference_update, "^=")
-set.__ior__ = $accept_only_set(set.update, "|=")
+set.__iand__ = function(self, other){
+    if(! _b_.isinstance(other, [set, frozenset])){
+        return _b_.NotImplemented
+    }
+    set.intersection_update(self, other)
+    return self
+}
+
+set.__isub__ = function(self, other){
+    if(! _b_.isinstance(other, [set, frozenset])){
+        console.log('isub retruns NotImplemneted')
+        return _b_.NotImplemented
+    }
+    set.difference_update(self, other)
+    return self
+}
+
+set.__ixor__ = function(self, other){
+    if(! _b_.isinstance(other, [set, frozenset])){
+        return _b_.NotImplemented
+    }
+    set.symmetric_difference_update(self, other)
+    return self
+}
+
+set.__ior__ = function(self, other){
+    if(! _b_.isinstance(other, [set, frozenset])){
+        return _b_.NotImplemented
+    }
+    set.update(self, other)
+    return self
+}
 
 set.$factory = function(){
     // Instances of set have attribute $str and $num
