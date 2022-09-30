@@ -718,15 +718,24 @@ function $$eval(src, _globals, _locals){
                 if(_locals.$jsobj){
                     exec_locals = _locals.$jsobj
                 }else{
-                    exec_locals = _locals.$jsobj = {$dict: _locals}
-                }
-                for(var key in _locals.$string_dict){
-                    _locals.$jsobj[key] = _locals.$string_dict[key][0]
-                }
-                exec_locals.$getitem = $B.$call($B.$getattr(_locals.__class__, '__getitem__'))
-                var missing = $B.$getattr(_locals.__class__, '__missing__', null)
-                if(missing){
-                    exec_locals.$missing = $B.$call(missing)
+                    var klass = $B.get_class(_locals),
+                        getitem = $B.$call($B.$getattr(klass, '__getitem__')),
+                        setitem = $B.$call($B.$getattr(klass, '__setitem__'))
+                    exec_locals = new Proxy(_locals, {
+                        get(target, prop){
+                            if(prop == '$proxy'){
+                                return true
+                            }
+                            try{
+                                return getitem(target, prop)
+                            }catch(err){
+                                return undefined
+                            }
+                        },
+                        set(target, prop, value){
+                            return setitem(target, prop, value)
+                        }
+                    })
                 }
             }
         }
@@ -835,13 +844,6 @@ function $$eval(src, _globals, _locals){
                 _b_.dict.$setitem(_globals, key, exec_globals[key])
             }
         }
-        if(_locals !== _b_.None){
-            for(var key in exec_locals){
-                if(! key.startsWith('$')){
-                    _b_.dict.$setitem(_locals, key, exec_locals[key])
-                }
-            }
-        }
     }
     $B.frames_stack = save_frames_stack
     return res
@@ -939,7 +941,7 @@ function getattr(){
         throw _b_.TypeError.$factory("attribute name must be string, " +
             `not '${$B.class_name($.attr)}'`)
     }
-    
+
     return $B.$getattr($.obj, _b_.str.$to_string($.attr),
         $._default === missing ? undefined : $._default)
 }
@@ -985,7 +987,7 @@ $B.$getattr = function(obj, attr, _default){
 
     var klass = obj.__class__
 
-    var $test = false // attr == "fromkeys" // && obj === _b_.list // "Point"
+    var $test = false // attr == "__annotations__" // && obj === _b_.list // "Point"
     if($test){
         console.log("$getattr", attr, '\nobj', obj, '\nklass', klass)
         alert()
@@ -1094,7 +1096,8 @@ $B.$getattr = function(obj, attr, _default){
               dict.__dict__ = $B.getset_descriptor.$factory(obj, '__dict__')
               return {
                   __class__: $B.mappingproxy, // in py_dict.js
-                  $jsobj: dict
+                  $jsobj: dict,
+                  $version: 0
                   }
           }else if(! klass.$native){
               if(obj[attr] !== undefined){
@@ -2295,7 +2298,6 @@ function round(){
         floor = Math.floor(x),
         diff = Math.abs(x - floor),
         res
-    console.log('x', x, 'floor', floor, 'diff', diff)
     if(diff == 0.5){
         if(floor % 2){
             floor += 1
@@ -2313,7 +2315,6 @@ function round(){
         return Math.floor(res.value)
     }else{
         // Return the same type as argument
-        console.log('round', arg, 'n', n, 'klass', klass, 'res', res)
         return $B.$call(klass)(res)
     }
 }
