@@ -106,7 +106,17 @@ $B.async_enabled = false
 if($B.async_enabled){$B.block = {}}
 
 // Maps the name of imported modules to the module object
-$B.imported = {}
+$B.imported = new Proxy(
+    {}, 
+    { 
+        get: (target, name) => {
+            if (name in target || !name.startsWith('$python_to_js')) {
+                return target[name];
+            }
+            return {};
+        }
+    }
+)
 
 // Maps the name of modules to the matching Javascript code
 $B.precompiled = {}
