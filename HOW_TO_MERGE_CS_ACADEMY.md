@@ -34,6 +34,6 @@ Back in brython:
 In cs-academy:
 
 * Eyeball the changes that were made, especially new files that were added.
-* Consider running `git diff -G 'import' HEAD -- . :^frontend/src/brython/brython.js :^frontend/src/brython/brython_stdlib.js` to specifically check for added imports
+* Consider running `git diff -G 'import' HEAD -- . :^frontend/src/brython/brython.js :^frontend/src/brython/brython_stdlib.js :^frontend/src/cmu-graphics-brython.js` to specifically check for added imports
 * Run "python build.py cmu-graphics" from the cs-academy folder
 * Run "Test Animation Framework" in the Tests tab of gui window

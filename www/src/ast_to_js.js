@@ -299,12 +299,12 @@ function name_scope(name, scopes){
             }
             return {found: false, resolve: 'local'}
         }else{
-            return {found: l_scope.scope} // reference(scopes, scope, name)
+            return {found: l_scope.scope}
         }
     }else if(scope.globals.has(name)){
         var global_scope = scopes[0]
         if(global_scope.locals.has(name)){
-            return {found: global_scope} // reference(scopes, scopes[0], name)
+            return {found: global_scope}
         }
         return {found: false, resolve: 'global'}
     }else if(scope.nonlocals.has(name)){
@@ -312,7 +312,13 @@ function name_scope(name, scopes){
         for(var i = scopes.length - 2; i >= 0; i--){
             block = scopes.symtable.table.blocks.get(_b_.id(scopes[i].ast))
             if(block && block.symbols.$string_dict[name]){
-                return {found: scopes[i]} // reference(scopes, scopes[i], name)
+                var fl = block.symbols.$string_dict[name],
+                    local_to_block =
+                        [LOCAL, CELL].indexOf((fl >> SCOPE_OFF) & SCOPE_MASK) > -1
+                if(! local_to_block){
+                    continue
+                }
+                return {found: scopes[i]}
             }
         }
     }
@@ -789,8 +795,9 @@ $B.ast.AnnAssign.prototype.to_js = function(scopes){
     var js = ''
     if(! scope.has_annotation){
         js += 'locals.__annotations__ = $B.empty_dict()\n'
+        scope.has_annotation = true
+        scope.locals.add('__annotations__')
     }
-    scope.has_annotation = true
     if(this.target instanceof $B.ast.Name){
         var ann_value = postpone_annotation ?
                 `'${annotation_to_str(this.annotation)}'` :
@@ -799,11 +806,10 @@ $B.ast.AnnAssign.prototype.to_js = function(scopes){
     if(this.value){
         js += `var ann = ${$B.js_from_ast(this.value, scopes)}\n`
         if(this.target instanceof $B.ast.Name && this.simple){
-            // update __annotations__
             var scope = bind(this.target.id, scopes),
                 mangled = mangle(scopes, scope, this.target.id)
-            // Annotations for local variables will not be evaluated
             if(scope.type != "def"){
+                // Update __annotations__ only for classes and modules
                 js += `$B.$setitem(locals.__annotations__, ` +
                       `'${mangled}', ${ann_value})\n`
             }
@@ -1276,7 +1282,7 @@ $B.ast.ClassDef.prototype.to_js = function(scopes){
     var docstring = extract_docstring(this, scopes)
 
     js += `var ${ref} = (function(){\n` +
-          `var ${locals_name} = {__annotations__: $B.empty_dict()},\n` +
+          `var ${locals_name} = {},\n` +
           `locals = ${locals_name}\n` +
           `locals.$name = "${this.name}"\n` +
           `locals.$qualname = "${qualname}"\n` +
@@ -1287,6 +1293,10 @@ $B.ast.ClassDef.prototype.to_js = function(scopes){
           `locals.$f_trace = $B.enter_frame(frame)\n` +
           `var _frames = $B.frames_stack.slice()\n` +
           `if(locals.$f_trace !== _b_.None){$B.trace_line()}\n`
+
+    js += `locals.__annotations__ = $B.empty_dict()\n`
+    class_scope.has_annotation = true
+    class_scope.locals.add('__annotations__')
 
     js += add_body(this.body, scopes)
 
@@ -1766,10 +1776,6 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
 
     if(is_async){
         js += 'frame.$async = true\n'
-    }
-
-    if(last_scope(scopes).has_annotation){
-        js += `locals.__annotations__ = $B.empty_dict()\n`
     }
 
     if(is_generator){
@@ -2443,10 +2449,12 @@ $B.ast.Module.prototype.to_js = function(scopes){
     }
     js += `\nframe.__file__ = '${scopes.filename || "<string>"}'\n` +
           `locals.__name__ = '${name}'\n` +
-          `locals.__annotations__ = locals.__annotations__ || $B.empty_dict()\n` +
           `locals.__doc__ = ${extract_docstring(this, scopes)}\n`
 
-    last_scope(scopes).has_annotation = true
+    if(! scopes.imported){
+          js += `locals.__annotations__ = locals.__annotations__ || $B.empty_dict()\n`
+    }
+
     if(! namespaces){
         // for exec(), frame is put on top of the stack inside
         // py_builtin_functions.js / $$eval()
@@ -3018,7 +3026,13 @@ $B.ast.YieldFrom.prototype.to_js = function(scopes){
 }
 var state = {}
 
-$B.js_from_root = function(ast_root, symtable, filename, namespaces){
+$B.js_from_root = function(arg){
+    var ast_root = arg.ast,
+        symtable = arg.symtable,
+        filename = arg.filename
+        namespaces = arg.namespaces,
+        imported = arg.imported
+
     if($B.show_ast_dump){
         console.log($B.ast_dump(ast_root))
     }
@@ -3030,6 +3044,7 @@ $B.js_from_root = function(ast_root, symtable, filename, namespaces){
     scopes.symtable = symtable
     scopes.filename = filename
     scopes.namespaces = namespaces
+    scopes.imported = imported
     scopes.imports = {}
     var js = ast_root.to_js(scopes)
     return {js, imports: scopes.imports}

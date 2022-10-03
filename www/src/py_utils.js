@@ -286,7 +286,7 @@ $B.get_class = function(obj){
     if(klass === undefined){
         switch(typeof obj) {
             case "number":
-                return Number.isInteger(obj) ? _b_.int : _b_.float
+                return Number.isInteger(obj) ? _b_.int : undefined
             case "string":
                 return _b_.str
             case "boolean":
@@ -518,7 +518,7 @@ $B.warn = function(klass, message, filename, token){
         warning.args[1] = $B.fast_tuple([filename,
                                          warning.lineno, warning.offset,
                                          warning.text,
-                                         warning.end_lineno, 
+                                         warning.end_lineno,
                                          warning.end_offset])
     }
     $B.imported._warnings.warn(warning)

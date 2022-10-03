@@ -197,7 +197,8 @@ function run_py(module_contents, path, module, compiled) {
 
         var src = {
             src: module_contents,
-            filename: path
+            filename: path,
+            imported: true
         }
 
         try{
