@@ -592,7 +592,12 @@ function init_comprehension(comp){
         varnames = Object.keys(comp.varnames || {}).map(x => `'${x}'`).join(', ')
     return `var ${comp.locals_name} = {},\n` +
                `locals = ${comp.locals_name}\n` +
-           `locals.$comp_code = {\n` +
+           `locals['.0'] = expr\n` +
+           `var frame = ["<${comp.type.toLowerCase()}>", ${comp.locals_name}, ` +
+           `"${comp.module_name}", ${comp.globals_name}]\n` +
+           `frame.__file__ = '<string>'\n` +
+           `frame.$lineno = ${comp.ast.lineno}\n` +
+           `frame.f_code = {\n` +
                `co_argcount: 1,\n` +
                `co_firstlineno:${comp.ast.lineno},\n` +
                `co_name: "<${comp.type}>",\n` +
@@ -602,10 +607,6 @@ function init_comprehension(comp){
                `co_posonlyargount: 0,\n` +
                `co_varnames: $B.fast_tuple(['.0', ${varnames}])\n` +
            `}\n` +
-           `locals['.0'] = expr\n` +
-           `var frame = ["<${comp.type.toLowerCase()}>", ${comp.locals_name}, ` +
-           `"${comp.module_name}", ${comp.globals_name}]\n` +
-           `frame.$lineno = ${comp.ast.lineno}\n` +
            `locals.$f_trace = $B.enter_frame(frame)\n` +
            `var _frames = $B.frames_stack.slice()\n`
 }
@@ -642,11 +643,9 @@ function make_comp(scopes){
 
     // special case for first generator
     var first = this.generators[0]
-    js += `var next_func_${id} = $B.next_of(expr)\n` +
-          `while(true){\ntry{\nvar next_${id} = next_func_${id}()\n` +
-          `}catch(err){\nif($B.is_exc(err, [_b_.StopIteration])){\n` +
-          `break\n}else{\n$B.leave_frame({locals, value: _b_.None})\n ` +
-          `throw err\n}\n}\n`
+    js += `var next_func_${id} = $B.next_of1(expr, frame, ${this.lineno})\n` +
+          `try{\n` +
+              `for(var next_${id} of next_func_${id}){\n`
     // assign result of iteration to target
     var name = new $B.ast.Name(`next_${id}`, new $B.ast.Load())
     copy_position(name, first_for.iter)
@@ -683,7 +682,6 @@ function make_comp(scopes){
     js = `(${has_await ? 'async ' : ''}function(expr){\n` + js
 
     js += has_await ? 'var save_stack = $B.save_stack();\n' : ''
-    js += `try{\n`
     if(this instanceof $B.ast.ListComp){
         js += `result_${id}.push(${elt})\n`
     }else if(this instanceof $B.ast.SetComp){
@@ -692,16 +690,16 @@ function make_comp(scopes){
         js += `_b_.dict.$setitem(result_${id}, ${key}, ${value})\n`
     }
 
-    js += `}catch(err){\n` +
-          (has_await ? '$B.restore_stack(save_stack, locals)\n' : '') +
-          `$B.leave_frame(locals)\nthrow err\n}` +
-          (has_await ? '\n$B.restore_stack(save_stack, locals);' : '')
-
     for(var i = 0; i < nb_paren; i++){
         js += '}\n'
     }
+    js += `}catch(err){\n` +
+          (has_await ? '$B.restore_stack(save_stack, locals)\n' : '') +
+          `$B.leave_frame()\nthrow err\n}\n` +
+          (has_await ? '\n$B.restore_stack(save_stack, locals);' : '')
 
-    js += `\n$B.leave_frame({locals, value: _b_.None})`
+
+    js += `\n$B.leave_frame()`
     js += `\nreturn result_${id}`
     js += `\n}\n)(${outmost_expr})\n`
 
@@ -1305,7 +1303,7 @@ $B.ast.ClassDef.prototype.to_js = function(scopes){
     js += '\nif(locals.$f_trace !== _b_.None){\n' +
               '$B.trace_return(_b_.None)\n' +
           '}\n' +
-          '$B.leave_frame({locals})\n' +
+          '$B.leave_frame()\n' +
           'return locals\n})()\n'
 
     var class_ref = reference(scopes, enclosing_scope, this.name)
@@ -1380,21 +1378,14 @@ $B.ast.comprehension.prototype.to_js = function(scopes){
     var id = $B.UUID(),
         iter = $B.js_from_ast(this.iter, scopes)
 
-    var js = `var next_func_${id} = $B.next_of(${iter})\n` +
-             `while(true){\ntry{\nvar next_${id} = next_func_${id}()\n` +
-             `}catch(err){\nif($B.is_exc(err, [_b_.StopIteration])){\n` +
-             `break\n}else{\n$B.leave_frame({locals, value: _b_.None})\n ` +
-             `throw err\n}\n}\n`
+    var js = `var next_func_${id} = $B.next_of1(${iter}, frame, ${this.lineno})\n` +
+             `for(var next_${id} of next_func_${id}){\n`
     // assign result of iteration to target
     var name = new $B.ast.Name(`next_${id}`, new $B.ast.Load())
     copy_position(name, this.target)
     name.to_js = function(){return `next_${id}`}
     var assign = new $B.ast.Assign([this.target], name)
     copy_position(assign, this.target)
-    if(assign.col_offset === undefined){
-        console.log('pas de col offset', assign, 'target', this.target)
-        alert()
-    }
     js += assign.to_js(scopes) + ' // assign to target\n'
 
     for(var _if of this.ifs){
@@ -1566,18 +1557,7 @@ $B.ast.For.prototype.to_js = function(scopes){
             `  }\n`
     }else{
         js = `var no_break_${id} = true\n` +
-             `var next_func_${id} = $B.next_of(${iter})\n` +
-             `while(true){\n` +
-                 `try{\n` +
-                     `$B.set_lineno(frame, ${this.lineno})\n` +
-                     `var next_${id} = next_func_${id}()\n` +
-                 `}catch(err){\n` +
-                     `if($B.is_exc(err, [_b_.StopIteration])){\n` +
-                         `break\n` +
-                     `}else{\n ` +
-                         `throw err\n` +
-                     `}\n` +
-                 `}\n`
+             `for(var next_${id} of $B.next_of1(${iter}, frame, ${this.lineno})){\n`
     }
     // assign result of iteration to target
     var name = new $B.ast.Name(`next_${id}`, new $B.ast.Load())
@@ -1806,7 +1786,7 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
         js += 'var result = _b_.None\n' +
               'if(locals.$f_trace !== _b_.None){\n' +
               '$B.trace_return(_b_.None)\n}\n' +
-              '$B.leave_frame(locals);return result\n'
+              '$B.leave_frame();return result\n'
     }
 
     js += `}catch(err){
@@ -1814,7 +1794,7 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
     if((! err.$in_trace_func) && locals.$f_trace !== _b_.None){
     ${locals_name}.$f_trace = $B.trace_exception()
     }
-    $B.leave_frame(locals);throw err
+    $B.leave_frame();throw err
     }
     }\n`
 
@@ -1958,15 +1938,13 @@ $B.ast.GeneratorExp.prototype.to_js = function(scopes){
                 locals_name: make_scope_name(scopes),
                 globals_name: make_scope_name(scopes, scopes[0])}
 
-    var js = init_comprehension(comp)
+    var head = init_comprehension(comp)
 
     // special case for first generator
     var first = this.generators[0]
-    js += `var next_func_${id} = $B.next_of(expr)\n` +
-          `while(true){\ntry{\nvar next_${id} = next_func_${id}()\n` +
-          `}catch(err){\nif($B.is_exc(err, [_b_.StopIteration])){\n` +
-          `break\n}else{\n$B.leave_frame({locals, value: _b_.None})\n ` +
-          `throw err\n}\n}\n`
+    var js = `var next_func_${id} = $B.next_of1(expr, frame, ${this.lineno})\n` +
+          `for(var next_${id} of next_func_${id}){\n` +
+              `locals.$f_trace = $B.enter_frame(frame)\n`
     // assign result of iteration to target
     var name = new $B.ast.Name(`next_${id}`, new $B.ast.Load())
     copy_position(name, first_for.iter)
@@ -1995,25 +1973,27 @@ $B.ast.GeneratorExp.prototype.to_js = function(scopes){
 
     // If the element has an "await", attribute has_await is set to the scope
     // Use it to make the function aync or not
-    js = `$B.generator.$factory(${has_await ? 'async ' : ''}function*(expr){\n` + js
+    js = `var gen${id} = $B.generator.$factory(${has_await ? 'async ' : ''}function*(expr){\n` + js
 
     js += has_await ? 'var save_stack = $B.save_stack();\n' : ''
     js += `try{\n` +
           ` yield ${elt}\n` +
           `}catch(err){\n` +
           (has_await ? '$B.restore_stack(save_stack, locals)\n' : '') +
-          `$B.leave_frame(locals)\nthrow err\n}\n` +
+          `$B.leave_frame()\nthrow err\n}\n` +
           (has_await ? '\n$B.restore_stack(save_stack, locals);' : '')
 
-    for(var i = 0; i < nb_paren; i++){
+    for(var i = 0; i < nb_paren - 1; i++){
         js += '}\n'
     }
+    js += '$B.leave_frame()\n}\n'
 
-    js += `\n$B.leave_frame({locals, value: _b_.None})` +
-          `}, "<genexpr>")(${outmost_expr})\n`
+    js += `\n$B.leave_frame()` +
+          `}, "<genexpr>")(expr)\n`
 
     scopes.pop()
-    return js
+    var func = `${head}\n${js}\n$B.leave_frame()\nreturn gen${id}`
+    return `(function(expr){\n${func}\n})(${outmost_expr})\n`
 }
 
 $B.ast.Global.prototype.to_js = function(scopes){
@@ -2545,7 +2525,7 @@ $B.ast.Return.prototype.to_js = function(scopes){
              (this.value ? $B.js_from_ast(this.value, scopes) : ' _b_.None')
     js += `\nif(locals.$f_trace !== _b_.None){\n` +
           `$B.trace_return(result)\n}\n` +
-          `$B.leave_frame(locals)\nreturn result\n`
+          `$B.leave_frame()\nreturn result\n`
     return js
 }
 
@@ -2691,7 +2671,7 @@ $B.ast.Try.prototype.to_js = function(scopes){
         if(this.finalbody.length > 0 &&
                 ! ($B.last(this.finalbody) instanceof $B.ast.Return)){
             finalbody += `\nif(exit){\n` +
-                           `$B.leave_frame(locals)\n` +
+                           `$B.leave_frame()\n` +
                         `}`
         }
         // The 'else' clause is executed if no exception was raised, and if
@@ -2960,7 +2940,7 @@ $B.ast.YieldFrom.prototype.to_js = function(scopes){
                 while(true){
                     var failed1${n} = false
                     try{
-                        $B.leave_frame({locals})
+                        $B.leave_frame()
                         var _s${n} = yield _y${n}
                         $B.frames_stack.push(frame)
                     }catch(_e){
