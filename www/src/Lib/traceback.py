@@ -4,8 +4,27 @@
 # import itertools
 import linecache
 import sys
-import textwrap
+# import textwrap
 # from contextlib import suppress
+
+# CS Academy change: This is the "indent" function from textwrap.py
+def textwrap_indent(text, prefix, predicate=None):
+    """Adds 'prefix' to the beginning of selected lines in 'text'.
+
+    If 'predicate' is provided, 'prefix' will only be added to the lines
+    where 'predicate(line)' is True. If 'predicate' is not provided,
+    it will default to adding 'prefix' to all non-empty lines that do not
+    consist solely of whitespace characters.
+    """
+    if predicate is None:
+        def predicate(line):
+            return line.strip()
+
+    def prefixed_lines():
+        for line in text.splitlines(True):
+            yield (prefix + line if predicate(line) else line)
+    return ''.join(prefixed_lines())
+
 
 __all__ = ['extract_stack', 'extract_tb', 'format_exception',
            'format_exception_only', 'format_list', 'format_stack',
@@ -638,10 +657,10 @@ class _ExceptionPrintContext:
             indent_str += margin_char + ' '
 
         if isinstance(text_gen, str):
-            yield textwrap.indent(text_gen, indent_str, lambda line: True)
+            yield textwrap_indent(text_gen, indent_str, lambda line: True)
         else:
             for text in text_gen:
-                yield textwrap.indent(text, indent_str, lambda line: True)
+                yield textwrap_indent(text, indent_str, lambda line: True)
 
 
 class TracebackException:
