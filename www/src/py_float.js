@@ -616,9 +616,9 @@ float.__hash__ = function(self) {
 
     var r = frexp(self)
     r[0] *= Math.pow(2, 31)
-    var hipart = _b_.int.$factory(fast_float(r[0]))
+    var hipart = parseInt(r[0])
     r[0] = (r[0] - hipart) * Math.pow(2, 31)
-    var x = hipart + _b_.int.$factory(fast_float(r[0])) + (r[1] << 15)
+    var x = hipart + _b_.int.$factory(r[0]) + (r[1] << 15)
     return x & 0xFFFFFFFF
 }
 
