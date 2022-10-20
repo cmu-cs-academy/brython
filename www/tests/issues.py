@@ -3086,7 +3086,66 @@ try:
     exec("x= ")
 except SyntaxError as exc:
     assert exc.args == ('invalid syntax', ('<string>', 1, 4, 'x= \n', 1, 4))
-  
+
+# issue 2015
+assert_raises(SyntaxError, exec, "f(x=not)")
+
+# not covered in test_patma
+class A:
+
+  class B:
+    def __init__(self, x):
+      pass
+
+x = A.B(1)
+
+ok = False
+match x:
+    case A.B():
+        ok = True
+
+assert ok
+
+# invalid context manager
+test = """x = 'abc'
+with x as y:
+  pass"""
+
+assert_raises(TypeError, exec, test,
+  msg="'str' object does not support the context manager protocol")
+
+# issue 2030
+def f():
+  return 5
+
+def tracefn(frame, event, arg):
+  assert frame.f_back is not None
+
+def main():
+  sys.settrace(tracefn)
+  f()
+  sys.settrace(None)
+
+main()
+
+# issue 2031
+
+save_annotations = __annotations__
+
+def foo():
+    bar: Bar = 42
+    assert __annotations__ == save_annotations
+    assert bar == 42
+
+foo()
+
+src = """class Foo:
+    bar: Bar = 42"""
+assert_raises(NameError, exec, src)
+
+assert_raises(NameError, exec, 'bar: Bar = 42')
+
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================

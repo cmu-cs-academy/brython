@@ -4,6 +4,29 @@ var _b_ = $B.builtins,
     object = _b_.object,
     _window = self
 
+// Conversion of immutable types between Javascript and Python
+var py_immutable_to_js = $B.py_immutable_to_js = function (pyobj){
+    if(_b_.isinstance(pyobj, _b_.float)){
+        return pyobj.value
+    }else if(_b_.isinstance(pyobj, $B.long_int)){
+        return $B.long_int.$to_js_number(pyobj)
+    }
+    return pyobj
+}
+
+function js_immutable_to_py(jsobj){
+    if(typeof jsobj == "number"){
+        if(Number.isSafeInteger(jsobj)){
+            return jsobj
+        }else if(Number.isInteger(jsobj)){
+            return $B.fast_long_int(BigInt(jsobj + ''))
+        }else{
+            return $B.fast_float(jsobj)
+        }
+    }
+    return jsobj
+}
+
 // cross-browser utility functions
 function $getMouseOffset(target, ev){
     ev = ev || _window.event;
@@ -223,10 +246,10 @@ Attributes.__setitem__ = function(){
         ["self", "key", "value"], arguments, {}, null, null)
     if($.self.elt instanceof SVGElement &&
             typeof $.self.elt.setAttributeNS == "function"){
-        $.self.elt.setAttributeNS(null, $.key, $.value)
+        $.self.elt.setAttributeNS(null, $.key, _b_.str.$factory($.value))
         return _b_.None
     }else if(typeof $.self.elt.setAttribute == "function"){
-        $.self.elt.setAttribute($.key, $.value)
+        $.self.elt.setAttribute($.key, _b_.str.$factory($.value))
         return _b_.None
     }
     throw _b_.TypeError.$factory("Can't set attributes on element")
@@ -699,7 +722,7 @@ DOMNode.__getattribute__ = function(self, attr){
             var from_class = $B.$getattr(self.__class__, attr, _b_.None)
             if(from_class !== _b_.None){
                 var frame = $B.last($B.frames_stack),
-                    line = frame[1].$lineno
+                    line = frame.$lineno
                 console.info("Warning: line " + line + ", " + self.tagName +
                     " element has instance attribute '" + attr + "' set." +
                     " Attribute of class " + $B.class_name(self) +
@@ -734,7 +757,9 @@ DOMNode.__getattribute__ = function(self, attr){
     var res = property
 
     if(res !== undefined){
-        if(res === null){return _b_.None}
+        if(res === null){
+            return _b_.None
+        }
         if(typeof res === "function"){
             if(res.$is_func){
                 // If the attribute was set in __setattr__ (elt.foo = func),
@@ -786,9 +811,13 @@ DOMNode.__getattribute__ = function(self, attr){
             func.$python_function = res
             return func
         }
-        if(attr == 'style'){return $B.JSObj.$factory(self[attr])}
-        if(Array.isArray(res)){return res} // issue #619
-        return $B.$JS2Py(res)
+        if(attr == 'style'){
+            return $B.JSObj.$factory(self[attr])
+        }
+        if(Array.isArray(res)){ // issue #619
+            return res
+        }
+        return js_immutable_to_py(res)
     }
     return object.__getattribute__(self, attr)
 }
@@ -977,8 +1006,8 @@ DOMNode.__setattr__ = function(self, attr, value){
             console.log(msg)
             var frame = $B.last($B.frames_stack)
             if($B.debug > 0){
-                var file = frame[3].__file__,
-                    lineno = frame[1].$lineno
+                var file = frame.__file__,
+                    lineno = frame.$lineno
                 console.log("module", frame[2], "line", lineno)
                 if($B.file_cache.hasOwnProperty(file)){
                     var src = $B.file_cache[file]
@@ -1018,7 +1047,7 @@ DOMNode.__setattr__ = function(self, attr, value){
         }
 
         // Set the property
-        self[attr] = value
+        self[attr] = py_immutable_to_js(value)
 
         return _b_.None
     }

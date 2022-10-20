@@ -832,4 +832,82 @@ a = A()
 a.upscale()
 assert a._A__scale == 2
 
+# setting attribute __class__ inside a class definition
+class A:
+
+  @property
+  def __class__(self):
+    return 99
+
+assert A.__class__ is type
+assert type(A.__dict__['__class__']) is property
+assert A().__class__ == 99
+
+# issue 2033
+class Meta(type):
+    def __new__(cls, name, bases, namespace):
+        assert namespace.get("__qualname__", None) == "Foo"
+        return super().__new__(cls, name, bases, namespace)
+
+class Foo(metaclass=Meta):
+    pass
+
+# issue 2038
+class Slotted:
+    __slots__ = { "slot" }
+
+assert Slotted.__slots__ == {"slot"}
+assert str(Slotted.slot) == "<member 'slot' of 'Slotted' objects>"
+
+s = Slotted()
+s.slot = 42
+assert Slotted.slot.__get__(s) == 42
+assert s.slot == 42
+
+assert_raises(AttributeError, setattr, s, 'x', 9)
+
+# issue 2039
+assert isinstance(classmethod(print), classmethod)
+assert isinstance(staticmethod(print), staticmethod)
+assert isinstance(property(print), property)
+
+# issue 2043
+class HasClassMethod:
+    @classmethod
+    def class_method(cls): pass
+
+assert isinstance(HasClassMethod.class_method.__dict__, dict)
+
+# issue 2057
+trace = []
+
+class PluginBase:
+    @classmethod
+    def __init_subclass__(cls, **kwargs):
+        trace.append((cls, PluginBase))
+        super().__init_subclass__(**kwargs)
+
+
+class Client:
+    # this is implicitly a @classmethod
+    def __init_subclass__(cls, **kwargs):
+        trace.append((cls, Client))
+        super().__init_subclass__(**kwargs)
+
+
+class Plugin(Client, PluginBase):
+    def __init_subclass__(cls, **kwargs):
+        trace.append((cls, Plugin))
+        super().__init_subclass__(**kwargs)
+
+
+class Plugin1(Plugin):
+    pass
+
+assert trace == [(Plugin, Client),
+                 (Plugin, PluginBase),
+                 (Plugin1, Plugin),
+                 (Plugin1, Client),
+                 (Plugin1, PluginBase)]
+                 
 print('passed all tests..')

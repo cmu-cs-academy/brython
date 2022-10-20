@@ -80,8 +80,8 @@ $B.print_stack = function(stack){
     stack = stack || $B.frames_stack
     var trace = []
     for(var frame of stack){
-        var lineno = frame[1].$lineno,
-            filename = frame[3].__file__
+        var lineno = frame.$lineno,
+            filename = frame.__file__
         if(lineno !== undefined){
             var local = frame[0] == frame[2] ? "<module>" : frame[0]
             trace.push(`  File "${filename}" line ${lineno}, in ${local}`)
@@ -96,18 +96,23 @@ $B.print_stack = function(stack){
     return trace.join("\n")
 }
 
+$B.last_frame = function(){
+    var frame = $B.last($B.frames_stack)
+    return `file ${frame.__file__} line ${frame.$lineno}`
+}
+
 // class of traceback objects
 var traceback = $B.traceback = $B.make_class("traceback",
     function(exc){
         var stack = exc.$stack || $B.frames_stack.slice()
-        if(typeof stack.map !== "function"){
-            console.log('pas dde map', stack)
+        if(_b_.isinstance(exc, _b_.SyntaxError)){
+            stack.pop()
         }
         return {
             __class__ : traceback,
             $stack: stack,
              // save line numbers when exception happened
-            linenos: stack.map(x => x[1].$lineno),
+            linenos: stack.map(x => x.$lineno),
             pos: 0
         }
     }
@@ -120,7 +125,7 @@ traceback.__getattribute__ = function(_self, attr){
         case "tb_lineno":
             return _self.linenos[_self.pos]
         case "tb_lasti":
-            throw _b_.NotImplementedError.$factory(attr)
+            return -1 // not implemented (yet...)
         case "tb_next":
             if(_self.pos < _self.$stack.length - 1){
                 _self.pos++
@@ -136,7 +141,12 @@ traceback.__getattribute__ = function(_self, attr){
 $B.set_func_names(traceback, "builtins")
 
 // class of frame objects
-var frame = $B.frame = $B.make_class("frame")
+var frame = $B.frame = $B.make_class("frame",
+    function(frame_list){
+        frame_list.__class__ = frame
+        return frame_list
+    }
+)
 
 frame.__delattr__ = function(_self, attr){
     if(attr == "f_trace"){
@@ -145,7 +155,6 @@ frame.__delattr__ = function(_self, attr){
 }
 
 frame.__dir__ = function(_self){
-    console.log('frame dict')
     return _b_.object.__dir__(frame).concat(['clear',
         'f_back', 'f_builtins', 'f_code', 'f_globals', 'f_lasti', 'f_lineno',
         'f_locals', 'f_trace', 'f_trace_lines', 'f_trace_opcodes'])
@@ -155,9 +164,9 @@ frame.__getattr__ = function(_self, attr){
     // Used for f_back to avoid computing it when the frame object
     // is initialised
     if(attr == "f_back"){
-        if(_self.$pos > 0){
-            return frame.$factory(self.$stack.slice(0, self.$stack.length - 1),
-                self.$pos - 1)
+        var pos = $B.frames_stack.indexOf(_self)
+        if(pos > 0){
+            return frame.$factory($B.frames_stack[pos - 1])
         }else{
             return _b_.None
         }
@@ -182,8 +191,8 @@ frame.__setattr__ = function(_self, attr, value){
 }
 
 frame.__str__ = frame.__repr__ = function(_self){
-    return '<frame object, file ' + _self[3].__file__ +
-        ', line ' + _self[1].$lineno + ', code ' +
+    return '<frame object, file ' + _self.__file__ +
+        ', line ' + _self.$lineno + ', code ' +
         frame.f_code.__get__(_self).co_name + '>'
 }
 
@@ -192,10 +201,13 @@ frame.f_code = {
         var res
         if(_self[4]){
             res = _self[4].$infos.__code__
+        }else if(_self.f_code){
+            // set in comprehensions
+            res = _self.f_code
         }else{
             res = {
                 co_name: (_self[0] == _self[2] ? '<module>' : _self[0]),
-                co_filename: _self[3].__file__,
+                co_filename: _self.__file__,
                 co_varnames: $B.fast_tuple([])
             }
         }
@@ -212,7 +224,7 @@ frame.f_globals = {
 
 frame.f_lineno = {
     __get__: function(_self){
-        return _self[1].$lineno
+        return _self.$lineno
     }
 }
 
@@ -277,13 +289,7 @@ BaseException.__new__ = function(cls){
 }
 
 BaseException.__getattr__ = function(self, attr){
-    if(attr == "__traceback__"){
-        // Return traceback object
-        if(self.$traceback !== undefined){
-            return self.$traceback
-        }
-        return self.$traceback = traceback.$factory(self)
-    }else if(attr == '__context__'){
+    if(attr == '__context__'){
         var frame = $B.last($B.frames_stack),
             ctx = frame[1].$current_exception
         return ctx || _b_.None
@@ -324,8 +330,9 @@ $B.restore_stack = function(stack, locals){
 $B.freeze = function(err){
     if(err.$stack === undefined){
         err.$stack = $B.frames_stack.slice()
-        err.$linenos = $B.frames_stack.map(x => x[1].$lineno)
+        err.$linenos = $B.frames_stack.map(x => x.$lineno)
     }
+    err.__traceback__ = traceback.$factory(err)
 }
 
 var show_stack = $B.show_stack = function(stack){
@@ -348,9 +355,8 @@ function (){
     var err = Error()
     err.args = $B.fast_tuple(Array.prototype.slice.call(arguments))
     err.__class__ = _b_.BaseException
-    err.__traceback__ = traceback.$factory($B.frames_stack.slice())
+    err.__traceback__ = _b_.None
     err.$py_error = true
-    $B.freeze(err)
     // placeholder
     err.__cause__ = _b_.None // XXX fix me
     err.__context__ = _b_.None // XXX fix me
@@ -375,19 +381,20 @@ $B.exception = function(js_exc, in_ctx_manager){
     // code generated by Python - in this case it has attribute $py_error set -
     // or by the Javascript interpreter (ReferenceError for instance)
     if(! js_exc.__class__){
-        var exc = Error()
+        if(js_exc.$py_exc){
+            // when the JS exception is handled in a frame above, return the
+            // same Python exception
+            return js_exc.$py_exc
+        }
+        console.log('Javascript error\n', js_exc)
+        console.log('frames', $B.frames_stack.slice())
+        var exc = _b_.Exception.$factory("Internal Javascript error: " +
+            (js_exc.__name__ || js_exc.name))
         exc.__name__ = "Internal Javascript error: " +
             (js_exc.__name__ || js_exc.name)
-        exc.__class__ = _b_.Exception
         exc.$js_exc = js_exc
         if($B.is_recursion_error(js_exc)){
             return _b_.RecursionError.$factory("too much recursion")
-        }else if(js_exc.name == "ReferenceError"){
-            exc.__name__ = "NameError"
-            exc.__class__ = _b_.NameError
-        }else if(js_exc.name == "InternalError"){
-            exc.__name__ = "RuntimeError"
-            exc.__class__ = _b_.RuntimeError
         }
         exc.__cause__ = _b_.None
         exc.__context__ = _b_.None
@@ -396,22 +403,7 @@ $B.exception = function(js_exc, in_ctx_manager){
             (js_exc.message || "<" + js_exc + ">")
         exc.args = _b_.tuple.$factory([$message])
         exc.$py_error = true
-        console.log('js error', exc.args)
-        console.log(js_exc.stack)
-        console.log('frames_stack', $B.frames_stack.slice())
-        for(var frame of $B.frames_stack){
-            var src = undefined
-            var file = frame[1].__file__ || frame[3].__file__
-            if(file && $B.file_cache[file]){
-                src = $B.file_cache[file]
-            }
-            console.log('line', frame[1].$lineno, 'file', file, 'in', frame[0])
-            if(src !== undefined){
-                var lines = src.split('\n'),
-                    line = lines[frame[1].$lineno - 1]
-                console.log('    ' + line)
-            }
-        }
+        js_exc.$py_exc = exc
         $B.freeze(exc)
     }else{
         var exc = js_exc
@@ -463,13 +455,10 @@ $B.is_recursion_error = function(js_exc){
 var $make_exc = $B.$make_exc = function(names, parent){
     // Creates the exception classes that inherit from parent
     // names is the list of exception names
-    if(parent === undefined){
-        console.log('pas de parent', names)
-    }
-    var _str = [], pos = 0
-    for(var i = 0; i < names.length; i++){
-        var name = names[i],
-            code = ""
+    var _str = [],
+        pos = 0
+    for(var name of names){
+        var code = ""
         if(Array.isArray(name)){
             // If name is an array, its first item is the exception name
             // and the second is a piece of code to replace the placeholder
@@ -496,6 +485,7 @@ var $make_exc = $B.$make_exc = function(names, parent){
         eval(_str.join(";"))
     }catch(err){
         console.log("--err" + err)
+        console.log(_str.join(''))
         throw err
     }
 }
@@ -596,10 +586,6 @@ $B.set_func_names(_b_.UnboundLocalError, 'builtins')
 // Shortcut to create a NameError
 $B.name_error = function(name, obj){
     return _b_.NameError.$factory({$nat:"kw", kw:{name}})
-}
-
-$B.$TypeError = function(msg){
-    throw _b_.TypeError.$factory(msg)
 }
 
 // Suggestions in case of NameError or AttributeError
@@ -733,42 +719,172 @@ function offer_suggestions_for_name_error(exc){
     }
 }
 
+// PEP 654
+var exc_group_code =
+    '\nvar missing = {},\n' +
+    '    $ = $B.args("[[name]]", 2, {message: null, exceptions: null}, ' +
+        "['message', 'exceptions'], arguments, {exceptions: missing}, " +
+        'null, null)\n' +
+    'err.message = $.message\n' +
+    'err.exceptions = $.exceptions === missing ? [] : $.exceptions\n'
+
+/*
+The BaseExceptionGroup constructor inspects the nested exceptions and if they
+are all Exception subclasses, it returns an ExceptionGroup rather than a
+BaseExceptionGroup
+*/
+var js = exc_group_code.replace('[[name]]', 'BaseExceptionGroup')
+js += `var exc_list = _b_.list.$factory(err.exceptions)
+var all_exceptions = true
+for(var exc of exc_list){
+    if(! _b_.isinstance(exc, _b_.Exception)){
+        all_exceptions = false
+        break
+    }
+}
+if(all_exceptions){
+    err.__class__ = _b_.ExceptionGroup
+}
+`
+
+$make_exc([['BaseExceptionGroup', js]], _b_.BaseException)
+
+_b_.BaseExceptionGroup.subgroup = function(self, condition){
+    // condition is a function applied to exceptions
+    var filtered_excs = []
+    for(var exc of self.exceptions){
+        if(_b_.isinstance(exc, _b_.BaseExceptionGroup)){
+            var filtered = _b_.BaseExceptionGroup.subgroup(exc, condition)
+            if(filtered === _b_.None){
+                // do nothing
+            }else if(filtered.exceptions.length == exc.exceptions.length){
+                filtered_excs.push(exc)
+            }else if(filtered.exceptions.length > 0){
+                filtered_excs = filtered_excs.concat(filtered)
+            }
+        }else if(condition(exc)){
+            filtered_excs.push(exc)
+        }
+    }
+    if(filtered_excs.length == 0){
+        return _b_.None
+    }
+    var res = _b_.BaseExceptionGroup.$factory(self.message, filtered_excs)
+    res.__cause__ = self.__cause__
+    res.__context__ = self.__context__
+    res.__traceback__ = self.__traceback__
+    return res
+}
+
+var js = exc_group_code.replace('[[name]]', 'ExceptionGroup')
+
+/*
+The ExceptionGroup constructor raises a TypeError if any of the nested
+exceptions is not an Exception instance
+*/
+js += `var exc_list = _b_.list.$factory(err.exceptions)
+for(var exc of exc_list){
+    if(! _b_.isinstance(exc, _b_.Exception)){
+        throw _b_.TypeError.$factory(
+            'Cannot nest BaseExceptions in an ExceptionGroup')
+    }
+}
+`
+
+$make_exc([['ExceptionGroup', js]], _b_.Exception)
+_b_.ExceptionGroup.__bases__.splice(0, 0, _b_.BaseExceptionGroup)
+_b_.ExceptionGroup.__mro__.splice(0, 0, _b_.BaseExceptionGroup)
+
+
+_b_.ExceptionGroup.__str__ = function(self){
+    return `${self.message} (${self.exceptions.length} sub-exception` +
+        `${self.exceptions.length > 1 ? 's' : ''})`
+}
+
+$B.set_func_names(_b_.ExceptionGroup, "builtins")
 
 function trace_from_stack(err){
-    var trace = ''
+
+    function handle_repeats(src, count_repeats){
+        if(count_repeats > 0){
+            var len = trace.length
+            for(var i = 0; i < 2; i++){
+                if(src){
+                    trace.push(trace[len - 2])
+                    trace.push(trace[len - 1])
+                }else{
+                    trace.push(trace[len - 1])
+                }
+                count_repeats--
+                if(count_repeats == 0){
+                    break
+                }
+            }
+            if(count_repeats > 0){
+                trace.push(`[Previous line repeated ${count_repeats} more` +
+                    ` time${count_repeats > 1 ? 's' : ''}]`)
+            }
+        }
+    }
+    var trace = [],
+        save_filename,
+        save_lineno,
+        count_repeats = 0
+
     for(var frame_num = 0, len = err.$stack.length; frame_num < len; frame_num++){
         var frame = err.$stack[frame_num],
             lineno = err.$linenos[frame_num],
-            filename = frame[3].__file__,
-            src = $B.file_cache[filename]
-            trace += `  File ${filename}, line ${lineno}, in ` +
-                (frame[0] == frame[2] ? '<module>' : frame[0]) + '\n'
+            filename = frame.__file__
+        if(filename == save_filename && lineno == save_lineno){
+            count_repeats++
+            continue
+        }
+        handle_repeats(src, count_repeats)
+        save_filename = filename
+        save_lineno = lineno
+        count_repeats = 0
+        var src = $B.file_cache[filename]
+        trace.push(`  File "${filename}", line ${lineno}, in ` +
+            (frame[0] == frame[2] ? '<module>' : frame[0]))
         if(src){
             var lines = src.split('\n'),
                 line = lines[lineno - 1]
             if(line){
-                trace += '    ' + line.trim() + '\n'
+                trace.push('    ' + line.trim())
             }
             // preliminary for PEP 657
             if(err.$positions !== undefined){
-                var position = err.$positions[frame_num]
+                var position = err.$positions[frame_num],
+                    trace_line = ''
                 if(position && (
                             (position[1] != position[0] ||
                             (position[2] - position[1]) != line.trim().length ||
                             position[3]))){
                     var indent = line.length - line.trimLeft().length
-                    trace += '    ' + ' '.repeat((position[0] - indent)) +
+                    trace_line += '    ' + ' '.repeat((position[0] - indent)) +
                         '~'.repeat(position[1] - position[0]) +
                         '^'.repeat(position[2] - position[1])
                     if(position[3] !== undefined){
-                        trace += '~'.repeat(position[3] - position[2])
+                        trace_line += '~'.repeat(position[3] - position[2])
                     }
-                    trace += '\n'
+                    trace.push(trace_line)
                 }
             }
         }
     }
-    return trace
+    if(count_repeats > 0){
+        var len = trace.length
+        for(var i = 0; i < 2; i++){
+            if(src){
+                trace.push(trace[len - 2])
+                trace.push(trace[len - 1])
+            }else{
+                trace.push(trace[len - 1])
+            }
+        }
+        trace.push(`[Previous line repeated ${count_repeats - 2} more times]`)
+    }
+    return trace.join('\n') + '\n'
 }
 
 $B.show_error = function(err){
@@ -783,11 +899,12 @@ $B.show_error = function(err){
     }
     if(err.__class__ === _b_.SyntaxError ||
             err.__class__ === _b_.IndentationError){
+        err.$stack.pop()
         trace += trace_from_stack(err)
         var filename = err.filename,
             line = err.text,
             indent = line.length - line.trimLeft().length
-        trace += `  File ${filename}, line ${err.args[1][1]}\n` +
+        trace += `  File "${filename}", line ${err.args[1][1]}\n` +
                      `    ${line.trim()}\n`
         if(err.__class__ !== _b_.IndentationError &&
                 err.text){
@@ -800,6 +917,10 @@ $B.show_error = function(err){
                     nb_marks = line.length - start - indent
                 }else{
                     nb_marks = err.end_offset - start - indent - 1
+                }
+                if(nb_marks == 0 &&
+                        err.end_offset == line.substr(indent).length){
+                    nb_marks = 1
                 }
             }
             marks += '^'.repeat(nb_marks) + '\n'

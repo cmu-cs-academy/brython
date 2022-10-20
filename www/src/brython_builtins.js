@@ -106,7 +106,17 @@ $B.async_enabled = false
 if($B.async_enabled){$B.block = {}}
 
 // Maps the name of imported modules to the module object
-$B.imported = {}
+$B.imported = new Proxy(
+    {}, 
+    { 
+        get: (target, name) => {
+            if (name in target || !name.startsWith('$python_to_js')) {
+                return target[name];
+            }
+            return {};
+        }
+    }
+)
 
 // Maps the name of modules to the matching Javascript code
 $B.precompiled = {}
@@ -174,6 +184,8 @@ $B.min_int = -$B.max_int
 
 $B.max_float = new Number(Number.MAX_VALUE)
 $B.min_float = new Number(Number.MIN_VALUE)
+
+$B.recursion_limit = 200
 
 // special repr() for some codepoints, used in py_string.js and py_bytes.js
 $B.special_string_repr = {
@@ -327,18 +339,16 @@ $B.python_to_js = function(src, script_id){
     }
 
     // fake names
-    var filename = '$python_to_js'
-    $B.url2name[filename] = '$python_to_js'
-    $B.imported.$python_to_js = {}
+    var filename = '$python_to_js' + $B.UUID()
+    $B.url2name[filename] = filename
+    $B.imported[filename] = {}
 
     var root = __BRYTHON__.py2js({src, filename},
-                                 script_id, script_id, 
+                                 script_id, script_id,
                                  __BRYTHON__.builtins_scope),
         js = root.to_js()
 
-    js = "(function() {\n" + js + "\nreturn locals}())"
-
-    return js
+    return "(function() {\n" + js + "\nreturn locals}())"
 }
 
 _window.py = function(src){

@@ -363,6 +363,7 @@ function raise_error_known_location(type, filename, lineno, col_offset,
     exc.text = line
     exc.args[1] = $B.fast_tuple([filename, exc.lineno, exc.offset, exc.text,
                    exc.end_lineno, exc.end_offset])
+    exc.$stack = $B.frames_stack.slice()
     throw exc
 }
 
@@ -937,7 +938,8 @@ $AbstractExprCtx.prototype.transition = function(token, value){
                 context.op = 'is_not'
                 return context
             }
-            return new $NotCtx(new $ExprCtx(context, 'not', commas))
+            return new $AbstractExprCtx(
+                new $NotCtx(new $ExprCtx(context, 'not', commas)), false)
         case 'lambda':
             return new $LambdaCtx(new $ExprCtx(context, 'lambda', commas))
         case 'op':
@@ -1044,6 +1046,7 @@ $AbstractExprCtx.prototype.transition = function(token, value){
         case 'return':
         case 'try':
             raise_syntax_error(context)
+            break
     }
     return $transition(context.parent, token, value)
 }
@@ -1143,6 +1146,14 @@ $AssertCtx.prototype.transition = function(token, value){
         return new $AbstractExprCtx(this, false)
     }
     if(token == 'eol'){
+        if(this.tree.length == 1 &&
+                this.tree[0].type == 'expr' &&
+                this.tree[0].tree[0].type == 'list_or_tuple'){
+            $B.warn(_b_.SyntaxWarning,
+                    "assertion is always true, perhaps remove parentheses?",
+                    $get_module(context).filename,
+                    $token.value)
+        }
         return $transition(context.parent, token)
     }
     raise_syntax_error(context)
@@ -1242,7 +1253,7 @@ $AssignCtx.prototype.ast = function(){
             target.tree[0].ast(),
             target.annotation.tree[0].ast(),
             value,
-            1)
+            target.$was_parenthesized ? 0 : 1)
         // set position of annotation to get annotation string
         // in ast_to_js.js
         set_position(ast_obj.annotation, target.annotation.position,
@@ -1903,6 +1914,15 @@ var Comprehension = {
         return comprehensions
     },
     make_comp: function(comp, context){
+        if(context.tree[0].type == 'yield'){
+            var comp_type = comp.type == 'listcomp' ? 'list comprehension' :
+                            comp.type == 'dictcomp' ? 'dict comprehension' :
+                            comp.type == 'setcomp' ? 'set comprehension' :
+                            comp.type == 'genexpr' ? 'generator expression' : ''
+            var a = context.tree[0]
+            //raise_syntax_error_known_range(context, a.position, last_position(a),
+            //                                `'yield' inside ${comp_type}`)
+        }
         comp.comprehension = true
         comp.position = $token.value
         comp.parent = context.parent
@@ -2706,7 +2726,7 @@ $ExprCtx.prototype.ast = function(){
             res,
             this.annotation.tree[0].ast(),
             undefined,
-            1)
+            this.$was_parenthesized ? 0 : 1)
         set_position(res, this.position)
     }
     return res
@@ -3487,13 +3507,15 @@ $FuncArgs.prototype.ast = function(){
             state = 'kwonly'
             if(arg.op == '*' && arg.name != '*'){
                 args.vararg = new ast.arg(arg.name)
-                if(arg.position === undefined){
-                    console.log('pas de position', arg)
-                    alert()
+                if(arg.annotation){
+                    args.vararg.annotation = arg.annotation.tree[0].ast()
                 }
                 set_position(args.vararg, arg.position)
             }else if(arg.op == '**'){
                 args.kwarg = new ast.arg(arg.name)
+                if(arg.annotation){
+                    args.kwarg.annotation = arg.annotation.tree[0].ast()
+                }
                 set_position(args.kwarg, arg.position)
             }
         }else{
@@ -4187,7 +4209,7 @@ JoinedStrCtx.prototype.ast = function(){
             var conv_num = {a: 97, r: 114, s: 115},
                 format = item.elt.format
             format = format === undefined ? format : format.ast()
-                value = new ast.FormattedValue(
+            var value = new ast.FormattedValue(
                     item.ast(),
                     conv_num[item.elt.conversion] || -1,
                     format)
@@ -4408,7 +4430,7 @@ $ListOrTupleCtx.prototype.ast = function(){
     }else if(this.real == 'tuple'){
         ast_obj = new ast.Tuple(elts, new ast.Load())
     }
-    set_position(ast_obj, this.position)
+    set_position(ast_obj, this.position, this.end_position)
     return ast_obj
 }
 
@@ -4446,6 +4468,10 @@ $ListOrTupleCtx.prototype.transition = function(token, value){
                             // remove expr tuple
                             grandparent.tree.pop()
                             grandparent.tree.push(context.tree[0])
+                            // note that the expression was inside ()
+                            // used in annotation, to sort "(a): int" from
+                            // "a: int"
+                            context.tree[0].$was_parenthesized = true
                             context.tree[0].parent = grandparent
                             return context.tree[0]
                         }
@@ -4986,7 +5012,7 @@ $NumberCtx.prototype.ast = function(){
     if(this.type == 'int'){
         var value = parseInt(this.value[1], this.value[0])
         if(! Number.isSafeInteger(value)){
-            value = $B.long_int.$factory(this.value[1], this.value[0])
+            value = _b_.int.$factory(this.value[1], this.value[0])
         }
         ast_obj.value = value
     }else if(this.type == 'float'){
@@ -4998,7 +5024,7 @@ $NumberCtx.prototype.ast = function(){
             position: this.position
         }
         var imag_value = $NumberCtx.prototype.ast.bind(imag)().value
-        ast_obj.value = $B.make_complex(0, imag_value)
+        ast_obj.value = $B.make_complex(0, +imag_value)
     }
     set_position(ast_obj, this.position)
     return ast_obj
@@ -5075,11 +5101,29 @@ $OpCtx.prototype.ast = function(){
     return ast_obj
 }
 
+function is_literal(expr){
+    return expr.type == 'expr' &&
+        ['int', 'str', 'float', 'imaginary'].indexOf(expr.tree[0].type) > -1
+}
+
 $OpCtx.prototype.transition = function(token, value){
     var context = this
     if(context.op === undefined){
         console.log('context has no op', context)
         raise_syntax_error(context)
+    }
+    if((context.op == 'is' || context.op == 'is_not')
+            && context.tree.length > 1){
+        for(var operand of context.tree){
+            if(is_literal(operand)){
+                var head = context.op == 'is' ? 'is' : 'is not'
+                $B.warn(_b_.SyntaxWarning,
+                        `"${head}" with a literal. Did you mean "=="?"`,
+                        $get_module(context).filename,
+                        $token.value)
+                break
+            }
+        }
     }
 
     switch(token) {
@@ -5261,6 +5305,7 @@ var $PatternCaptureCtx = function(context, value){
     context.parent.tree.push(this)
     this.tree = [value]
     this.position = $token.value
+    this.positions = [this.position]
     this.expect = '.'
     this.$pos = $pos
 }
@@ -5269,9 +5314,9 @@ $PatternCaptureCtx.prototype.ast = function(){
     var ast_obj
     try{
         if(this.tree.length > 1){
-            var pattern = new ast.Name(this.tree[0].value, new ast.Load())
+            var pattern = new ast.Name(this.tree[0], new ast.Load())
             set_position(pattern, this.position)
-            for(var i = 1; i < this.tree.length; i += 2){
+            for(var i = 1; i < this.tree.length; i++){
                 pattern = new ast.Attribute(pattern, this.tree[i], new ast.Load())
                 copy_position(pattern, pattern.value)
             }
@@ -5337,12 +5382,6 @@ $PatternCaptureCtx.prototype.transition = function(token, value){
             if(token == '.'){
                 context.type = "value_pattern"
                 context.expect = 'id'
-                if(context.tree.length == 1){
-                    // create an $IdCtx to resolve the name correctly
-                    new $IdCtx(context, context.tree.pop())
-                }else{
-                    context.tree.push('.')
-                }
                 return context
             }else if(token == '('){
                 // open class pattern
@@ -5360,6 +5399,7 @@ $PatternCaptureCtx.prototype.transition = function(token, value){
         case 'id':
             if(token == 'id'){
                 context.tree.push(value)
+                context.positions.push($token.value)
                 context.expect = '.'
                 return context
             }
@@ -5374,7 +5414,8 @@ $PatternClassCtx = function(context){
     this.parent = context.parent
     this.position = $token.value
     // create an id for class name
-    this.class_id = new $IdCtx(context, context.tree[0])
+    this.class_id = context.tree.slice()
+    this.positions = context.positions
     // remove this instance of $dCtx from tree
     context.tree.pop()
     // get possible attributes of id
@@ -5394,7 +5435,23 @@ $PatternClassCtx.prototype.ast = function(){
     //   class defined sequence of pattern matching attributes
     // `kwd_attrs` is a sequence of additional attributes to be matched
     // `kwd_patterns` are the corresponding patterns
-    var cls = new ast.Name(this.class_id.value)
+    if(this.class_id.length == 1){
+        var cls = new ast.Name(this.class_id[0])
+    }else{
+        // attribute, eg "case ast.Expr(expr)": class_id is
+        // ['ast', '.', 'Expr']
+        var cls
+        for(var i = 0, len = this.class_id.length; i < len - 1; i++){
+            var value = new ast.Name(this.class_id[i], new ast.Load())
+            set_position(value, this.positions[i])
+            if(i == 0){
+                cls = new ast.Attribute(value, this.class_id[i + 1])
+            }else{
+                cls = new ast.Attribute(cls, this.class_id[i + 1])
+            }
+            set_position(cls, this.positions[i])
+        }
+    }
     set_position(cls, this.position)
     cls.ctx = new ast.Load()
     var patterns = [],
@@ -7096,18 +7153,10 @@ var $YieldCtx = $B.parser.$YieldCtx = function(context, is_await){
     if(! in_lambda){
         switch(context.type) {
             case 'node':
-                break;
-
-            // or start a 'yield atom'
-            // a 'yield atom' without enclosing "(" and ")" is only allowed as the
-            // right-hand side of an assignment
-
             case 'assign':
             case 'list_or_tuple':
-                // mark the node as containing a yield atom
-                //$get_node(context).yield_atoms.push(this)
                 break
-           default:
+            default:
                 // else it is a SyntaxError
                 raise_syntax_error(context, '(non-parenthesized yield)')
         }
@@ -7143,6 +7192,9 @@ $YieldCtx.prototype.transition = function(token, value){
         return context.tree[0]
     }else{
         remove_abstract_expr(context.tree)
+        if(context.from && context.tree.length == 0){
+            raise_syntax_error(context)
+        }
     }
     return $transition(context.parent, token)
 }
@@ -7162,9 +7214,7 @@ $YieldCtx.prototype.check_in_function = function(){
         in_func = parent.is_function
         func_scope = parent
     }
-    if(! in_func){
-        raise_syntax_error(this.parent, "'yield' outside function")
-    }else{
+    if(in_func){
         var def = func_scope.context.tree[0]
         if(! this.is_await){
             def.type = 'generator'
@@ -7904,6 +7954,30 @@ function handle_errortoken(context, token, token_reader){
     raise_syntax_error(context)
 }
 
+const braces_opener = {")": "(", "]": "[", "}": "{"},
+      braces_open = "([{",
+      braces_closer = {'(': ')', '{': '}', '[': ']'}
+
+function check_brace_is_closed(brace, reader){
+    // check if the brace is closed
+    var save_reader_pos = reader.position,
+        closer = braces_closer[brace],
+        nb_braces = 1
+    while(true){
+        var tk = reader.read()
+        if(tk.type == 'OP' && tk.string == brace){
+            nb_braces += 1
+        }else if(tk.type == 'OP' && tk.string == closer){
+            nb_braces -= 1
+            if(nb_braces == 0){
+                // reset reader to the position after the brace
+                reader.seek(save_reader_pos)
+                break
+            }
+        }
+    }
+}
+
 var python_keywords = [
     "class", "return", "break", "for", "lambda", "try", "finally", "raise",
     "def", "from", "nonlocal", "while", "del", "global", "with", "as", "elif",
@@ -7916,9 +7990,7 @@ var $token = {}
 var dispatch_tokens = $B.parser.dispatch_tokens = function(root){
     var src = root.src
     root.token_reader = new $B.TokenReader(src)
-    var braces_close = {")": "(", "]": "[", "}": "{"},
-        braces_open = "([{",
-        braces_stack = []
+    var braces_stack = []
 
     var unsupported = []
     var $indented = [
@@ -7968,7 +8040,14 @@ var dispatch_tokens = $B.parser.dispatch_tokens = function(root){
                 if(err_msg == 'EOF in multi-line statement'){
                     err_msg = 'unexpected EOF while parsing'
                 }
-                raise_syntax_error(context, err_msg)
+                if(err.lineno){
+                    raise_error_known_location(_b_.SyntaxError,
+                        root.filename, err.lineno, err.col_offset,
+                        err.end_lineno, err.end_col_offset, err.line,
+                        err.message)
+                }else{
+                    raise_syntax_error(context, err_msg)
+                }
             }
             throw err
         }
@@ -8065,12 +8144,24 @@ var dispatch_tokens = $B.parser.dispatch_tokens = function(root){
                         [':='].indexOf(op) > -1){
                     if(braces_open.indexOf(op) > -1){
                         braces_stack.push(token)
-                    }else if(braces_close[op]){
+                        // check that opening brace is closed later, this
+                        // takes precedence over syntax errors that might
+                        // occur before the closing brace
+                        try{
+                            check_brace_is_closed(op, root.token_reader)
+                        }catch(err){
+                            if(err.message == 'EOF in multi-line statement'){
+                                raise_syntax_error(context,
+                                    `'${op}' was never closed`)
+                            }
+                            throw err
+                        }
+                    }else if(braces_opener[op]){
                         if(braces_stack.length == 0){
                             raise_syntax_error(context, "(unmatched '" + op + "')")
                         }else{
                             var last_brace = $B.last(braces_stack)
-                            if(last_brace.string == braces_close[op]){
+                            if(last_brace.string == braces_opener[op]){
                                 braces_stack.pop()
                             }else{
                                 raise_syntax_error(context,
@@ -8206,7 +8297,6 @@ $B.py2js = function(src, module, locals_id, parent_scope){
     //
     // Returns the Javascript code
 
-    var test = false // locals_id == "items_en"
     $pos = 0
 
     if(typeof module == "object"){
@@ -8219,18 +8309,15 @@ $B.py2js = function(src, module, locals_id, parent_scope){
     parent_scope = parent_scope || $B.builtins_scope
 
     var t0 = Date.now(),
-        has_annotations = true, // determine if __annotations__ is created
-        line_info, // set for generator expression
         ix, // used for generator expressions
-        filename
+        filename,
+        imported
     if(typeof src == 'object'){
-        var has_annotations = src.has_annotations,
-            line_info = src.line_info || `1,${locals_id}`
-            ix = src.ix,
-            filename = src.filename
+        var ix = src.ix,
+            filename = src.filename,
+            imported = src.imported
         src = src.src
     }
-
     var locals_is_module = Array.isArray(locals_id)
     if(locals_is_module){
         locals_id = locals_id[0]
@@ -8239,25 +8326,17 @@ $B.py2js = function(src, module, locals_id, parent_scope){
     if($B.parser_to_ast){
         var _ast = new $B.Parser(src, filename).parse('file')
     }else{
-        var root = $create_root_node(
-                {src: src, has_annotations: has_annotations,
-                    filename: filename},
-                module, locals_id, parent_scope)
-        if(test){
-            console.log('before dispatch tokens', Date.now() - t0)
-        }
+        var root = $create_root_node({src, filename},
+                                     module, locals_id, parent_scope)
         dispatch_tokens(root)
-        if(test){
-            console.log('after dispatch tokens', Date.now() - t0)
-        }
         var _ast = root.ast()
-        if(test){
-            console.log('afetr ast()', Date.now() - t0)
-        }
     }
     var future = $B.future_features(_ast, filename)
     var symtable = $B._PySymtable_Build(_ast, filename, future)
-    var js_obj = $B.js_from_root(_ast, symtable, filename)
+    var js_obj = $B.js_from_root({ast: _ast,
+                                  symtable,
+                                  filename,
+                                  imported})
     var js_from_ast = js_obj.js
     return {
         _ast,
@@ -8361,7 +8440,8 @@ $B.parse_options = function(options){
     $B.set_import_paths()
 
     // URL of the script where function brython() is called
-    var $href = $B.script_path = _window.location.href,
+    // Remove part after # (cf. issue #2035)
+    var $href = $B.script_path = _window.location.href.split('#')[0],
         $href_elts = $href.split('/')
     $href_elts.pop()
     if($B.isWebWorker || $B.isNode){$href_elts.pop()} // WebWorker script is in the web_workers subdirectory

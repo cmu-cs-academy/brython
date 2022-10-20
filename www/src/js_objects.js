@@ -36,8 +36,8 @@ $B.pyobj2structuredclone = function(obj, strict){
     if(typeof obj == "boolean" || typeof obj == "number" ||
             typeof obj == "string" || obj instanceof String){
         return obj
-    }else if(obj instanceof Number){
-        return obj.valueOf()
+    }else if(obj.__class__ === _b_.float){
+        return obj.value
     }else if(obj === _b_.None){
         return null // _b_.None
     }else if(Array.isArray(obj) || obj.__class__ === _b_.list ||
@@ -71,9 +71,13 @@ $B.structuredclone2pyobj = function(obj){
         return _b_.None
     }else if(obj === undefined){
         return $B.Undefined
-    }else if(typeof obj == "boolean" || typeof obj == "number" ||
+    }else if(typeof obj == "boolean" ||
             typeof obj == "string"){
         return obj
+    }else if(typeof obj == "number"){
+        return Number.isInteger(obj) ?
+                   obj :
+                   {__class__: _b_.float, value: obj}
     }else if(obj instanceof Number || obj instanceof String){
         return obj.valueOf()
     }else if(Array.isArray(obj) || obj.__class__ === _b_.list ||
@@ -248,10 +252,14 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
         })
         return jsobj
 
-    }else if(klass === _b_.float || klass === _b_.str){
+    }else if(klass === _b_.str){
 
-        // Python floats and strings are converted to the underlying value
+        // Python strings are converted to the underlying value
         return pyobj.valueOf()
+
+    }else if(klass === _b_.float){
+
+        return pyobj.value
 
     }else if(klass === $B.Function || klass === $B.method){
         // Transform arguments
@@ -323,7 +331,7 @@ $B.JSObj = $B.make_class("JSObject",
                 return new jsobj.$js_func(...arguments)
             }
         }else if(typeof jsobj == "number" && ! Number.isInteger(jsobj)){
-            return new Number(jsobj)
+            return {__class__: _b_.float, value: jsobj}
         }
         return jsobj
     }
@@ -377,7 +385,7 @@ $B.JSObj.__ne__ = function(_self, other){
 }
 
 $B.JSObj.__getattribute__ = function(_self, attr){
-    var test = false // attr == "FileReader"
+    var test = false // attr == "get_float"
     if(test){
         console.log("__ga__", _self, attr)
     }
@@ -505,26 +513,9 @@ var JSObj_iterator = $B.make_iterator_class('JS object iterator')
 $B.JSObj.__iter__ = function(_self){
     var items = []
     if(_window.Symbol && _self[Symbol.iterator] !== undefined){
-        // Javascript objects that support the iterable protocol, such as Map
-        // For the moment don't use "for(var item of _self.js)" for
-        // compatibility with uglifyjs
-        // If object has length and item(), it's a collection : iterate on
-        // its items
-        var items = []
-        if(_self.next !== undefined){
-            while(true){
-                var nxt = _self.next()
-                if(nxt.done){
-                    break
-                }
-                items.push($B.JSObj.$factory(nxt.value))
-            }
-        }else if(_self.length !== undefined && _self.item !== undefined){
-            for(var i = 0; i < _self.length; i++){
-                items.push($B.JSObj.$factory(_self.item(i)))
-            }
-        }
-        return JSObj_iterator.$factory(items)
+        // Javascript objects that support the iterable protocol, such as Map,
+        // views on ArrayBuffer, etc.
+        return JSObj_iterator.$factory(Array.from(_self))
     }else if(_self.length !== undefined && _self.item !== undefined){
         // collection
         for(var i = 0; i < _self.length; i++){

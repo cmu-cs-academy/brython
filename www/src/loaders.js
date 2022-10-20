@@ -391,19 +391,23 @@ var loop = $B.loop = function(){
             // If the error was not caught by the Python runtime, build an
             // instance of a Python exception
             if(err.__class__ === undefined){
-                console.log('Javascript error', err)
-                var lineNumber = err.lineNumber
-                if(lineNumber !== undefined){
-                    console.log('around line', lineNumber)
-                    console.log(script.js.split('\n').
-                        slice(lineNumber - 4, lineNumber).join('\n'))
-                    console.log('script\n', script.js)
-                }
-                if($B.is_recursion_error(err)){
-                    err = _b_.RecursionError.$factory("too much recursion")
+                if(err.$py_exc){
+                    err = err.$py_exc
                 }else{
+                    $B.freeze(err)
+                    var stack = err.$stack,
+                        linenos = err.$linenos
+                    var lineNumber = err.lineNumber
+                    if(lineNumber !== undefined){
+                        console.log('around line', lineNumber)
+                        console.log(script.js.split('\n').
+                            slice(lineNumber - 4, lineNumber).join('\n'))
+                        // console.log('script\n', script.js)
+                    }
                     $B.print_stack()
                     err = _b_.RuntimeError.$factory(err + '')
+                    err.$stack = stack
+                    err.$linenos = linenos
                 }
             }
             $B.handle_error(err)
@@ -452,3 +456,4 @@ function required_stdlib_imports(imports, start){
 }
 
 })(__BRYTHON__)
+
