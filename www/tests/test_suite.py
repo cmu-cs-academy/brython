@@ -966,5 +966,9 @@ def optional_keyword_only_arg(*, a, b=None):
 
 optional_keyword_only_arg(a=42)
 
+# issue 2071
+assert_raises(SyntaxError, exec, "f(x, 2a)",
+    msg='invalid decimal literal')
+    
 
 print('passed all tests...')

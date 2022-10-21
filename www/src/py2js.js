@@ -7946,8 +7946,8 @@ function handle_errortoken(context, token, token_reader){
                 'unexpected character after line continuation character')
         }
     }else if(' `$'.indexOf(token.string) == -1){
-        var u = token.string.codePointAt(0).toString(16).toUpperCase()
-        u = 'U+' + '0'.repeat(4 - u.length) + u
+        var u = _b_.ord(token.string).toString(16).toUpperCase()
+        u = 'U+' + '0'.repeat(Math.max(0, 4 - u.length)) + u
         raise_syntax_error(context,
             `invalid character '${token.string}' (${u})`)
     }
@@ -8153,8 +8153,12 @@ var dispatch_tokens = $B.parser.dispatch_tokens = function(root){
                             if(err.message == 'EOF in multi-line statement'){
                                 raise_syntax_error(context,
                                     `'${op}' was never closed`)
+                            }else{
+                                raise_error_known_location(_b_.SyntaxError,
+                                    root.filename, err.lineno, err.col_offset,
+                                    err.end_lineno, err.end_col_offset, err.line,
+                                    err.message)
                             }
-                            throw err
                         }
                     }else if(braces_opener[op]){
                         if(braces_stack.length == 0){
