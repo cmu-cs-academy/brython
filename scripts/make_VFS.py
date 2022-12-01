@@ -77,6 +77,7 @@ def process(filename, exclude_dirs=['test','site-packages']):
     main_root = os.path.dirname(filename)
     VFS = {"$timestamp": timestamp}
     print("generated VFS timestamp", timestamp)
+    old_vfs = None
     if os.path.exists(filename):
         with open(filename, encoding='utf-8') as f:
             vfs = f.readlines()[1:-1]
@@ -149,7 +150,7 @@ def process(filename, exclude_dirs=['test','site-packages']):
                    mod_name = mod_name[:-9]
 
                 tail = file_name[len(main_root) + 1:]
-                if not check_changed(main_root, tail):
+                if not check_changed(main_root, tail) and old_vfs:
                     # if last modif time did not change, use the previous
                     # version stored in brython_stdlib.js
                     nb_unchanged += 1

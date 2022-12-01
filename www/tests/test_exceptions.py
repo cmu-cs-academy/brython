@@ -132,3 +132,16 @@ except ZeroDivisionError as exc:
             frames.append(frame.f_code.co_name)
         tb = tb.tb_next
     assert frames == ['<module>', '<listcomp>', 'gen'], frames
+
+# issue 2092
+out = io.StringIO()
+
+x = 4
+lineno = sys._getframe().f_lineno
+try:
+    for i in range(3.5):
+        pass
+except TypeError as exc:
+    traceback.print_exc(file=out)
+    message = out.getvalue()
+    assert f'line {lineno + 2}' in message

@@ -609,7 +609,7 @@ function init_comprehension(comp, scopes){
                `co_varnames: $B.fast_tuple(['.0', ${varnames}])\n` +
            `}\n` +
            `var next_func_${comp.id} = $B.next_of1(expr, frame, ${comp.ast.lineno})\n` +
-           `locals.$f_trace = $B.enter_frame(frame)\n` +
+           `frame.$f_trace = $B.enter_frame(frame)\n` +
            `var _frames = $B.frames_stack.slice()\n`
 }
 
@@ -701,10 +701,13 @@ function make_comp(scopes){
           `throw err\n}\n` +
           (has_await ? '\n$B.restore_stack(save_stack, locals);' : '')
 
-
-    js += `\n$B.leave_frame()`
-    js += `\nreturn result_${id}`
-    js += `\n}\n)(${outmost_expr})\n`
+    js += '\nif(frame.$f_trace !== _b_.None){\n' +
+              '$B.trace_return(_b_.None)\n' +
+          '}\n' +
+          `$B.leave_frame()\n` +
+          `return result_${id}\n` +
+          `}\n` +
+          `)(${outmost_expr})\n`
 
     scopes.pop()
     return js
@@ -1291,9 +1294,9 @@ $B.ast.ClassDef.prototype.to_js = function(scopes){
           `var frame = ["${this.name}", locals, "${glob}", ${globals_name}]\n` +
           `frame.__file__ = '${scopes.filename}'\n` +
           `frame.$lineno = ${this.lineno}\n` +
-          `locals.$f_trace = $B.enter_frame(frame)\n` +
+          `frame.$f_trace = $B.enter_frame(frame)\n` +
           `var _frames = $B.frames_stack.slice()\n` +
-          `if(locals.$f_trace !== _b_.None){$B.trace_line()}\n`
+          `if(frame.$f_trace !== _b_.None){$B.trace_line()}\n`
 
     js += `locals.__annotations__ = $B.empty_dict()\n`
     class_scope.has_annotation = true
@@ -1303,7 +1306,7 @@ $B.ast.ClassDef.prototype.to_js = function(scopes){
 
     scopes.pop()
 
-    js += '\nif(locals.$f_trace !== _b_.None){\n' +
+    js += '\nif(frame.$f_trace !== _b_.None){\n' +
               '$B.trace_return(_b_.None)\n' +
           '}\n' +
           '$B.leave_frame()\n' +
@@ -1538,7 +1541,7 @@ $B.ast.For.prototype.to_js = function(scopes){
     // scope.
     var id = $B.UUID(),
         iter = $B.js_from_ast(this.iter, scopes),
-        js
+        js = `frame.$lineno = ${this.lineno}\n`
     // Create a new scope with the same name to avoid binding in the enclosing
     // scope.
     var scope = $B.last(scopes),
@@ -1546,7 +1549,7 @@ $B.ast.For.prototype.to_js = function(scopes){
     scopes.push(new_scope)
 
     if(this instanceof $B.ast.AsyncFor){
-        js = `var iter_${id} = ${iter},\n` +
+        js += `var iter_${id} = ${iter},\n` +
                  `type_${id} = _b_.type.$factory(iter_${id})\n` +
             `iter_${id} = $B.$call($B.$getattr(type_${id}, "__aiter__"))(iter_${id})\n` +
             `var next_func_${id} = $B.$call(` +
@@ -1559,8 +1562,9 @@ $B.ast.For.prototype.to_js = function(scopes){
             `    else{\nthrow err}\n`+
             `  }\n`
     }else{
-        js = `var no_break_${id} = true\n` +
-             `for(var next_${id} of $B.next_of1(${iter}, frame, ${this.lineno})){\n`
+        js += `var no_break_${id} = true,\n` +
+                 `iterator_${id} = ${iter}\n` +
+             `for(var next_${id} of $B.next_of1(iterator_${id}, frame, ${this.lineno})){\n`
     }
     // assign result of iteration to target
     var name = new $B.ast.Name(`next_${id}`, new $B.ast.Load())
@@ -1753,7 +1757,7 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
     js += `var frame = ["${this.name}", locals, "${gname}", ${globals_name}, ${name2}]
     frame.__file__ = '${scopes.filename}'
     frame.$lineno = ${this.lineno}
-    locals.$f_trace = $B.enter_frame(frame)
+    frame.$f_trace = $B.enter_frame(frame)
     var _frames = $B.frames_stack.slice()
     var stack_length = $B.frames_stack.length\n`
 
@@ -1787,15 +1791,15 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
     if((! this.$is_lambda) && ! ($B.last(this.body) instanceof $B.ast.Return)){
         // add an explicit "return None"
         js += 'var result = _b_.None\n' +
-              'if(locals.$f_trace !== _b_.None){\n' +
+              'if(frame.$f_trace !== _b_.None){\n' +
               '$B.trace_return(_b_.None)\n}\n' +
               '$B.leave_frame();return result\n'
     }
 
     js += `}catch(err){
     $B.set_exc(err)
-    if((! err.$in_trace_func) && locals.$f_trace !== _b_.None){
-    ${locals_name}.$f_trace = $B.trace_exception()
+    if((! err.$in_trace_func) && frame.$f_trace !== _b_.None){
+    frame.$f_trace = $B.trace_exception()
     }
     $B.leave_frame();throw err
     }
@@ -1947,7 +1951,7 @@ $B.ast.GeneratorExp.prototype.to_js = function(scopes){
     var first = this.generators[0]
     var js = `var next_func_${id} = $B.next_of1(expr, frame, ${this.lineno})\n` +
           `for(var next_${id} of next_func_${id}){\n` +
-              `locals.$f_trace = $B.enter_frame(frame)\n`
+              `frame.$f_trace = $B.enter_frame(frame)\n`
     // assign result of iteration to target
     var name = new $B.ast.Name(`next_${id}`, new $B.ast.Load())
     copy_position(name, first_for.iter)
@@ -2440,7 +2444,7 @@ $B.ast.Module.prototype.to_js = function(scopes){
     if(! namespaces){
         // for exec(), frame is put on top of the stack inside
         // py_builtin_functions.js / $$eval()
-        js += `locals.$f_trace = $B.enter_frame(frame)\n`
+        js += `frame.$f_trace = $B.enter_frame(frame)\n`
     }
     js += `$B.set_lineno(frame, 1)\n` +
           '\nvar _frames = $B.frames_stack.slice()\n' +
@@ -2450,8 +2454,8 @@ $B.ast.Module.prototype.to_js = function(scopes){
               (namespaces ? '' : `$B.leave_frame({locals, value: _b_.None})\n`) +
           `}catch(err){\n` +
               `$B.set_exc(err)\n` +
-              `if((! err.$in_trace_func) && locals.$f_trace !== _b_.None){\n` +
-                  `locals.$f_trace = $B.trace_exception()\n` +
+              `if((! err.$in_trace_func) && frame.$f_trace !== _b_.None){\n` +
+                  `frame.$f_trace = $B.trace_exception()\n` +
               `}\n` +
               (namespaces ? '' : `$B.leave_frame({locals, value: _b_.None})\n`) +
               'throw err\n' +
@@ -2525,7 +2529,7 @@ $B.ast.Return.prototype.to_js = function(scopes){
     var js = `$B.set_lineno(frame, ${this.lineno})\n` +
              'var result = ' +
              (this.value ? $B.js_from_ast(this.value, scopes) : ' _b_.None')
-    js += `\nif(locals.$f_trace !== _b_.None){\n` +
+    js += `\nif(frame.$f_trace !== _b_.None){\n` +
           `$B.trace_return(result)\n}\n` +
           `$B.leave_frame()\nreturn result\n`
     return js
@@ -2616,8 +2620,8 @@ $B.ast.Try.prototype.to_js = function(scopes){
         js += '}\n' // close try
         js += `catch(${err}){\n` +
               `$B.set_exc(${err})\n` +
-              `if(locals.$f_trace !== _b_.None){\n` +
-              `locals.$f_trace = $B.trace_exception()}\n`
+              `if(frame.$f_trace !== _b_.None){\n` +
+              `frame.$f_trace = $B.trace_exception()}\n`
         if(has_else){
             js += `failed${id} = true\n`
         }
