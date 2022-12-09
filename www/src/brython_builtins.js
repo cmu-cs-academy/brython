@@ -339,7 +339,7 @@ $B.python_to_js = function(src, script_id){
     }
 
     // fake names
-    var filename = '$python_to_js' + $B.UUID()
+    var filename = '$python_to_js' + Math.floor(Math.random() * 1e10)
     $B.url2name[filename] = filename
     $B.imported[filename] = {}
 
