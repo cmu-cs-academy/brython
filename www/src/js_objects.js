@@ -205,9 +205,9 @@ var jsobj2pyobj = $B.jsobj2pyobj = function(jsobj) {
 
 var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
     // conversion of a Python object into a Javascript object
-    if(pyobj === true || pyobj === false){return pyobj}
     if(pyobj === _b_.None){return null}
     if(pyobj === $B.Undefined){return undefined}
+    if(pyobj === true || pyobj === false){return pyobj}
 
     var klass = $B.get_class(pyobj)
     if(klass === undefined){
@@ -220,38 +220,8 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
 
         if(pyobj.js_func !== undefined){return pyobj.js_func}
         return pyobj.js
-
-    }else if(klass === $B.DOMNode ||
-            klass.__mro__.indexOf($B.DOMNode) > -1){
-
-        // instances of DOMNode or its subclasses are transformed into the
-        // underlying DOM element
-        return pyobj
-
-    }else if([_b_.list, _b_.tuple].indexOf(klass) > -1){
-
-        // Python list : transform its elements
-        var res = []
-        pyobj.forEach(function(item){
-            res.push(pyobj2jsobj(item))
-        })
-        return res
-
-    }else if(klass === _b_.dict || _b_.issubclass(klass, _b_.dict)){
-
-        // Python dictionaries are transformed into a Javascript object
-        // whose attributes are the dictionary keys
-        var jsobj = {}
-        var items = _b_.list.$factory(_b_.dict.items(pyobj))
-        items.forEach(function(item){
-            if(typeof item[1] == 'function'){
-                // set "this" to jsobj
-                item[1].bind(jsobj)
-            }
-            jsobj[item[0]] = pyobj2jsobj(item[1])
-        })
-        return jsobj
-
+    }else if(klass === _b_.int) {
+        return pyobj;
     }else if(klass === _b_.str){
 
         // Python strings are converted to the underlying value
@@ -291,6 +261,37 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
                 throw err
             }
         }
+    }else if(klass === _b_.list || klass === _b_.tuple){
+
+        // Python list : transform its elements
+        var res = []
+        pyobj.forEach(function(item){
+            res.push(pyobj2jsobj(item))
+        })
+        return res
+
+    }else if(klass === $B.DOMNode ||
+            klass.__mro__.indexOf($B.DOMNode) > -1){
+
+        // instances of DOMNode or its subclasses are transformed into the
+        // underlying DOM element
+        return pyobj
+
+    }else if(klass === _b_.dict || _b_.issubclass(klass, _b_.dict)){
+
+        // Python dictionaries are transformed into a Javascript object
+        // whose attributes are the dictionary keys
+        var jsobj = {}
+        var items = _b_.list.$factory(_b_.dict.items(pyobj))
+        items.forEach(function(item){
+            if(typeof item[1] == 'function'){
+                // set "this" to jsobj
+                item[1].bind(jsobj)
+            }
+            jsobj[item[0]] = pyobj2jsobj(item[1])
+        })
+        return jsobj
+
     }else{
         // other types are left unchanged
         return pyobj
