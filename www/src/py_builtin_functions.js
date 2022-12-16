@@ -970,6 +970,11 @@ function in_mro(klass, attr){
 
 $B.$getattr = function(obj, attr, _default){
     // Used internally to avoid having to parse the arguments
+
+    if (obj.__js_getattribute__) {
+        return obj.__js_getattribute__(attr, _default);
+    }
+
     var res
     if(obj === undefined){
         console.log('attr', attr, 'of obj undef')
@@ -2357,6 +2362,11 @@ function setattr(){
 }
 
 $B.$setattr = function(obj, attr, value){
+    if (obj.__js_setattribute__) {
+        obj.__js_setattribute__(attr, value);
+        return None;
+    }
+
     if(obj === undefined){
         console.log('obj undef', attr, value)
     }
