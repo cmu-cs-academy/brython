@@ -1,5 +1,5 @@
 os: linux
-dist: focal
+dist: jammy
 language: node_js
 node_js: 16
 
