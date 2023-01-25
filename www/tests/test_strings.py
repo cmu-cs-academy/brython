@@ -465,4 +465,7 @@ assert_raises(TypeError, str, A(),
 # issue 2155
 assert_raises(TypeError, ord, 'ab')
 
+# issue 2154
+assert 'abcdef'[3:1] == ''
+
 print("passed all tests...")
