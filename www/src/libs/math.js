@@ -1569,7 +1569,7 @@ function log(x, base){
         var x1 = float_check(x),
             log = Math.log(x1)
     }
-    if(x1 == 0){
+    if(x1 <= 0){
         throw _b_.ValueError.$factory("math domain error")
     }
     if(base === _b_.None){
@@ -1588,6 +1588,10 @@ function log1p(x){
         }
         x = $B.long_int.$log2($B.fast_long_int(x.value + 1n))
         return $B.fast_float(Number(x.value) * Math.LN2)
+    }
+    x = float_check(x)
+    if(x + 1 <= 0){
+        throw _b_.ValueError.$factory("math domain error")
     }
     return $B.fast_float(Math.log1p(float_check(x)))
 }
@@ -1608,8 +1612,9 @@ function log2(x){
     if(isNaN(x)){
         return _b_.float.$factory('nan')
     }
+    // idk dont ask me
     if(x < 0.0){
-        throw _b_.ValueError.$factory('')
+        throw _b_.ValueError.$factory('math domain error')
     }
     return $B.fast_float(Math.log(x) / Math.LN2)
 }
@@ -1621,7 +1626,7 @@ function log10(x){
         return $B.fast_float($B.long_int.$log10(x).value)
     }
     x = float_check(x)
-    if(x == 0){
+    if(x <= 0){
         throw _b_.ValueError.$factory("math domain error")
     }
     return $B.fast_float(Math.log10(x))
