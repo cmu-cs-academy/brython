@@ -1564,18 +1564,39 @@ function log(x, base){
         x = $.x,
         base = $.base
     if(_b_.isinstance(x, $B.long_int)){
+        if(x.value <= 0){
+            throw _b_.ValueError.$factory("math domain error")
+        }
         var log = $B.long_int.$log2(x).value * Math.LN2
     }else{
+        if(x <= 0){
+            throw _b_.ValueError.$factory("math domain error")
+        }
         var x1 = float_check(x),
             log = Math.log(x1)
-    }
-    if(x1 <= 0){
-        throw _b_.ValueError.$factory("math domain error")
     }
     if(base === _b_.None){
         return $B.fast_float(log)
     }
-    return $B.fast_float(log / Math.log(float_check(base)))
+
+    function check_base(b) {
+        if (b == 1) {
+            // The way Python does it
+            throw _b_.ZeroDivisionError.$factory("float division by zero")
+        }
+        if (b <= 0) {
+            throw _b_.ValueError.$factory("math domain error")
+        }
+    }
+
+    if (_b_.isinstance(base, $B.long_int)) {
+        check_base(base.value)
+        var log_base = $B.long_int.$log2(base).value * Math.LN2
+    } else {
+        check_base(base)
+        var log_base = Math.log(float_check(base))
+    }
+    return $B.fast_float(log / log_base)
 }
 
 function log1p(x){
