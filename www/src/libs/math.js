@@ -1569,11 +1569,11 @@ function log(x, base){
         }
         var log = $B.long_int.$log2(x).value * Math.LN2
     }else{
+        x = float_check(x)
         if(x <= 0){
             throw _b_.ValueError.$factory("math domain error")
         }
-        var x1 = float_check(x),
-            log = Math.log(x1)
+        var log = Math.log(x)
     }
     if(base === _b_.None){
         return $B.fast_float(log)
