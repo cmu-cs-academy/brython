@@ -1564,18 +1564,39 @@ function log(x, base){
         x = $.x,
         base = $.base
     if(_b_.isinstance(x, $B.long_int)){
+        if(x.value <= 0){
+            throw _b_.ValueError.$factory("math domain error")
+        }
         var log = $B.long_int.$log2(x).value * Math.LN2
     }else{
-        var x1 = float_check(x),
-            log = Math.log(x1)
-    }
-    if(x1 == 0){
-        throw _b_.ValueError.$factory("math domain error")
+        x = float_check(x)
+        if(x <= 0){
+            throw _b_.ValueError.$factory("math domain error")
+        }
+        var log = Math.log(x)
     }
     if(base === _b_.None){
         return $B.fast_float(log)
     }
-    return $B.fast_float(log / Math.log(float_check(base)))
+
+    function check_base(b) {
+        if (b == 1) {
+            // The way Python does it
+            throw _b_.ZeroDivisionError.$factory("float division by zero")
+        }
+        if (b <= 0) {
+            throw _b_.ValueError.$factory("math domain error")
+        }
+    }
+
+    if (_b_.isinstance(base, $B.long_int)) {
+        check_base(base.value)
+        var log_base = $B.long_int.$log2(base).value * Math.LN2
+    } else {
+        check_base(base)
+        var log_base = Math.log(float_check(base))
+    }
+    return $B.fast_float(log / log_base)
 }
 
 function log1p(x){
@@ -1588,6 +1609,10 @@ function log1p(x){
         }
         x = $B.long_int.$log2($B.fast_long_int(x.value + 1n))
         return $B.fast_float(Number(x.value) * Math.LN2)
+    }
+    x = float_check(x)
+    if(x + 1 <= 0){
+        throw _b_.ValueError.$factory("math domain error")
     }
     return $B.fast_float(Math.log1p(float_check(x)))
 }
@@ -1608,8 +1633,9 @@ function log2(x){
     if(isNaN(x)){
         return _b_.float.$factory('nan')
     }
+    // idk dont ask me
     if(x < 0.0){
-        throw _b_.ValueError.$factory('')
+        throw _b_.ValueError.$factory('math domain error')
     }
     return $B.fast_float(Math.log(x) / Math.LN2)
 }
@@ -1621,7 +1647,7 @@ function log10(x){
         return $B.fast_float($B.long_int.$log10(x).value)
     }
     x = float_check(x)
-    if(x == 0){
+    if(x <= 0){
         throw _b_.ValueError.$factory("math domain error")
     }
     return $B.fast_float(Math.log10(x))
