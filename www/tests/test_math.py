@@ -302,6 +302,16 @@ assert_raises(ValueError, math.log10, -1, msg="math domain error")
 assert_raises(ValueError, math.log2, -1, msg="math domain error")
 assert_raises(ValueError, math.log1p, -2, msg="math domain error")
 
+# long_int tests
+long_int = 2 << 70
+assert_raises(ValueError, math.log, -long_int, msg="math domain error")
+assert_raises(ValueError, math.log, long_int, -long_int, msg="math domain error")
+assert_raises(ZeroDivisionError, math.log, long_int, 1, msg="float division by zero")
+assert_raises(ValueError, math.log, long_int, 0, msg="math domain error")
+assert_raises(ValueError, math.log10, -long_int, msg="math domain error")
+assert_raises(ValueError, math.log2, -long_int, msg="math domain error")
+assert_raises(ValueError, math.log1p, -long_int, msg="math domain error")
+
 
 # rewriting of math.comb
 math.comb(1200, 575)
