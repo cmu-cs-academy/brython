@@ -462,4 +462,10 @@ class A:
 assert_raises(TypeError, str, A(),
     msg="__str__ returned non-string (type int)")
 
+# issue 2155
+assert_raises(TypeError, ord, 'ab')
+
+# issue 2154
+assert 'abcdef'[3:1] == ''
+
 print("passed all tests...")
