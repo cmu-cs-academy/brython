@@ -3152,6 +3152,11 @@ assert_raises(SyntaxError, exec, "f(🠞)",
 # issue 2093
 assert_raises(SyntaxError, exec, "x ~= 1")
 
+# CS Academy set bug Jira CSA-728
+x = {1}
+x.pop()
+assert 1 not in x
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================
