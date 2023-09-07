@@ -560,6 +560,9 @@ set.pop = function(self){
             }
         }
     }
+    if (typeof item == "number") {
+      self.$numbers.splice(self.$numbers.indexOf(item), 1)
+    }
     return item
 }
 
