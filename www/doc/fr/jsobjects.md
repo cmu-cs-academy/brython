@@ -101,7 +101,9 @@ py_obj = window.js_obj.to_dict()
 
 Si l'objet est une fonction, les arguments passés à la fonction Python sont
 convertis dans l'appel de la fonction Javascript en utilisant le tableau
-inverse de celui ci-dessus.
+inverse de celui ci-dessus. Si l'argument est un dictionnaire Python, il est
+converti en objet Javascript; les clés du dictionnaire Python sont converties
+en chaines de caractères dans l'objet Javascript.
 
 Attention, une fonction Javascript ne peut pas être appelée avec des
 arguments par mots-clés, cela déclenche une exception `TypeError` : si la
@@ -177,7 +179,7 @@ jq.ajax('/cgi-bin/post_test.py',
 )
 
 # ajouter une option à un menu déroulant SELECT
-jq('#sel').append('<option>three')
+jq('#sel').append('<' + 'option>three')
 
 # accéder aux attributs d'un élément
 assert jq('#c').attr('id') == 'c'

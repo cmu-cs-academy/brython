@@ -8,18 +8,20 @@ var _b_ = $B.builtins,
 // Class for modules
 var Module = $B.module = $B.make_class("module",
     function(name, doc, $package){
-        var obj = Object.create(null)
-        obj.__class__ = Module
-        obj.__name__ = name
-        obj.__doc__ = doc || _b_.None
-        obj. __package__ = $package || _b_.None
-        return obj
+        return {
+            __class__: Module,
+            __builtins__: _b_.__builtins__,
+            __name__: name,
+            __doc__: doc || _b_.None,
+            __package__: $package || _b_.None
+        }
     }
 )
 
 Module.__new__ = function(cls, name, doc, $package){
     return {
         __class__: cls,
+        __builtins__: _b_.__builtins__,
         __name__: name,
         __doc__: doc || _b_.None,
         __package__: $package || _b_.None
@@ -129,8 +131,9 @@ function run_js(module_contents, path, _module){
         throw err
     }
     // check that module name is in namespace
-    try{$module}
-    catch(err){
+    try{
+        $module
+    }catch(err){
         console.log("no $module")
         throw _b_.ImportError.$factory("name '$module' not defined in module")
     }
@@ -144,6 +147,9 @@ function run_js(module_contents, path, _module){
                 __qualname__: attr
             }
             $module[attr].$in_js_module = true
+        }else if(_b_.isinstance($module[attr], _b_.type) &&
+                ! $module[attr].hasOwnProperty('__module__')){
+            $module[attr].__module__ = _module.__name__
         }
     }
 
@@ -228,9 +234,9 @@ function run_py(module_contents, path, module, compiled) {
         js += module.__name__.replace(/\./g, "_") + "})(__BRYTHON__)\n" +
             "return $module"
         var module_id = prefix + module.__name__.replace(/\./g, '_')
-        var $module = (new Function(module_id, js))(module)
+        var mod = (new Function(module_id, js))(module)
     }catch(err){
-        if($B.debug > 1){
+        if($B.debug > 2){
             console.log(err + " for module " + module.__name__)
             console.log("module", module)
             console.log(root)
@@ -247,13 +253,9 @@ function run_py(module_contents, path, module, compiled) {
             console.log(err.stack)
         }
         throw err
-    }finally{
-        $B.clear_ns(module.__name__)
     }
 
     try{
-        // Create module object
-        var mod = eval("$module")
         // Apply side-effects upon input module object
         for(var attr in mod){
             module[attr] = mod[attr]
@@ -379,7 +381,6 @@ VFSLoader.exec_module = function(self, modobj){
     // indexedBD cache
     var stored = modobj.__spec__.loader_state.stored,
         timestamp = modobj.__spec__.loader_state.timestamp
-    delete modobj.__spec__["loader_state"]
     var ext = stored[0],
         module_contents = stored[1],
         imports = stored[2]
@@ -415,6 +416,7 @@ VFSLoader.exec_module = function(self, modobj){
             var mod = $B.imported[parent] = Module.$factory(parent,
                 undefined, is_package)
             mod.__initialized__ = true
+            mod.__spec__ = modobj.__spec__
             if(is_package){
                 mod.__path__ = "<stdlib>"
                 mod.__package__ = parent
@@ -502,6 +504,7 @@ $B.set_func_names(VFSLoader, "builtins")
 var finder_cpython = {
     __class__: _b_.type,
     __mro__: [_b_.object],
+    __qualname__: 'CPythonFinder',
     $infos: {
         __module__: "builtins",
         __name__: "CPythonFinder"
@@ -1144,7 +1147,19 @@ $B.$__import__ = function(mod_name, globals, locals, fromlist, level){
         return $B.imported[mod_name]
     }else{
         // Return module object for top-level package
-        return $B.imported[parsed_name[0]]
+        var package = mod_name
+        while(parsed_name.length > 1){
+            var module = parsed_name.pop(),
+                package = parsed_name.join('.')
+            if($B.imported[package] === undefined){
+                // may happen if the modules defines __name__ = "X.Y" and package
+                // X has not been imported
+                $B.$import(package, globals, locals, [])
+                $B.imported[package][module] = $B.imported[mod_name]
+                mod_name = module
+            }
+        }
+        return $B.imported[package]
     }
 }
 
@@ -1168,10 +1183,32 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
     locals: local namespace import bindings will be applied upon
     level: number of leading '.' in "from . import a" or "from .mod import a"
     */
-    var test = false // mod_name == "tatsu.utils._command"
+    var test = false // mod_name == "_frozen_importlib_external"
     if(test){
         console.log('mod name', mod_name, 'fromlist', fromlist)
         alert()
+    }
+    // special case
+    if(mod_name == '_frozen_importlib_external'){
+        // "import _frozen_importlib_external [as A]" is translated to
+        // "from importlib import _bootstrap_external [as A]"
+        var alias = aliases[mod_name] || mod_name
+        var imp = $B.$import_from("importlib",
+                               ["_bootstrap_external"],
+                               {_bootstrap_external: alias},
+                               0, locals);
+        // set attribute _bootstrap_external of importlib._bootstrap
+        // and _frozen_importlib
+        var _bootstrap = $B.imported.importlib._bootstrap,
+            _bootstrap_external = $B.imported.importlib['_bootstrap_external']
+        _bootstrap_external._set_bootstrap_module(_bootstrap)
+        _bootstrap._bootstap_external = _bootstrap_external
+
+        var _frozen_importlib = $B.imported._frozen_importlib
+        if(_frozen_importlib){
+            _frozen_importlib._bootstrap_external = _bootstrap_external
+        }
+        return
     }
     var level = 0,
         frame = $B.last($B.frames_stack),
@@ -1249,6 +1286,7 @@ $B.$import = function(mod_name, fromlist, aliases, locals){
 
     if(test){
         console.log('step 3, mod_name', mod_name, 'fromlist', fromlist)
+        console.log('modobj', modobj)
         alert()
     }
 

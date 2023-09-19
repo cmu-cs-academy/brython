@@ -2,13 +2,13 @@
 
 var _b_ = $B.builtins
 
-$B.del_exc = function(){
-    var frame = $B.last($B.frames_stack)
-    frame[1].$current_exception = undefined
+$B.del_exc = function(frame){
+    // var frame = $B.last($B.frames_stack)
+    delete frame[1].$current_exception
 }
 
-$B.set_exc = function(exc){
-    var frame = $B.last($B.frames_stack)
+$B.set_exc = function(exc, frame){
+    // var frame = $B.last($B.frames_stack)
     if(frame === undefined){
         var msg = 'Internal error: no frame for exception ' + _b_.repr(exc)
         console.error(['Traceback (most recent call last):',
@@ -108,6 +108,9 @@ var traceback = $B.traceback = $B.make_class("traceback",
         if(_b_.isinstance(exc, _b_.SyntaxError)){
             stack.pop()
         }
+        if(stack.length == 0){
+            return _b_.None
+        }
         return {
             __class__ : traceback,
             $stack: stack,
@@ -133,6 +136,8 @@ traceback.__getattribute__ = function(_self, attr){
             }else{
                 return _b_.None
             }
+        case "stack":
+            return _self.$stack
         default:
             return _b_.object.__getattribute__(_self, attr)
     }
@@ -181,6 +186,7 @@ frame.__getattr__ = function(_self, attr){
         }
         return _self.$f_trace
     }
+    throw $B.attr_error(attr, _self)
 }
 
 frame.__setattr__ = function(_self, attr, value){
@@ -210,15 +216,22 @@ frame.f_code = {
                 co_filename: _self.__file__,
                 co_varnames: $B.fast_tuple([])
             }
+            res.co_qualname = res.co_name // XXX
         }
-        res.__class__ = $B.code
+        res.__class__ = _b_.code
         return res
     }
 }
 
 frame.f_globals = {
     __get__: function(_self){
-        return $B.obj_dict(_self[3])
+        if(_self.f_globals){
+            return _self.f_globals
+        }else if(_self.f_locals && _self[1] == _self[3]){
+            return _self.f_globals = _self.f_locals
+        }else{
+            return _self.f_globals = $B.obj_dict(_self[3])
+        }
     }
 }
 
@@ -230,7 +243,15 @@ frame.f_lineno = {
 
 frame.f_locals = {
     __get__: function(_self){
-        return $B.obj_dict(_self[1])
+        // If locals and globals are the same, f_locals and f_globals
+        // are the same object
+        if(_self.f_locals){
+            return _self.f_locals
+        }else if(_self.f_globals && _self[1] == _self[3]){
+            return _self.f_locals = _self.f_globals
+        }else{
+            return _self.f_locals = $B.obj_dict(_self[1])
+        }
     }
 }
 
@@ -246,17 +267,7 @@ $B._frame = frame // used in builtin_modules.js
 
 // built-in exceptions
 
-var BaseException = _b_.BaseException =  {
-    __class__: _b_.type,
-    __bases__ : [_b_.object],
-    __mro__: [_b_.object],
-    args: [],
-    $infos:{
-        __name__: "BaseException",
-        __module__: "builtins"
-    },
-    $is_class: true
-}
+var BaseException = _b_.BaseException =  $B.make_class('BaseException')
 
 BaseException.__init__ = function(self){
     var args = arguments[1] === undefined ? [] : [arguments[1]]
@@ -264,7 +275,7 @@ BaseException.__init__ = function(self){
 }
 
 BaseException.__repr__ = function(self){
-    var res =  self.__class__.$infos.__name__ + '('
+    var res =  self.__class__.__name__ + '('
     if(self.args[0] !== undefined){
         res += _b_.repr(self.args[0])
     }
@@ -295,6 +306,19 @@ BaseException.__getattr__ = function(self, attr){
         return ctx || _b_.None
     }else{
         throw $B.attr_error(attr, self)
+    }
+}
+
+BaseException.add_note = function(self, note){
+    // PEP 678
+    if(! _b_.isinstance(note, _b_.str)){
+        throw _b_.TypeError.$factory('note must be a str, not ' +
+            `'${$B.class_name(note)}'`)
+    }
+    if(self.__notes__ !== undefined){
+        self.__notes__.push(note)
+    }else{
+        self.__notes__ = [note]
     }
 }
 
@@ -338,7 +362,7 @@ $B.freeze = function(err){
 var show_stack = $B.show_stack = function(stack){
     stack = stack || $B.frames_stack
     for(const frame of stack){
-        console.log(frame[0], frame[1].$line_info)
+        console.log(frame[2], frame[0], frame.$lineno)
     }
 }
 
@@ -351,20 +375,22 @@ var show_stack = $B.show_stack = function(stack){
 // The line '// placeholder' is meant to be replaced by exception-specific
 // code passed to make_exc()
 var be_factory = `
-function (){
+    var _b_ = __BRYTHON__.builtins
     var err = Error()
-    err.args = $B.fast_tuple(Array.prototype.slice.call(arguments))
+    err.args = $B.fast_tuple(Array.from(arguments))
     err.__class__ = _b_.BaseException
     err.__traceback__ = _b_.None
     err.$py_error = true
+    err.$stack = $B.frames_stack.slice()
+    err.$linenos = $B.frames_stack.map(x => x.$lineno)
     // placeholder
     err.__cause__ = _b_.None // XXX fix me
     err.__context__ = _b_.None // XXX fix me
     err.__suppress_context__ = false // XXX fix me
     return err
-}`
+`
 
-eval('BaseException.$factory = ' + be_factory)
+BaseException.$factory = Function(be_factory)
 
 BaseException.$factory.$infos = {
     __name__: "BaseException",
@@ -408,19 +434,6 @@ $B.exception = function(js_exc, in_ctx_manager){
     }else{
         var exc = js_exc
         $B.freeze(exc)
-        if(in_ctx_manager){
-            // Is this documented anywhere ? For exceptions raised inside a
-            // context manager, the frames stack starts at the current
-            // local level.
-            var current_locals = $B.last($B.frames_stack)[0]
-            for(var i = 0, len = exc.$stack.length; i < len; i++){
-                if(exc.$stack[i][0] == current_locals){
-                    exc.$stack = exc.$stack.slice(i)
-                    exc.$traceback = traceback.$factory(exc)
-                    break
-                }
-            }
-        }
     }
     return exc
 }
@@ -435,8 +448,12 @@ $B.is_exc = function(exc, exc_list){
     var this_exc_class = exc.$is_class ? exc : exc.__class__
     for(var i = 0; i < exc_list.length; i++){
         var exc_class = exc_list[i]
-        if(this_exc_class === undefined){console.log("exc class undefined", exc)}
-        if(_b_.issubclass(this_exc_class, exc_class)){return true}
+        if(this_exc_class === undefined){
+            console.log("exc class undefined", exc)
+        }
+        if(_b_.issubclass(this_exc_class, exc_class)){
+            return true
+        }
     }
     return false
 }
@@ -468,30 +485,29 @@ var $make_exc = $B.$make_exc = function(names, parent){
         }
         // create a class for exception called "name"
         $B.builtins_scope[name] = true
-        var $exc = (be_factory).replace(/BaseException/g,name)
+        var $exc = be_factory.replace(/BaseException/g,name)
         $exc = $exc.replace("// placeholder", code)
         // class dictionary
-        _str[pos++] = "_b_." + name + ' = {__class__:_b_.type, ' +
-            '__bases__: [_b_.' + parent.$infos.__name__ + '], ' +
-            '__mro__: [_b_.' + parent.$infos.__name__ +
-            "].concat(parent.__mro__), $is_class: true," +
-            "$infos: {__name__:'" + name + "'}}"
-        _str[pos++] = "_b_." + name + ".$factory = " + $exc
-        _str[pos++] = "_b_." + name + '.$factory.$infos = {__name__: "' +
-            name + '", __qualname__: "' + name + '"}'
-        _str[pos++] = "$B.set_func_names(_b_." + name + ", 'builtins')"
-    }
-    try{
-        eval(_str.join(";"))
-    }catch(err){
-        console.log("--err" + err)
-        console.log(_str.join(''))
-        throw err
+        _b_[name] = {
+            __class__: _b_.type,
+            __bases__: [_b_[parent.__name__]],
+            __name__: name,
+            __qualname__: name,
+            __mro__: [_b_[parent.__name__]].concat(parent.__mro__),
+            $is_class: true
+        }
+        _b_[name].$factory = Function($exc)
+        _b_[name].$factory.$infos = {
+            __name__: name,
+            __qualname__: name
+        }
+        $B.set_func_names(_b_[name], 'builtins')
     }
 }
 
 $make_exc(["SystemExit", "KeyboardInterrupt", "GeneratorExit", "Exception"],
     BaseException)
+
 $make_exc([["StopIteration","err.value = arguments[0] || _b_.None"],
     ["StopAsyncIteration","err.value = arguments[0]"],
     "ArithmeticError", "AssertionError", "BufferError", "EOFError",
@@ -525,7 +541,7 @@ $make_exc(["EnvironmentError", "IOError", "VMSError", "WindowsError"],
     _b_.OSError)
 
 // AttributeError supports keyword-only "name" and "obj" parameters
-var js = '\nvar $ = $B.args("AttributeError", 1, {"msg": null, "name":null, "obj":null}, ' +
+var js = '\nvar $ = $B.args("AttributeError", 3, {"msg": null, "name":null, "obj":null}, ' +
     '["msg", "name", "obj"], arguments, ' +
     '{msg: _b_.None, name: _b_.None, obj: _b_.None}, "*", null);\n' +
     'err.args = $B.fast_tuple($.msg === _b_.None ? [] : [$.msg])\n;' +
@@ -534,12 +550,7 @@ var js = '\nvar $ = $B.args("AttributeError", 1, {"msg": null, "name":null, "obj
 $make_exc([["AttributeError", js]], _b_.Exception)
 
 _b_.AttributeError.__str__ = function(self){
-    var msg =  self.args[0]
-    var suggestion = offer_suggestions_for_attribute_error(self)
-    if(suggestion){
-        msg += `. Did you mean: '${suggestion}'?`
-    }
-    return msg
+    return self.args[0]
 }
 
 $B.set_func_names(_b_.AttributeError, 'builtins')
@@ -547,30 +558,25 @@ $B.set_func_names(_b_.AttributeError, 'builtins')
 // Shortcut to create an AttributeError
 $B.attr_error = function(name, obj){
     if(obj.$is_class){
-        var msg = `type object '${obj.$infos.__name__}'`
+        var msg = `type object '${obj.__name__}'`
     }else{
         var msg = `'${$B.class_name(obj)}' object`
     }
     msg +=  ` has no attribute '${name}'`
-    return _b_.AttributeError.$factory({$nat:"kw",kw:{name, obj, msg}})
+    return _b_.AttributeError.$factory({$kw:[{name, obj, msg}]})
 }
 
 // NameError supports keyword-only "name" parameter
-var js = '\nvar $ = $B.args("NameError", 1, {"name":null}, ' +
-    '["name"], arguments, ' +
-    '{name: _b_.None}, "*", null);\n' +
-    'err.args = $B.fast_tuple($.name === _b_.None ? [] : [$.name])\n;' +
-    'err.name = $.name\n'
+var js = '\nvar $ = $B.args("NameError", 2, {"message":null, "name": null}, ' +
+    '["message", "name"], arguments, ' +
+    '{message: _b_.None, name: _b_.None}, "*", null, 1);\n' +
+    'err.args = $B.fast_tuple($.message === _b_.None ? [] : [$.message])\n' +
+    'err.name = $.name;\n'
 
 $make_exc([["NameError", js]], _b_.Exception)
 
 _b_.NameError.__str__ = function(self){
-    var msg = `name '${self.name}' is not defined`,
-        suggestion = offer_suggestions_for_name_error(self)
-    if(suggestion){
-        msg += `. Did you mean: '${suggestion}'?`
-    }
-    return msg
+    return self.args[0]
 }
 
 $B.set_func_names(_b_.NameError, 'builtins')
@@ -585,7 +591,16 @@ $B.set_func_names(_b_.UnboundLocalError, 'builtins')
 
 // Shortcut to create a NameError
 $B.name_error = function(name, obj){
-    return _b_.NameError.$factory({$nat:"kw", kw:{name}})
+    var exc = _b_.NameError.$factory(`name '${name}' is not defined`)
+    exc.name = name
+    exc.$stack = $B.frames_stack.slice()
+    return exc
+}
+
+$B.recursion_error = function(frame){
+    var exc = _b_.RecursionError.$factory("maximum recursion depth exceeded")
+    $B.set_exc(exc, frame)
+    return exc
 }
 
 // Suggestions in case of NameError or AttributeError
@@ -668,6 +683,7 @@ function substitution_cost(a, b){
     }
     return MOVE_COST
 }
+
 function calculate_suggestions(dir, name){
     if(dir.length >= MAX_CANDIDATE_ITEMS) {
         return null
@@ -705,6 +721,9 @@ function offer_suggestions_for_attribute_error(exc){
 function offer_suggestions_for_name_error(exc){
     var name = exc.name,
         frame = $B.last(exc.$stack)
+    if(typeof name != 'string'){
+        return
+    }
     var locals = Object.keys(frame[1]).filter(x => ! (x.startsWith('$')))
     var suggestion = calculate_suggestions(locals, name)
     if(suggestion){
@@ -734,47 +753,78 @@ are all Exception subclasses, it returns an ExceptionGroup rather than a
 BaseExceptionGroup
 */
 var js = exc_group_code.replace('[[name]]', 'BaseExceptionGroup')
-js += `var exc_list = _b_.list.$factory(err.exceptions)
-var all_exceptions = true
-for(var exc of exc_list){
-    if(! _b_.isinstance(exc, _b_.Exception)){
-        all_exceptions = false
-        break
+js += `if(err.exceptions !== _b_.None){
+    var exc_list = _b_.list.$factory(err.exceptions)
+    var all_exceptions = true
+    for(var exc of exc_list){
+        if(! _b_.isinstance(exc, _b_.Exception)){
+            all_exceptions = false
+            break
+        }
     }
-}
-if(all_exceptions){
-    err.__class__ = _b_.ExceptionGroup
+    if(all_exceptions){
+        err.__class__ = _b_.ExceptionGroup
+    }
 }
 `
 
 $make_exc([['BaseExceptionGroup', js]], _b_.BaseException)
 
-_b_.BaseExceptionGroup.subgroup = function(self, condition){
+_b_.BaseExceptionGroup.__str__ = function(self){
+    return `${self.message} (${self.exceptions.length} sub-exception` +
+        `${self.exceptions.length > 1 ? 's' : ''})`
+}
+
+_b_.BaseExceptionGroup.split = function(self, condition){
     // condition is a function applied to exceptions
-    var filtered_excs = []
+    // returns (matching_be, non_matching_be)
+    var matching_excs = [],
+        non_matching_excs = []
     for(var exc of self.exceptions){
         if(_b_.isinstance(exc, _b_.BaseExceptionGroup)){
-            var filtered = _b_.BaseExceptionGroup.subgroup(exc, condition)
-            if(filtered === _b_.None){
-                // do nothing
-            }else if(filtered.exceptions.length == exc.exceptions.length){
-                filtered_excs.push(exc)
-            }else if(filtered.exceptions.length > 0){
-                filtered_excs = filtered_excs.concat(filtered)
+            var subsplit = _b_.BaseExceptionGroup.split(exc, condition),
+                matching = subsplit[0],
+                non_matching = subsplit[1]
+            if(matching === _b_.None){
+                non_matching_excs.push(exc)
+            }else if(matching.exceptions.length == exc.exceptions.length){
+                matching_excs.push(exc)
+            }else{
+                if(matching.exceptions.length > 0){
+                    matching_excs = matching_excs.concat(matching)
+                }
+                if(non_matching.exceptions.length > 0){
+                    non_matching_excs = non_matching_excs.concat(non_matching)
+                }
             }
         }else if(condition(exc)){
-            filtered_excs.push(exc)
+            matching_excs.push(exc)
+        }else{
+            non_matching_excs.push(exc)
         }
     }
-    if(filtered_excs.length == 0){
-        return _b_.None
+    if(matching_excs.length == 0){
+        matching_excs = _b_.None
     }
-    var res = _b_.BaseExceptionGroup.$factory(self.message, filtered_excs)
-    res.__cause__ = self.__cause__
-    res.__context__ = self.__context__
-    res.__traceback__ = self.__traceback__
-    return res
+    if(non_matching_excs.length == 0){
+        non_matching_excs = _b_.None
+    }
+    var res = []
+    for(var item of [matching_excs, non_matching_excs]){
+        var eg = _b_.BaseExceptionGroup.$factory(self.message, item)
+        eg.__cause__ = self.__cause__
+        eg.__context__ = self.__context__
+        eg.__traceback__ = self.__traceback__
+        res.push(eg)
+    }
+    return $B.fast_tuple(res)
 }
+
+_b_.BaseExceptionGroup.subgroup = function(self, condition){
+    return _b_.BaseExceptionGroup.split(self, condition)[0]
+}
+
+$B.set_func_names(_b_.BaseExceptionGroup, "builtins")
 
 var js = exc_group_code.replace('[[name]]', 'ExceptionGroup')
 
@@ -782,11 +832,13 @@ var js = exc_group_code.replace('[[name]]', 'ExceptionGroup')
 The ExceptionGroup constructor raises a TypeError if any of the nested
 exceptions is not an Exception instance
 */
-js += `var exc_list = _b_.list.$factory(err.exceptions)
-for(var exc of exc_list){
-    if(! _b_.isinstance(exc, _b_.Exception)){
-        throw _b_.TypeError.$factory(
-            'Cannot nest BaseExceptions in an ExceptionGroup')
+js += `if(err.exceptions !== _b_.None){
+    var exc_list = _b_.list.$factory(err.exceptions)
+    for(var exc of exc_list){
+        if(! _b_.isinstance(exc, _b_.Exception)){
+            throw _b_.TypeError.$factory(
+                'Cannot nest BaseExceptions in an ExceptionGroup')
+        }
     }
 }
 `
@@ -795,11 +847,6 @@ $make_exc([['ExceptionGroup', js]], _b_.Exception)
 _b_.ExceptionGroup.__bases__.splice(0, 0, _b_.BaseExceptionGroup)
 _b_.ExceptionGroup.__mro__.splice(0, 0, _b_.BaseExceptionGroup)
 
-
-_b_.ExceptionGroup.__str__ = function(self){
-    return `${self.message} (${self.exceptions.length} sub-exception` +
-        `${self.exceptions.length > 1 ? 's' : ''})`
-}
 
 $B.set_func_names(_b_.ExceptionGroup, "builtins")
 
@@ -829,19 +876,22 @@ function trace_from_stack(err){
     var trace = [],
         save_filename,
         save_lineno,
+        save_scope,
         count_repeats = 0
 
     for(var frame_num = 0, len = err.$stack.length; frame_num < len; frame_num++){
         var frame = err.$stack[frame_num],
             lineno = err.$linenos[frame_num],
-            filename = frame.__file__
-        if(filename == save_filename && lineno == save_lineno){
+            filename = frame.__file__,
+            scope = frame[0] == frame[2] ? '<module>' : frame[0]
+        if(filename == save_filename && scope == save_scope && lineno == save_lineno){
             count_repeats++
             continue
         }
         handle_repeats(src, count_repeats)
         save_filename = filename
         save_lineno = lineno
+        save_scope = scope
         count_repeats = 0
         var src = $B.file_cache[filename]
         trace.push(`  File "${filename}", line ${lineno}, in ` +
@@ -851,6 +901,8 @@ function trace_from_stack(err){
                 line = lines[lineno - 1]
             if(line){
                 trace.push('    ' + line.trim())
+            }else{
+                console.log('no line', line)
             }
             // preliminary for PEP 657
             if(err.$positions !== undefined){
@@ -861,15 +913,27 @@ function trace_from_stack(err){
                             (position[2] - position[1]) != line.trim().length ||
                             position[3]))){
                     var indent = line.length - line.trimLeft().length
-                    trace_line += '    ' + ' '.repeat((position[0] - indent)) +
-                        '~'.repeat(position[1] - position[0]) +
-                        '^'.repeat(position[2] - position[1])
+                    var paddings = [position[0] - indent,
+                                    position[1] - position[0],
+                                    position[2] - position[1]]
+                    for(var padding in paddings){
+                        if(padding < 0){
+                            console.log('wrong values, position', position, 'indent', indent)
+                            paddings[paddings.indexOf(padding)] = 0
+                        }
+                    }
+                    trace_line += '    ' + ' '.repeat(paddings[0]) +
+                        '~'.repeat(paddings[1]) +
+                        '^'.repeat(paddings[2])
                     if(position[3] !== undefined){
                         trace_line += '~'.repeat(position[3] - position[2])
                     }
                     trace.push(trace_line)
                 }
             }
+        }else{
+            console.log('no src for filename', filename)
+            console.log('in file_cache', Object.keys($B.file_cache).join('\n'))
         }
     }
     if(count_repeats > 0){
@@ -887,7 +951,7 @@ function trace_from_stack(err){
     return trace.join('\n') + '\n'
 }
 
-$B.show_error = function(err){
+$B.error_trace = function(err){
     if($B.debug > 1){
         console.log("handle error", err.__class__, err.args)
         console.log('stack', err.$stack)
@@ -909,14 +973,21 @@ $B.show_error = function(err){
         if(err.__class__ !== _b_.IndentationError &&
                 err.text){
             // add ^ under the line
-            var start = err.offset - indent - 1,
+            if($B.debug > 1){
+                console.log('error args', err.args[1])
+                console.log('err line', line)
+                console.log('indent', indent)
+            }
+            var start = err.offset - indent,
+                end_offset = err.end_offset +
+                    (err.end_offset == err.offset ? 1 : 0)
                 marks = '    ' + ' '.repeat(start),
                 nb_marks = 1
             if(err.end_lineno){
                 if(err.end_lineno > err.lineno){
                     nb_marks = line.length - start - indent
                 }else{
-                    nb_marks = err.end_offset - start - indent - 1
+                    nb_marks = end_offset - start - indent
                 }
                 if(nb_marks == 0 &&
                         err.end_offset == line.substr(indent).length){
@@ -926,18 +997,49 @@ $B.show_error = function(err){
             marks += '^'.repeat(nb_marks) + '\n'
             trace += marks
         }
-        trace += `${err.__class__.$infos.__name__}: ${err.args[0]}`
+        trace += `${err.__class__.__name__}: ${err.args[0]}`
     }else if(err.__class__ !== undefined){
         var name = $B.class_name(err)
         trace += trace_from_stack(err)
-        trace += name + ': ' + _b_.str.$factory(err)
+        var args_str = _b_.str.$factory(err)
+        trace += name + (args_str ? ': ' + args_str : '')
+        if(err.__class__ === _b_.NameError){
+            var suggestion = offer_suggestions_for_name_error(err)
+            if(suggestion){
+                trace += `. Did you mean '${suggestion}'?`
+            }
+        }else if(err.__class__ === _b_.AttributeError){
+            var suggestion = offer_suggestions_for_attribute_error(err)
+            if(suggestion){
+                trace += `. Did you mean: '${suggestion}'?`
+            }
+        }
     }else{
-        console.log(err)
         trace = err + ""
     }
+    return trace
+}
+
+$B.get_stderr = function(){
+    if($B.imported.sys){
+        return $B.imported.sys.stderr
+    }
+    return $B.imported._sys.stderr
+}
+
+$B.get_stdout = function(){
+    if($B.imported.sys){
+        return $B.imported.sys.stdout
+    }
+    return $B.imported._sys.stdout
+}
+
+$B.show_error = function(err){
+    var trace = $B.error_trace(err)
     try{
-        $B.$getattr($B.stderr, 'write')(trace)
-        var flush = $B.$getattr($B.stderr, 'flush', _b_.None)
+        var stderr = $B.get_stderr()
+        $B.$getattr(stderr, 'write')(trace)
+        var flush = $B.$getattr(stderr, 'flush', _b_.None)
         if(flush !== _b_.None){
             flush()
         }

@@ -20,11 +20,8 @@ function $list(){
 
 var list = {
     __class__: _b_.type,
+    __qualname__: 'list',
     __mro__: [object],
-    $infos: {
-        __module__: "builtins",
-        __name__: "list"
-    },
     $is_class: true,
     $native: true,
     $match_sequence_pattern: true, // for Pattern Matching (PEP 634)
@@ -54,6 +51,10 @@ list.__add__ = function(self, other){
     return res
 }
 
+list.__bool__ = function(self){
+    return list.__len__(self) > 0
+}
+
 list.__class_getitem__ = function(cls, item){
     // PEP 585
     if(! Array.isArray(item)){
@@ -61,7 +62,6 @@ list.__class_getitem__ = function(cls, item){
     }
     return $B.GenericAlias.$factory(cls, item)
 }
-
 
 list.__contains__ = function(self, item){
     var $ = $B.args("__contains__", 2, {self: null, item: null},
@@ -224,45 +224,27 @@ list.$getitem = function(self, key){
 }
 
 list.__ge__ = function(self, other){
-    if(! isinstance(other, [list, _b_.tuple])){
+    // self >= other is the same as other <= self
+    if(! _b_.isinstance(other, list)){
         return _b_.NotImplemented
     }
-    var i = 0
-    while(i < self.length){
-        if(i >= other.length){return true}
-        if($B.rich_comp("__eq__", self[i], other[i])){i++}
-        else{
-            res = $B.$getattr(self[i], "__ge__")(other[i])
-            if(res === _b_.NotImplemented){
-                throw _b_.TypeError.$factory("unorderable types: " +
-                    $B.class_name(self[i])  + "() >= " +
-                    $B.class_name(other[i]) + "()")
-            }else{return res}
-        }
+    var res = list.__le__(other, self)
+    if(res === _b_.NotImplemented){
+        return res
     }
-
-    return other.length == self.length
+    return res
 }
 
 list.__gt__ = function(self, other){
-    if(! isinstance(other, [list, _b_.tuple])){
+    // self > other is the same as other < self
+    if(! _b_.isinstance(other, list)){
         return _b_.NotImplemented
     }
-    var i = 0
-    while(i < self.length){
-        if(i >= other.length){return true}
-        if($B.rich_comp("__eq__", self[i], other[i])){i++}
-        else{
-            res = $B.$getattr(self[i], "__gt__")(other[i])
-            if(res === _b_.NotImplemented){
-                throw _b_.TypeError.$factory("unorderable types: " +
-                    $B.class_name(self[i]) + "() > " +
-                    $B.class_name(other[i]) + "()")
-            }else return res
-        }
+    var res = list.__lt__(other, self)
+    if(res === _b_.NotImplemented){
+        return res
     }
-    // other starts like self, but is as long or longer
-    return false
+    return res
 }
 
 list.__hash__ = _b_.None
@@ -341,9 +323,27 @@ list.__iter__ = function(self){
 }
 
 list.__le__ = function(self, other){
-    var res = list.__ge__(self, other)
-    if(res === _b_.NotImplemented){return res}
-    return ! res
+    // True if all items in self are <= than in other,
+    // or if all are equal and len(self) <= len(other)
+    if(! isinstance(other, [list, _b_.tuple])){
+        return _b_.NotImplemented
+    }
+    var i = 0
+    // skip all items that compare equal
+    while(i < self.length && i < other.length &&
+            $B.is_or_equals(self[i], other[i])){
+        i++
+    }
+    if(i == self.length){
+        // [1] <= [1, 2] is True
+        return self.length <= other.length
+    }
+    if(i == other.length){
+        // [1, 2] <= [1] is false
+        return false
+    }
+    // First different item: [1, x] <= [1, y] is x <= y
+    return $B.rich_comp('__le__', self[i], other[i])
 }
 
 list.__len__ = function(self){
@@ -351,31 +351,47 @@ list.__len__ = function(self){
 }
 
 list.__lt__ = function(self, other){
+    // True if all items in self are lesser than in other,
+    // or if all are equal and len(self) < len(other)
     if(! isinstance(other, [list, _b_.tuple])){
         return _b_.NotImplemented
     }
     var i = 0
-    while(i < self.length){
-        if(i >= other.length){return false}
-        if($B.rich_comp("__eq__", self[i], other[i])){
-            i++
-        }else{
-            res = $B.$getattr(self[i], "__lt__")(other[i])
-            if(res === _b_.NotImplemented){
-                throw _b_.TypeError.$factory("unorderable types: " +
-                    $B.class_name(self[i])  + "() >= " +
-                    $B.class_name(other[i]) + "()")
-            }else{return res}
-        }
+    // skip all items that compare equal
+    while(i < self.length && i < other.length &&
+            $B.is_or_equals(self[i], other[i])){
+        i++
     }
-    // If all items are equal, return True if other is longer
-    // Cf. issue #941
-    return other.length > self.length
+    if(i == self.length){
+        // [1] < [1, 2] is True
+        return self.length < other.length
+    }
+    if(i == other.length){
+        // [1, 2] < [1] is false
+        return false
+    }
+    // First different item: [1, x] < [1, y] is x < y
+    return $B.rich_comp('__lt__', self[i], other[i])
 }
 
 list.__mul__ = function(self, other){
-    if(isinstance(other, _b_.int)) {
-        other = _b_.int.numerator(other)
+    try{
+        other = $B.PyNumber_Index(other)
+    }catch(err){
+        throw _b_.TypeError.$factory("can't multiply sequence by non-int " +
+            `of type '${$B.class_name(other)}'`)
+    }
+    if(self.length == 0){
+        return list.__new__(list)
+    }
+    if(typeof other == 'number'){
+        if(other < 0){
+            return list.__new__(list)
+        }
+        if(self.length > $B.max_array_size / other){
+            throw _b_.OverflowError.$factory(`cannot fit ` +
+                `'${$B.class_name(other)}' into an index-sized integer`)
+        }
         var res = [],
             $temp = self.slice(),
             len = $temp.length
@@ -389,18 +405,10 @@ list.__mul__ = function(self, other){
             res.__brython__ = self.__brython__
         }
         return res
+    }else if(_b_.isinstance(other, $B.long_int)){
+        throw _b_.OverflowError.$factory(`cannot fit ` +
+        `'${$B.class_name(other)}' into an index-sized integer`)
     }
-
-    if(_b_.hasattr(other, "__int__") || _b_.hasattr(other, "__index__")){
-       return list.__mul__(self, _b_.int.$factory(other))
-    }
-
-    var rmul = $B.$getattr(other, '__rmul__', null)
-    if(rmul === null){
-        throw _b_.TypeError.$factory(`can't multiply sequence by non-int ` +
-            `of type '${$B.class_name(other)}'`)
-    }
-    return _b_.NotImplemented
 }
 
 list.__new__ = function(cls, ...args){
@@ -564,7 +572,7 @@ list.count = function(){
 list.extend = function(){
     var $ = $B.args("extend", 2, {self: null, t: null}, ["self", "t"],
         arguments, {}, null, null)
-    var other = list.$factory($B.$iter($.t))
+    var other = list.$factory(_b_.iter($.t))
     for(var i = 0; i < other.length; i++){$.self.push(other[i])}
     return _b_.None
 }
@@ -740,16 +748,15 @@ list.sort = function(self){
     check_not_tuple(self, "sort")
     var func = _b_.None,
         reverse = false,
-        kw_args = $.kw,
-        keys = _b_.list.$factory(_b_.dict.keys(kw_args))
+        kw_args = $.kw
 
-    for(var i = 0; i < keys.length; i++){
-        if(keys[i] == "key"){
-            func = kw_args.$string_dict[keys[i]][0]
-        }else if(keys[i] == "reverse"){
-            reverse = kw_args.$string_dict[keys[i]][0]
+    for(var key in kw_args.$jsobj){
+        if(key == "key"){
+            func = kw_args.$jsobj[key]
+        }else if(key == "reverse"){
+            reverse = kw_args.$jsobj[key]
         }else{
-            throw _b_.TypeError.$factory("'" + keys[i] +
+            throw _b_.TypeError.$factory("'" + key +
                 "' is an invalid keyword argument for this function")
         }
     }
@@ -763,6 +770,16 @@ list.sort = function(self){
 
     self.$cl = $elts_class(self)
     var cmp = null;
+
+    function basic_cmp(a, b) {
+        return $B.rich_comp("__lt__", a, b) ? -1:
+               $B.rich_comp('__eq__', a, b) ? 0 : 1
+    }
+
+    function reverse_cmp(a, b) {
+        return basic_cmp(b, a)
+    }
+
     if(func === _b_.None && self.$cl === _b_.str){
         if(reverse){
             cmp = function(b, a){return $B.$AlphabeticalCompare(a, b)}
@@ -776,71 +793,28 @@ list.sort = function(self){
             cmp = function(a, b){return a - b}
         }
     }else{
+        cmp = reverse ?
+                function(t1, t2){
+                    return basic_cmp(t2[0], t1[0])
+                } :
+                function(t1, t2){
+                    return basic_cmp(t1[0], t2[0])
+                }
         if(func === _b_.None){
-            if(reverse){
-                cmp = function(b, a) {
-                    res = $B.$getattr(a, "__lt__")(b)
-                    if(res === _b_.NotImplemented){
-                        throw _b_.TypeError.$factory("unorderable types: " +
-                            $B.class_name(b) + "() < " +
-                            $B.class_name(a) + "()")
-                    }
-                    if(res){
-                        if(a == b){return 0}
-                        return -1
-                    }
-                    return 1
-                }
-            }else{
-                cmp = function(a, b){
-                    res = $B.rich_comp("__lt__", a, b)
-                    if(res === _b_.NotImplemented){
-                        throw _b_.TypeError.$factory("unorderable types: " +
-                            $B.class_name(a) + "() < " +
-                            $B.class_name(b) + "()")
-                    }
-                    if(res){
-                        return a == b ? 0 : -1
-                    }
-                    return 1
-                }
-            }
+            cmp = reverse ? reverse_cmp : basic_cmp
+            self.sort(cmp)
         }else{
-            if(reverse){
-                cmp = function(b, a) {
-                    var _a = func(a),
-                        _b = func(b)
-                    res = $B.$getattr(_a, "__lt__")(_b)
-                    if(res === _b_.NotImplemented){
-                        throw _b_.TypeError.$factory("unorderable types: " +
-                            $B.class_name(b) + "() < " +
-                            $B.class_name(a) + "()")
-                    }
-                    if(res){
-                        if(_a == _b){return 0}
-                        return -1
-                    }
-                    return 1
-                }
-            }else{
-                cmp = function(a, b){
-                    var _a = func(a),
-                        _b = func(b)
-                    res = $B.$getattr(_a, "__lt__")(_b)
-                    if(res === _b_.NotImplemented){
-                        throw _b_.TypeError.$factory("unorderable types: " +
-                            $B.class_name(a) + "() < " +
-                            $B.class_name(b) + "()")
-                    }
-                    if(res){
-                        if(_a == _b){return 0}
-                        return -1
-                    }
-                    return 1
-                }
+            var temp = [],
+                saved = self.slice()
+            for(var i=0, len=self.length; i < len; i++){
+                temp.push([func(self[i]), i])
             }
-
+            temp.sort(cmp)
+            for(var i=0, len=temp.length; i < len; i++){
+                self[i] = saved[temp[i][1]]
+            }
         }
+        return self.__brython__ ? _b_.None : self
     }
     $B.$TimSort(self, cmp)
 
@@ -861,7 +835,7 @@ var factory = function(){
     if(arguments.length == 0){
         return $B.$list([])
     }
-    var $ = $B.args(klass.$infos.__name__, 1, {obj: null}, ["obj"],
+    var $ = $B.args(klass.__name__, 1, {obj: null}, ["obj"],
         arguments, {}, null, null),
         obj = $.obj
     if(Array.isArray(obj)){ // most simple case
@@ -875,24 +849,7 @@ var factory = function(){
         }
         return obj
     }
-    if(obj[Symbol.iterator]){
-        return Array.from(obj)
-    }
-    var res = [],
-        pos = 0,
-        arg = $B.$iter(obj),
-        next_func = $B.$call($B.$getattr(arg, "__next__"))
-
-    while(1){
-        try{
-            res[pos++] = next_func()
-        }catch(err){
-            if(!isinstance(err, _b_.StopIteration)){
-                throw err
-            }
-            break
-        }
-    }
+    var res = Array.from($B.make_js_iterator(obj))
     res.__brython__ = true // false for Javascript arrays - used in sort()
     return res
 }
@@ -966,10 +923,7 @@ function $tuple(arg){return arg} // used for parenthesed expressions
 var tuple = {
     __class__: _b_.type,
     __mro__: [object],
-    $infos: {
-        __module__: "builtins",
-        __name__: "tuple"
-    },
+    __qualname__: 'tuple',
     $is_class: true,
     $native: true,
     $match_sequence_pattern: true, // for Pattern Matching (PEP 634)
@@ -1040,6 +994,14 @@ tuple.__eq__ = function(self, other){
 function c_mul(a, b){
     s = ((parseInt(a) * b) & 0xFFFFFFFF).toString(16)
     return parseInt(s.substr(0, s.length - 1), 16)
+}
+
+tuple.$getnewargs = function(self){
+    return $B.fast_tuple([self])
+}
+
+tuple.__getnewargs__ = function(){
+    return tuple.$getnewargs($B.single_arg('__getnewargs__', 'self', arguments))
 }
 
 tuple.__hash__ = function(self){

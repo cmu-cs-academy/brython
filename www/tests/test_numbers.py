@@ -708,6 +708,10 @@ x = 0
 x += 0.5
 assert x == abs(x), (x, abs(x))
 
+# method __complex__
+x = 2j
+assert x.__complex__() is x
+
 # issue 2023
 assert_raises(TypeError, eval, "1 % 'a'",
     msg="unsupported operand type(s) for %: 'int' and 'str'")
@@ -721,5 +725,45 @@ assert x == 338288524927261089654018896841347694592
 hash(0.1)
 # issue 2228
 assert int(0.00005) == 0
+
+
+# issue 2087
+import sys
+assert sys.int_info.default_max_str_digits == 4300
+assert sys.int_info.str_digits_check_threshold == 640
+
+assert sys.get_int_max_str_digits() == 4300
+s = '2' * 5000
+assert_raises(ValueError, int, s)
+
+sys.set_int_max_str_digits(5100)
+int(s)
+
+# issue 2095
+x = -.00001
+assert f'{x:z.1f}' == '0.0'
+
+# issue 2110
+rsa129 = 114381625757888867669235779976146612010218296721242362562561842935706935245733897830597123563958705058989075147599290026879543541
+e = 9007
+m = 200805001301070903002315180419000118050019172105011309190800151919090618010705
+s = 96869613754622061477140922254355882905759991124574319874695120930816298225145708356931476622883989628013391990551829945157815154
+assert pow(m, e, rsa129) == s
+
+m = 200805001301070903002315180419000118050019172105011309190800151919090618010705
+assert pow(m, 2) == m*m
+assert pow(m, 2, rsa129) == m * m % rsa129
+
+assert pow(pow(2, 53) - 1, 1, 2) == 1
+assert pow(pow(2, 53), 1, 2) == 0
+
+# issue 2122
+nzi64 = int("0x910FDB1DBC8650BE", 16)
+ltnzi64 = int("0x3C039E0D19DFDB8A", 16)
+gAnswer = (ltnzi64 - nzi64) % (2 ** 64)
+assert gAnswer == 0xAAF3C2EF5D598ACC, gAnswer
+
+# digits in non-latin alphabets
+assert int('9' + chr(int('17E4', 16)) + 'b', 16) == 2379
 
 print('passed all tests...')

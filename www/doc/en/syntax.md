@@ -39,6 +39,11 @@ Here are a few features and limitations imposed by the browser and Javascript :
   with a `write()` method, and this allows for the redirection of output to go
   to a window or text area, for example.
 
+- by default, `sys.stdout.write()` and `sys.stderr.write()` don't immediately
+  print in the console, there would be a line feed each time. Messages are
+  stored in a buffer, printing to the console requires a call to method
+  `flush()` of `sys.stdout` or `sys.stderr`
+
 - to open a print dialog (to a printer), call `window.print` (`window` is
   defined in module **browser**).
 
@@ -51,14 +56,8 @@ Standard library
 Brython is shipped with a part of the CPython standard library.
 
 Some of the modules that are written in C in CPython standard library have
-been written in Javascript in Brython distribution (`math`, `random`, `re`,
-`unicodedata`...).
-
-The `json` module is also written in Javascript. It is based on the Javascript
-object `JSON`, which implies a few minor differences with the CPython
-package; the values `NaN, Infinity, -Infinity` which are recognized by 
-CPython are not in the JSON specification and as such, throw a `SyntaxError`
-with the Brython module.
+been written in Javascript in Brython distribution (`json`, `math`, `random`, 
+`re`, `unicodedata`...).
 
 The `xml` package is not provided because that of the CPython distribution
 uses a C module (`pyexpat`) which is available neither in Javascript nor in

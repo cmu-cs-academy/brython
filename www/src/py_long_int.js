@@ -5,15 +5,14 @@ Module to manipulate long integers
 
 var _b_ = $B.builtins
 
-try{
-    eval("window")
-}catch(err){
+if($B.isWebWorker){
     window = self
 }
 
 var long_int = {
     __class__: _b_.type,
     __mro__: [_b_.int, _b_.object],
+    __qualname__: 'int',
     $infos: {
         __module__: "builtins",
         __name__: "int"
@@ -78,7 +77,7 @@ long_int.$to_js_number = function(self){
 }
 
 long_int.__format__ = function(self, format_spec){
-    var fmt = new $B.parse_format_spec(format_spec)
+    var fmt = new $B.parse_format_spec(format_spec, self)
     if(fmt.type && 'eEfFgG%'.indexOf(fmt.type) != -1){
         // Call __format__ on float(self)
         return _b_.float.__format__(self, format_spec)
@@ -230,7 +229,9 @@ long_int.__mod__ = function(self, other){
     if(typeof other == "number"){
         return int_or_long(self.value % BigInt(other))
     }else if(other.__class__ === $B.long_int){
-        return int_or_long(self.value % other.value)
+        var n = self.value,
+            m = other.value
+        return int_or_long(((n % m) + m) % m)
     }else if(typeof other == "boolean"){
         return int_or_long(self.value % (other ? 1n : 0n))
     }else if(_b_.isinstance(other, _b_.int)){
@@ -267,6 +268,9 @@ long_int.__neg__ = function(self){
 long_int.__pos__ = function(self){return self}
 
 long_int.__pow__ = function(self, power, z){
+    if(z !== undefined){
+        return _b_.int.__pow__(self, power, z)
+    }
     if(typeof power == "number"){
         return int_or_long(self.value ** BigInt(power))
     }else if(typeof power == "boolean"){
@@ -293,7 +297,13 @@ long_int.__rshift__ = function(self, other){
     return _b_.NotImplemented
 }
 
-long_int.__str__ = long_int.__repr__ = function(self){
+long_int.__repr__ = function(self){
+    $B.builtins_repr_check($B.long_int, arguments) // in brython_builtins.js
+    if($B.int_max_str_digits != 0 &&
+            self.value >= 10n ** BigInt($B.int_max_str_digits)){
+        throw _b_.ValueError.$factory(`Exceeds the limit ` +
+            `(${$B.int_max_str_digits}) for integer string conversion`)
+    }
     return self.value.toString()
 }
 
@@ -346,7 +356,7 @@ function _infos(self){
     var nbits = $B.long_int.bit_length(self),
         pow2 = 2n ** BigInt(nbits - 1),
         rest = BigInt(self.value) - pow2,
-        relative_rest = new Number(rest) / new Number(pow2)
+        relative_rest = new Number(rest / pow2)
     return {nbits, pow2, rest, relative_rest}
 }
 
@@ -367,7 +377,7 @@ long_int.$log10 = function(x){
     // x = mant * 10 ** exp
     var x_string = x.value.toString(),
         exp = x_string.length - 1,
-        mant = eval(x_string[0] + '.' + x_string.substr(1))
+        mant = parseFloat(x_string[0] + '.' + x_string.substr(1))
     return _b_.float.$factory(exp + Math.log10(mant))
 }
 
@@ -378,27 +388,27 @@ long_int.imag = function(self){return _b_.int.$factory(0)}
 long_int.real = function(self){return self}
 
 // code for & | ^
-long_int.__and__ = function(self, other){
-    if(typeof other == "number"){
-        return int_or_long(self.value & BigInt(other))
-    }else if(typeof other == "boolean"){
-        return int_or_long(self.value & (other ? 1n : 0n))
-    }else if(other.__class__ === $B.long_int){
-        return int_or_long(self.value & other.value)
-    }else if(_b_.isinstance(other, _b_.int)){
-        // int subclass
-        return long_int.__and__(self, other.$brython_value)
-    }
-    return _b_.NotImplemented
+var body =
+`var $B = __BRYTHON__,
+    _b_ = $B.builtins
+if(typeof other == "number"){
+    return _b_.int.$int_or_long(self.value & BigInt(other))
+}else if(typeof other == "boolean"){
+    return _b_.int.$int_or_long(self.value & (other ? 1n : 0n))
+}else if(other.__class__ === $B.long_int){
+    return _b_.int.$int_or_long(self.value & other.value)
+}else if(_b_.isinstance(other, _b_.int)){
+    // int subclass
+    return $B.long_int.__and__(self, other.$brython_value)
 }
+return _b_.NotImplemented`
 
+long_int.__and__ = Function('self', 'other', body)
 
-var model = long_int.__and__ + ''
-
-eval("long_int.__or__ = " +
-     model.replace(/&/g, '|').replace(/__and__/g, '__or__'))
-eval("long_int.__xor__ = " +
-     model.replace(/&/g, '^').replace(/__and__/g, '__xor__'))
+long_int.__or__ = Function('self', 'other',
+     body.replace(/&/g, '|').replace(/__and__/g, '__or__'))
+long_int.__xor__ = Function('self', 'other',
+     body.replace(/&/g, '^').replace(/__and__/g, '__xor__'))
 
 long_int.to_bytes = function(self, len, byteorder, signed){
     // The integer is represented using len bytes. An OverflowError is raised
@@ -435,14 +445,14 @@ function digits(base){
     // Number from 0 to base, or from 0 to 9 if base > 10
     for(var i = 0; i < base; i++){
         if(i == 10){break}
-        is_digits[i] = true
+        is_digits[i] = i
     }
     if(base > 10){
         // Additional letters
         // For instance in base 16, add "abcdefABCDEF" as keys
         for(var i = 0; i < base - 10; i++){
-            is_digits[String.fromCharCode(65 + i)] = true
-            is_digits[String.fromCharCode(97 + i)] = true
+            is_digits[String.fromCharCode(65 + i)] = 10 + i
+            is_digits[String.fromCharCode(97 + i)] = 10 + i
         }
     }
     return is_digits
@@ -474,7 +484,7 @@ long_int.$factory = function(value, base){
     // Check if all characters in value are valid in the base
     var is_digits = digits(base)
     for(var i = 0; i < value.length; i++){
-        if(! is_digits[value.charAt(i)]){
+        if(is_digits[value.charAt(i)] === undefined){
             throw _b_.ValueError.$factory(
                 'int argument is not a valid number: "' + value + '"')
         }
@@ -482,6 +492,10 @@ long_int.$factory = function(value, base){
     var res
     if(base == 10){
         res = BigInt(value)
+    }else if(base == 16){
+        res = BigInt('0x' + value)
+    }else if(base == 8){
+        res = BigInt('0o' + value)
     }else{
         base = BigInt(base)
         var res = 0n,
@@ -489,7 +503,7 @@ long_int.$factory = function(value, base){
             char
         for(var i = value.length - 1; i >= 0; i--){
             char = value[i].toUpperCase()
-            res += coef * BigInt(_digits.indexOf(char))
+            res += coef * BigInt(is_digits[char])
             coef *= base
         }
     }

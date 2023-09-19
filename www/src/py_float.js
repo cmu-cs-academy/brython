@@ -11,19 +11,14 @@ function $err(op, other){
 }
 
 function float_value(obj){
-    // Instances of float subclasses that call float.__new__(cls, value)
-    // have an attribute $brython_value set
-    return obj.$brython_value !== undefined ? obj.$brython_value : obj
+    return obj.__class__ === float ? obj : fast_float(obj.value)
 }
 
 // dictionary for built-in class 'float'
 var float = {
     __class__: _b_.type,
     __dir__: object.__dir__,
-    $infos: {
-        __module__: "builtins",
-        __name__: "float"
-    },
+    __qualname__: 'float',
     $is_class: true,
     $native: true,
     $descriptors: {
@@ -138,7 +133,8 @@ float.__divmod__ = function(self, other){
 
 float.__eq__ = function(self, other){
     check_self_is_float(self, '__eq__')
-    if(isNaN(self.value) && isNaN(other)){
+    if(isNaN(self.value) &&
+            (_b_.isinstance(other, float) && isNaN(other.value))){
         return false
     }
     if(_b_.isinstance(other, _b_.int)){
@@ -148,10 +144,10 @@ float.__eq__ = function(self, other){
         return self.value == other.value
     }
     if(_b_.isinstance(other, _b_.complex)){
-        if(other.$imag != 0){
+        if(! $B.rich_comp('__eq__', 0, other.$imag)){
             return false
         }
-        return self.value == other.$real
+        return float.__eq__(self, other.$real)
     }
     return _b_.NotImplemented
 }
@@ -325,7 +321,8 @@ float.fromhex = function(klass, s){
         return finished()
     }
     if (exp > LONG_MAX/2){
-        throw overflow_error;
+        console.log('overflow, exp', exp)
+        throw overflow_error();
     }
     /* Adjust exponent for fractional part. */
     exp = exp - 4 * fdigits;
@@ -384,10 +381,11 @@ float.fromhex = function(klass, s){
         if (round_up) {
             x += 2 * half_eps;
             if (top_exp == DBL_MAX_EXP &&
-                x == ldexp(2 * half_eps, DBL_MANT_DIG).value)
+                x == ldexp(2 * half_eps, DBL_MANT_DIG).value){
                 /* overflow corner case: pre-rounded value <
                    2**DBL_MAX_EXP; rounded=2**DBL_MAX_EXP. */
                 throw overflow_error()
+            }
         }
     }
     x = ldexp(x, (exp + 4 * key_digit));
@@ -398,6 +396,11 @@ float.fromhex = function(klass, s){
 float.__getformat__ = function(arg){
     if(arg == "double" || arg == "float"){
         return "IEEE, little-endian"
+    }
+    if(typeof arg !== 'string'){
+        throw _b_.TypeError.$factory(
+            " __getformat__() argument must be str, not " +
+            $B.class_name(arg))
     }
     throw _b_.ValueError.$factory("__getformat__() argument 1 must be " +
         "'double' or 'float'")
@@ -576,9 +579,18 @@ function preformat(self, fmt){
 
 float.__format__ = function(self, format_spec){
     check_self_is_float(self, '__format__')
-    var fmt = new $B.parse_format_spec(format_spec)
+    var fmt = new $B.parse_format_spec(format_spec, self)
+    return float.$format(self, fmt)
+}
+
+float.$format = function(self, fmt){
+    // fmt is the object parsed from a format_spec
     fmt.align = fmt.align || ">"
     var pf = preformat(self, fmt)
+    if(fmt.z && Object.is(parseFloat(pf), -0)){
+        // if 'z' option is set, remove minus sign for negative zero
+        pf = pf.substr(1)
+    }
     var raw = pf.split('.'),
         _int = raw[0]
     if(fmt.comma){
@@ -592,14 +604,34 @@ float.__format__ = function(self, format_spec){
     return $B.format_width(raw.join("."), fmt) // in py_string.js
 }
 
+float.$getnewargs = function(self){
+    return $B.fast_tuple([float_value(self)])
+}
+
+float.__getnewargs__ = function(){
+    return float.$getnewargs($B.single_arg('__getnewargs__', 'self', arguments))
+}
+
 var nan_hash = $B.$py_next_hash--
 
-float.__hash__ = function(self) {
+var mp2_31 = Math.pow(2, 31)
+
+$B.float_hash_cache = new Map()
+
+float.__hash__ = function(self){
     check_self_is_float(self, '__hash__')
+    return float.$hash_func(self)
+}
+
+float.$hash_func = function(self){
     if(self.__hashvalue__ !== undefined){
         return self.__hashvalue__
     }
     var _v = self.value
+    var in_cache = $B.float_hash_cache.get(_v)
+    if(in_cache !== undefined){
+        return in_cache
+    }
     if(_v === Infinity){
         return 314159
     }else if(_v === -Infinity){
@@ -615,11 +647,13 @@ float.__hash__ = function(self) {
     }
 
     var r = frexp(self)
-    r[0] *= Math.pow(2, 31)
+    r[0] *= mp2_31
     var hipart = parseInt(r[0])
-    r[0] = (r[0] - hipart) * Math.pow(2, 31)
-    var x = hipart + _b_.int.$factory(r[0]) + (r[1] << 15)
-    return x & 0xFFFFFFFF
+    r[0] = (r[0] - hipart) * mp2_31
+    var x = hipart + parseInt(r[0]) + (r[1] << 15)
+    x &= 0xFFFFFFFF
+    $B.float_hash_cache.set(_v, x)
+    return self.__hashvalue__ = x
 }
 
 function isninf(x) {
@@ -654,6 +688,10 @@ function frexp(x){
             return [x, 0]
         }
         x1 = float_value(x).value
+    }else if(_b_.isinstance(x, $B.long_int)){
+        var exp = x.value.toString(2).length,
+            power = 2n ** BigInt(exp)
+        return[$B.fast_float(Number(x.value) / Number(power)), exp]
     }
     if(x1 == 0){
         return [0, 0]
@@ -672,7 +710,6 @@ function frexp(x){
        man *= 2.0
        ex--
     }
-
     while(man >= 1.0){
        man *= 0.5
        ex++
@@ -696,6 +733,17 @@ function ldexp(mantissa, exponent) {
     }
     if(mantissa == 0){
         return ZERO
+    }else if(isNaN(mantissa)){
+        return NAN
+    }
+    if(_b_.isinstance(exponent, $B.long_int)){
+        if(exponent.value < 0){
+            return ZERO
+        }else{
+            throw _b_.OverflowError.$factory('overflow')
+        }
+    }else if(! isFinite(mantissa * Math.pow(2, exponent))){
+        throw _b_.OverflowError.$factory('overflow')
     }
     var steps = Math.min(3, Math.ceil(Math.abs(exponent) / 1023));
     var result = mantissa;
@@ -910,25 +958,6 @@ float.__pow__ = function(self, other){
     return _b_.NotImplemented
 }
 
-function __newobj__(){
-    // __newobj__ is called with a generator as only argument
-    var $ = $B.args('__newobj__', 0, {}, [], arguments, {}, 'args', null),
-        args = $.args
-    return {
-        __class__: args[0],
-        value: args[1]
-    }
-}
-
-float.__reduce_ex__ = function(self){
-    return $B.fast_tuple([
-        __newobj__,
-        $B.fast_tuple([self.__class__ || _b_.float, _b_.repr(self)]),
-        _b_.None,
-        _b_.None,
-        _b_.None])
-}
-
 float.__repr__ = function(self){
     $B.builtins_repr_check(float, arguments) // in brython_builtins.js
     self = self.value
@@ -1008,14 +1037,30 @@ float.__repr__ = function(self){
 
 float.__round__ = function(){
     var $ = $B.args('__round__', 2, {self: null, ndigits: null},
-            ['self', 'ndigits'], arguments, {ndigits: _b_.None}, null, null),
-        x = $.self,
-        ndigits = $.ndigits === _b_.None ? 0 : $.ndigits
-    return float.$round(x, ndigits)
+            ['self', 'ndigits'], arguments, {ndigits: _b_.None}, null, null)
+    return float.$round($.self, $.ndigits)
 }
 
 float.$round = function(x, ndigits){
+    function overflow(){
+        throw _b_.OverflowError.$factory(
+            "cannot convert float infinity to integer")
+    }
+
+    var no_digits = ndigits === _b_.None
+    if(isnan(x)){
+        if(ndigits === _b_.None){
+            throw _b_.ValueError.$factory(
+                "cannot convert float NaN to integer")
+        }
+        return NAN
+    }else if(isninf(x)){
+        return ndigits === _b_.None ? overflow() : NINF
+    }else if(isinf(x)){
+        return ndigits === _b_.None ? overflow() : INF
+    }
     x = float_value(x)
+    ndigits = ndigits === _b_.None ? 0 : ndigits
     if(ndigits == 0){
         var res = Math.round(x.value)
         if(Math.abs(x.value - res) == 0.5){
@@ -1024,7 +1069,11 @@ float.$round = function(x, ndigits){
                return res - 1
            }
        }
-       return res
+       if(no_digits){
+           // return an int
+           return res
+       }
+       return $B.fast_float(res)
     }
     if(ndigits.__class__ === $B.long_int){
         ndigits = Number(ndigits.value)
@@ -1111,65 +1160,65 @@ float.__truediv__ = function(self, other){
 }
 
 // operations
-var $op_func = function(self, other){
+var op_func_body =
+    `var $B = __BRYTHON__,
+        _b_ = __BRYTHON__.builtins
     if(_b_.isinstance(other, _b_.int)){
         if(typeof other == "boolean"){
             return other ? $B.fast_float(self.value - 1) : self
         }else if(other.__class__ === $B.long_int){
-            return float.$factory(self.value - parseInt(other.value))
+            return _b_.float.$factory(self.value - parseInt(other.value))
         }else{
-            return fast_float(self.value - other)
+            return $B.fast_float(self.value - other)
         }
     }
-    if(_b_.isinstance(other, float)){
-        return fast_float(self.value - other.value)
+    if(_b_.isinstance(other, _b_.float)){
+        return $B.fast_float(self.value - other.value)
     }
-    return _b_.NotImplemented
-}
-$op_func += "" // source code
-var $ops = {"+": "add", "-": "sub"}
-for(var $op in $ops){
-    var $opf = $op_func.replace(/-/gm, $op)
-    $opf = $opf.replace(/__rsub__/gm, "__r" + $ops[$op] + "__")
-    eval("float.__" + $ops[$op] + "__ = " + $opf)
+    return _b_.NotImplemented`
+
+var ops = {"+": "add", "-": "sub"}
+for(var op in ops){
+    var body = op_func_body.replace(/-/gm, op)
+    float[`__${ops[op]}__`] = Function('self', 'other', body)
 }
 
 // comparison methods
-var $comp_func = function(self, other){
-
-    if(_b_.isinstance(other, _b_.int)){
-        if(other.__class__ === $B.long_int){
-            return self.value > parseInt(other.value)
-        }
-        return self.value > other.valueOf()
+var comp_func_body = `
+var $B = __BRYTHON__,
+    _b_ = $B.builtins
+if(_b_.isinstance(other, _b_.int)){
+    if(other.__class__ === $B.long_int){
+        return self.value > parseInt(other.value)
     }
-    if(_b_.isinstance(other, float)){
-        return self.value > other.value
-    }
-
-    if(_b_.isinstance(other, _b_.bool)) {
-        return self.value > _b_.bool.__hash__(other)
-    }
-    if(_b_.hasattr(other, "__int__") || _b_.hasattr(other, "__index__")) {
-       return _b_.int.__gt__(self.value, $B.$GetInt(other))
-    }
-
-    // See if other has the opposite operator, eg <= for >
-    var inv_op = $B.$getattr(other, "__le__", _b_.None)
-    if(inv_op !== _b_.None){
-        return inv_op(self)
-    }
-
-    throw _b_.TypeError.$factory(
-        "unorderable types: float() > " + $B.class_name(other) + "()")
+    return self.value > other.valueOf()
+}
+if(_b_.isinstance(other, _b_.float)){
+    return self.value > other.value
 }
 
-$comp_func += "" // source code
-for(var $op in $B.$comps){
-    eval("float.__" + $B.$comps[$op] + "__ = "+
-          $comp_func.replace(/>/gm, $op).
-              replace(/__gt__/gm, "__" + $B.$comps[$op] + "__").
-              replace(/__le__/, "__" + $B.$inv_comps[$op] + "__"))
+if(_b_.isinstance(other, _b_.bool)) {
+    return self.value > _b_.bool.__hash__(other)
+}
+if(_b_.hasattr(other, "__int__") || _b_.hasattr(other, "__index__")) {
+   return _b_.int.__gt__(self.value, $B.$GetInt(other))
+}
+
+// See if other has the opposite operator, eg <= for >
+var inv_op = $B.$getattr(other, "__le__", _b_.None)
+if(inv_op !== _b_.None){
+    return inv_op(self)
+}
+
+throw _b_.TypeError.$factory(
+    "unorderable types: float() > " + $B.class_name(other) + "()")
+`
+
+for(var op in $B.$comps){
+    var body = comp_func_body.replace(/>/gm, op).
+                  replace(/__gt__/gm, `__${$B.$comps[op]}__`).
+                  replace(/__le__/, `__${$B.$inv_comps[op]}__`)
+    float[`__${$B.$comps[op]}__`] = Function('self', 'other', body)
 }
 
 // add "reflected" methods
@@ -1215,9 +1264,10 @@ $B.fast_float = fast_float = function(value){
 
 var fast_float_with_hash = function(value, hash_value){
     return {
-               __class__: _b_.float,
-               __hashvalue__: hash_value,
-               value}
+         __class__: _b_.float,
+         __hashvalue__: hash_value,
+         value
+    }
 }
 
 // constructor for built-in class 'float'
@@ -1257,6 +1307,10 @@ float.$factory = function(value){
     }
 
     if(typeof value == "string"){
+       if(value.trim().length == 0){
+           throw _b_.ValueError.$factory(
+                   `could not convert string to float: ${_b_.repr(value)}`)
+       }
        value = value.trim()   // remove leading and trailing whitespace
        switch(value.toLowerCase()) {
            case "+inf":
@@ -1272,8 +1326,6 @@ float.$factory = function(value){
                return fast_float(Number.NaN)
            case "-nan":
                return fast_float(-Number.NaN)
-           case "":
-               throw _b_.ValueError.$factory("count not convert string to float")
            default:
                var parts = value.split('e')
                if(parts[1]){
@@ -1295,9 +1347,9 @@ float.$factory = function(value){
                value = value.charAt(0) + value.substr(1).replace(/_/g, "") // PEP 515
                value = to_digits(value) // convert arabic-indic digits to latin
                if(isFinite(value)){
-                   return fast_float(eval(value))
+                   return fast_float(parseFloat(value))
                }else{
-                   throw _b_.ValueError.$factory(
+                   throw _b_.TypeError.$factory(
                        "could not convert string to float: " +
                        _b_.repr(original_value))
                }
@@ -1356,36 +1408,6 @@ float.$factory = function(value){
 $B.$FloatClass = $FloatClass
 
 $B.set_func_names(float, "builtins")
-
-// Dictionary and factory for subclasses of float
-var FloatSubclass = $B.FloatSubclass  = {
-    __class__: _b_.type,
-    __mro__: [object],
-    $infos: {
-        __module__: "builtins",
-        __name__: "float"
-    },
-    $is_class: true
-}
-
-for(var $attr in float){
-    if(typeof float[$attr] == "function"){
-        FloatSubclass[$attr] = (function(attr){
-            return function(){
-                var args = [], pos = 0
-                if(arguments.length > 0){
-                    var args = [arguments[0].valueOf()], pos = 1
-                    for(var i = 1, len = arguments.length; i < len; i++){
-                        args[pos++] = arguments[i]
-                    }
-                }
-                return float[attr].apply(null, args)
-            }
-        })($attr)
-    }
-}
-
-$B.set_func_names(FloatSubclass, "builtins")
 
 float.fromhex = _b_.classmethod.$factory(float.fromhex)
 

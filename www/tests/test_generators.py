@@ -1,4 +1,5 @@
 # examples from http://linuxgazette.net/100/pramode.html
+from tester import assert_raises
 
 def foo():
     yield 1
@@ -1214,5 +1215,48 @@ except StopIteration as ee:
     assert ee.value == expected, ee.value
 else:
     assert False
-    
+
+# issue 2123
+def g(): yield
+
+try:
+    g().throw(Exception('foo1'))
+except Exception as exc:
+    assert exc.__class__ is Exception
+    assert exc.args[0] == 'foo1'
+
+try:
+    g().throw(Exception('foo2'), None)
+except Exception as exc:
+    assert exc.__class__ is Exception
+    assert exc.args[0] == 'foo2'
+
+try:
+    g().throw(Exception('foo3'), None, None)
+except Exception as exc:
+    assert exc.__class__ is Exception
+    assert exc.args[0] == 'foo3'
+
+# issue 2126
+import random
+
+def g():
+  yield 1
+  yield 2
+
+def h(g):
+  yield from g()
+
+i = h(g)
+assert next(i) == 1
+assert_raises(ValueError, i.throw, ValueError,
+              nb_args=0)
+
+i = h(g)
+assert next(i) == 1
+x = random.randint(1, 100)
+assert_raises(ValueError, i.throw, ValueError(x), None,
+              nb_args=1,
+              msg=x)
+
 print('passed all tests...')

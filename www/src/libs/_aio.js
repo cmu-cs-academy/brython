@@ -19,14 +19,15 @@ var responseType = {
 }
 
 function handle_kwargs(kw, method){
+    // kw was created with $B.obj_dict(), its keys/values are in kw.$jsobj
     var data,
         cache = false,
         format = "text",
         headers = {},
         timeout = {}
-    for(var key in kw.$string_dict){
+    for(var key in kw.$jsobj){
         if(key == "data"){
-            var params = kw.$string_dict[key][0]
+            var params = kw.$jsobj[key]
             if(typeof params == "string"){
                 data = params
             }else if(_b_.isinstance(params, _b_.bytes)){
@@ -41,29 +42,36 @@ function handle_kwargs(kw, method){
                         "expected dict, bytes or str, got " +
                         $B.class_name(params))
                 }
-                params = params.$string_dict
                 var items = []
-                for(var key in params){
+                for(var key of _b_.dict.$keys_string(params)){
+                    var value = _b_.dict.$getitem_string(params, key)
                     items.push(encodeURIComponent(key) + "=" +
-                               encodeURIComponent($B.pyobj2jsobj(params[key][0])))
+                               encodeURIComponent($B.pyobj2jsobj(value)))
                 }
                 data = items.join("&")
             }
         }else if(key == "headers"){
-            headers = _b_.dict.$to_obj(kw.$string_dict[key][0])
+            var value = kw.$jsobj[key]
+            if(! _b_.isinstance(value, _b_.dict)){
+                throw _b_.ValueError.$factory(
+                    "headers must be a dict, not " + $B.class_name(value))
+            }
+            for(var key of _b_.dict.$keys_string(value)){
+                headers[key.toLowerCase()] = _b_.dict.$getitem_string(value, key)
+            }
         }else if(key.startsWith("on")){
             var event = key.substr(2)
             if(event == "timeout"){
-                timeout.func = kw.$string_dict[key][0]
+                timeout.func = kw.$jsobj[key]
             }else{
-                ajax.bind(self, event, kw.$string_dict[key][0])
+                ajax.bind(self, event, kw.$jsobj[key])
             }
         }else if(key == "timeout"){
-            timeout.seconds = kw.$string_dict[key][0]
+            timeout.seconds = kw.$jsobj[key]
         }else if(key == "cache"){
-            cache = kw.$string_dict[key][0]
+            cache = kw.$jsobj[key]
         }else if(key == "format"){
-            format = kw.$string_dict[key][0]
+            format = kw.$jsobj[key]
         }
     }
     if(method == "post"){
@@ -74,10 +82,10 @@ function handle_kwargs(kw, method){
     }
     return {
         body: data,
-        cache: cache,
-        format: format,
-        timeout: timeout,
-        headers: headers
+        cache,
+        format,
+        timeout,
+        headers
     }
 }
 
@@ -99,7 +107,7 @@ function ajax(){
         return new Promise(function(resolve, reject){
             var xhr = new XMLHttpRequest()
             xhr.open(method, url, true)
-            for(key in args.headers){
+            for(var key in args.headers){
                 xhr.setRequestHeader(key, args.headers[key])
             }
             xhr.format = args.format
@@ -208,12 +216,7 @@ function run(coro){
     var handle_success = function(){
             $B.leave_frame()
         },
-        handle_error = function(err){
-            // coro.$stack is a snapshot of the frames stack when the async
-            // function was called. Restore it to get the correct call tree
-            err.$stack = coro.$stack.concat([$B.last(err.$stack)])
-            $B.handle_error(err)
-        }
+        handle_error = $B.show_error
 
     var $ = $B.args("run", 3, {coro: null, onsuccess: null, onerror: null},
             ["coro", "onsuccess", "onerror"], arguments,
@@ -225,7 +228,6 @@ function run(coro){
 
     if(onerror !== handle_error){
         function error_func(exc){
-            exc.$stack = coro.$stack.concat([$B.last(exc.$stack)])
             try{
                 onerror(exc)
             }catch(err){
@@ -279,8 +281,15 @@ function make_error(name, module){
 }
 
 
-var InvalidStateError = make_error('InvalidStateError', 'browser.aio')
-var CancelledError = make_error('CancelledError', 'browser.aio')
+var InvalidStateError = $B.make_class('InvalidStateError')
+InvalidStateError.__bases__ = [_b_.Exception, _b_.object]
+InvalidStateError.__mro__ = [_b_.Exception, _b_.object]
+$B.set_func_names(InvalidStateError, 'browser.aio')
+
+var CancelledError = $B.make_class('CancelledError')
+CancelledError.__bases__ = [_b_.Exception, _b_.object]
+CancelledError.__mro__ = [_b_.Exception, _b_.object]
+$B.set_func_names(CancelledError, 'browser.aio')
 
 
 var Future = $B.make_class("Future",

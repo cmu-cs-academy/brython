@@ -3,6 +3,8 @@
 # issue 744: Javascript objects should allow integer attribute names.
 from browser import window
 import javascript
+from tester import assert_raises
+
 
 a = window.Uint8ClampedArray.new(10)
 
@@ -156,20 +158,27 @@ for num in [1, 4.7]:
     except TypeError:
         pass
 
-# javascript.extends() and javascript.super()
-@javascript.extends(window.Rectangle)
-class Square2:
+# inheriting a Javascript class
+class Square2(window.Rectangle):
 
     def __init__(self, length):
-        javascript.super()(length, length)
+        super().__init__(length, length)
         self.name = 'Square2'
 
     def f(self):
-        return javascript.super().surface()
+        return self.surface()
 
 assert Square2(10).name == "Square2"
 assert Square2(25).surface() == 625
 assert Square2(20).f() == 400
+
+sq = Square2(6)
+assert list(sq.getSides()) == [6, 6, 6, 6]
+assert sq.area == 36
+sq.area = 25
+assert sq.width == 5
+
+assert sq.nb_sides() == 'sides'
 
 # issue 1696
 window.jsFunction1696('asdf'.isupper)
@@ -188,5 +197,61 @@ assert ns.x == 3
 
 # method .sort of JS lists return the sorted list
 assert window.js_list.sort() == ['a', 'b', 'c']
+
+# issue 2059
+jslist = window.make_js_list() # [0.5, 0.5]
+jslist[0] = 1.7
+assert jslist == [1.7, 0.5]
+window.test(jslist, 0, 1.7)
+
+jslist.append(3.5)
+assert jslist == [1.7, 0.5, 3.5]
+assert jslist[2] == 3.5
+window.test(jslist, 2, 3.5)
+
+jslist.sort()
+assert jslist == [0.5, 1.7, 3.5]
+
+assert jslist + ['a'] == [0.5, 1.7, 3.5, 'a']
+assert jslist * 2 == [0.5, 1.7, 3.5, 0.5, 1.7, 3.5]
+
+del jslist[2]
+assert jslist == [0.5, 1.7]
+
+assert not jslist > [1, 2]
+assert jslist < [1, 2]
+
+jslist += ['a']
+assert jslist == [0.5, 1.7, 'a']
+
+assert 0.5 in jslist
+assert 'a' in jslist
+
+assert [item for item in jslist] == jslist
+
+jslist.reverse()
+assert jslist == ['a', 1.7, 0.5]
+
+jslist[0] += 'b'
+assert jslist == ['ab', 1.7, 0.5]
+window.test(jslist, 0, 'ab')
+
+# issue 2105
+window.set_array_proto() # sets Array.prototype.test
+assert jslist.test() == 'Array test'
+
+window.del_array_proto() # deletes Array.prototype.test
+assert_raises(AttributeError, getattr, jslist, 'test')
+
+# issue 2165
+def send(*args, **kwargs):
+    # checks that kwargs is a dictionary
+    window.call(args, kwargs)
+
+send(1, 2, a="b", c="d")
+
+# issue 2172
+window.demo_array.test2172()
+window.demo_array.demo_array2.test2172()
 
 print("all tests ok...")

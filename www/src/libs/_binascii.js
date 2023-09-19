@@ -83,8 +83,9 @@ function make_alphabet(altchars){
 
 var module = {
     a2b_base64: function(){
-        var $ = $B.args("a2b_base64", 1, {s: null}, ['s'],
-                arguments, {}, null, null)
+        var $ = $B.args("a2b_base64", 2, {s: null, strict_mode: null}, 
+                ['s', 'strict_mode'],
+                arguments, {strict_mode: false}, null, null)
         var bytes
         if(_b_.isinstance($.s, _b_.str)){
             bytes = _b_.str.encode($.s, 'ascii')
@@ -122,8 +123,8 @@ var module = {
         var $ = $B.args("b2a_base64", 1, {data: null}, ['data'],
                 arguments, {}, null, "kw")
         var newline = false
-        if($.kw && $.kw.$string_dict.newline){
-            newline = $.kw.$string_dict.newline[0]
+        if($.kw && $.kw.$jsobj.hasOwnProperty('newline')){
+            newline = $.kw.$jsobj.newline
         }
 
         var string = $B.to_bytes($.data),

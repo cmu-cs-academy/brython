@@ -66,7 +66,8 @@ class Dialog(html.DIV):
     """
 
     def __init__(self, title="", *,
-            top=None, left=None, ok_cancel=False, default_css=True):
+            top=None, left=None, ok_cancel=False, can_close=True,
+            default_css=True):
         if default_css:
             for stylesheet in document.styleSheets:
                 if stylesheet.ownerNode.id == "brython-dialog":
@@ -79,9 +80,11 @@ class Dialog(html.DIV):
 
         self.title_bar = html.DIV(html.SPAN(title), Class="brython-dialog-title")
         self <= self.title_bar
-        self.close_button = html.SPAN("&times;", Class="brython-dialog-close")
-        self.title_bar <= self.close_button
-        self.close_button.bind("click", self.close)
+        if can_close:
+            self.close_button = html.SPAN("&times;", Class="brython-dialog-close")
+            self.title_bar <= self.close_button
+            self.close_button.bind("click", self.close)
+
         self.panel = html.DIV(Class="brython-dialog-panel")
         self <= self.panel
 
@@ -113,7 +116,7 @@ class Dialog(html.DIV):
             height = round(float(cstyle.height[:-2]) + 0.5)
             top = int((window.innerHeight - height) / 2)
         # top is relative to document scrollTop
-        top += document.scrollingElement.scrollTop
+        top += round(document.scrollingElement.scrollTop)
         self.top = top
         self.style.top = f'{top}px'
 
@@ -125,6 +128,10 @@ class Dialog(html.DIV):
         self.is_moving = False
 
     def close(self, *args):
+        ev = window.CustomEvent.new('dialog_close')
+        ev.dialog = self
+        document.dispatchEvent(ev)
+
         self.remove()
 
     def mousedown(self, event):
@@ -132,8 +139,15 @@ class Dialog(html.DIV):
         document.bind("touchmove", self.mousemove)
         self.is_moving = True
         self.initial = [self.left - event.x, self.top - event.y]
+        self.mouse_start = [event.x, event.y]
         # prevent default behaviour to avoid selecting the moving element
         event.preventDefault()
+
+        ev = window.CustomEvent.new('dialog_down')
+        ev.x = event.x
+        ev.y = event.y
+        ev.dialog = self
+        document.dispatchEvent(ev)
 
     def mousemove(self, event):
         if not self.is_moving:
@@ -142,6 +156,12 @@ class Dialog(html.DIV):
         # set new moving element coordinates
         self.left = self.initial[0] + event.x
         self.top = self.initial[1] + event.y
+
+        ev = window.CustomEvent.new('dialog_move')
+        ev.dx = event.x - self.mouse_start[0]
+        ev.dy = event.y - self.mouse_start[1]
+        ev.dialog = self
+        document.dispatchEvent(ev)
 
     def mouseup(self, event):
         self.is_moving = False

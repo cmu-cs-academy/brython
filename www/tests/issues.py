@@ -2674,7 +2674,7 @@ try:
     range[0, 8]
     raise Exception("should have raised TypeError")
 except TypeError as exc:
-    assert exc.args[0] == "'type' object is not subscriptable"
+    assert exc.args[0] == "type 'range' is not subscriptable"
 
 # issue 1529
 assertRaises(SyntaxError, exec, "for x in in range(1):\n pass")
@@ -3156,6 +3156,33 @@ assert_raises(SyntaxError, exec, "x ~= 1")
 x = {1}
 x.pop()
 assert 1 not in x
+
+# issue 2106
+import enum
+
+class MyEnum(enum.Enum):
+    ONE = enum.auto()
+
+
+assert MyEnum.ONE.value == 1
+assert type(MyEnum.ONE.value) is int
+
+# issue 2108
+try:
+    exec('f(1 + *x)')
+except SyntaxError as e:
+    assert e.args[1][3].strip() == 'f(1 + *x)'
+
+# issue 2198
+a = 1 + 1, 2 + 2
+assert a == (2, 4)
+
+x = -1, 1
+assert x[0] == -1
+
+# issue 2209
+assert_raises(SyntaxError, exec, "def f():\n  await x")
+assert_raises(SyntaxError, exec, "await x")
 
 # ==========================================
 # Finally, report that all tests have passed

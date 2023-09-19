@@ -32,16 +32,15 @@ function makeTagDict(tagName){
 
         // attributes
         var items = _b_.list.$factory(_b_.dict.items($ns['kw']))
-        for(var i = 0, len = items.length; i < len; i++){
+        for(var arg in $ns.kw.$jsobj){
             // keyword arguments
-            var arg = items[i][0],
-                value = $B.py_immutable_to_js(items[i][1])
+            var value = $B.py_immutable_to_js($ns.kw.$jsobj[arg])
             if(arg.toLowerCase().substr(0,2) == "on"){
                 // Event binding passed as argument "onclick", "onfocus"...
                 // Better use method bind of DOMNode objects
-                var js = '$B.DOMNode.bind(self,"' +
-                    arg.toLowerCase().substr(2)
-                eval(js+'",function(){'+value+'})')
+                $B.DOMNode.bind(self,
+                                arg.toLowerCase().substr(2),
+                                value)
             }else if(arg.toLowerCase() == "style"){
                 $B.DOMNode.set_style(self, value)
             }else if(arg.toLowerCase().indexOf("href") !== -1){ // xlink:href

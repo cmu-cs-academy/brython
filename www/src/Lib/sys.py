@@ -1,5 +1,7 @@
 # hack to return special attributes
 from _sys import *
+
+import browser
 import javascript
 
 class Error(Exception):
@@ -27,13 +29,9 @@ dont_write_bytecode = True
 
 exec_prefix = __BRYTHON__.brython_path
 
-if hasattr(__BRYTHON__, 'full_url'):
-    executable = __BRYTHON__.full_url.address + 'brython.js'
-else:
-    executable = __BRYTHON__.brython_path + 'brython.js'
+executable = __BRYTHON__.brython_path + 'brython.js'
 
-argv = [__BRYTHON__.script_path]
-
+argv = orig_argv = [__BRYTHON__.script_path]
 
 def displayhook(value):
     if value is not None:
@@ -81,8 +79,24 @@ def intern(string):
 class int_info:
     bits_per_digit = 30
     sizeof_digit = 4
+    default_max_str_digits = __BRYTHON__.int_max_str_digits
+    str_digits_check_threshold = __BRYTHON__.str_digits_check_threshold
 
-maxsize = 2 ** 63 - 1
+def get_int_max_str_digits():
+    return __BRYTHON__.int_max_str_digits
+
+def set_int_max_str_digits(value):
+    try:
+        value = int(value)
+    except:
+        raise ValueError(f"'{value.__class__.__name__}' object "
+            "cannot be interpreted as an integer")
+    if value != 0 and value < int_info.str_digits_check_threshold:
+        raise ValueError('maxdigits must be 0 or larger than 640')
+    __BRYTHON__.int_max_str_digits = value
+
+# maximum array size
+maxsize = __BRYTHON__.max_array_size
 
 maxunicode = 1114111
 
@@ -91,6 +105,8 @@ platform = "brython"
 platlibdir = __BRYTHON__.brython_path + 'Lib'
 
 prefix = __BRYTHON__.brython_path
+
+stdlib_module_names = frozenset(__BRYTHON__.stdlib_module_names)
 
 version = '.'.join(str(x) for x in __BRYTHON__.version_info[:3])
 version += " (default, %s) \n[Javascript 1.5] on Brython" \
@@ -123,6 +139,8 @@ class _version_info:
             "serial=%d)"
         return _s % (self.major, self.minor, self.micro,
                      self.releaselevel, self.serial)
+
+    __repr__ = __str__
 
     def __eq__(self, other):
         if isinstance(other, tuple):
@@ -266,8 +284,8 @@ class _float_info:
         self.min = __BRYTHON__.MIN_VALUE
         self.min_exp = -1021
         self.min_10_exp = -307
-        self.radix=2
-        self.rounds=1
+        self.radix = 2
+        self.rounds = 1
         self._tuple = (self.max, self.max_exp, self.max_10_exp, self.min,
             self.min_exp, self.min_10_exp, self.dig, self.mant_dig, self.epsilon,
             self.radix, self.rounds)
@@ -286,8 +304,8 @@ def getfilesystemencoding():
     return 'utf-8'
 
 ## __stdxxx__ contains the original values of sys.stdxxx
-__stdout__ = __BRYTHON__.stdout
-__stderr__ = __BRYTHON__.stderr
-__stdin__ = __BRYTHON__.stdin
+__stdout__ = stdout
+__stderr__ = stderr
+__stdin__ = stdin
 
 __excepthook__ = excepthook # from _sys

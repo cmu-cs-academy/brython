@@ -2,8 +2,6 @@
 
 """Script to compact all Brython scripts in a single one."""
 
-import time
-import datetime
 import os
 import re
 import sys
@@ -17,9 +15,6 @@ if cpython_version[0] < version[0] or \
     print("This script requires Python >= {}.{}".format(*version[:2]))
     sys.exit()
 
-# path of parent directory
-pdir = os.path.dirname(os.getcwd())
-
 # version name
 vname = '.'.join(str(x) for x in implementation[:3])
 if implementation[3] == 'rc':
@@ -27,60 +22,44 @@ if implementation[3] == 'rc':
 vname2 = '.'.join(str(x) for x in implementation[:2])
 vname1 = str(implementation[0])
 
+# path of parent directory
+pdir = os.path.dirname(os.getcwd())
+
 script_dir = os.path.dirname(os.getcwd())
-abs_path = lambda _pth: os.path.join(script_dir, 'www',
-    'src', _pth)
+
+def abs_path(path):
+    return os.path.join(script_dir, 'www', 'src', path)
 
 def run():
-    now = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-
-    timestamp = int(1000 * time.time())
-
-    # update version number
-    with open(abs_path('version_info.js'), 'w') as vinfo_file_out:
-        # implementation[2] = now
-        vinfo_file_out.write('__BRYTHON__.implementation = %s\n'
-            %implementation)
-        vinfo_file_out.write('__BRYTHON__.__MAGIC__ = "%s"\n' %
-            '.'.join(['%s' % _i for _i in implementation[:3]]))
-        vinfo_file_out.write('__BRYTHON__.version_info = %s\n' % str(version))
-        vinfo_file_out.write('__BRYTHON__.compiled_date = "%s"\n'
-            %str(datetime.datetime.now()))
-        vinfo_file_out.write('__BRYTHON__.timestamp = {}\n'.format(timestamp))
-        # builtin module names = list of scripts in src/libs
-        vinfo_file_out.write('__BRYTHON__.builtin_module_names = [')
-        _modules = ['"%s"' % fname.split('.')[0]
-                   for fname in os.listdir(abs_path('libs'))
-                   if fname.endswith('.js')]
-
-        # Sort modules so that git diff's don't change between runs
-        _modules.sort()
-        vinfo_file_out.write(',\n    '.join(_modules))
-        vinfo_file_out.write(']\n')
-
-    import make_stdlib_static
+    import make_stdlib_static     # generates /src/stdlib_paths.js
+    import make_version_info      # generates /src/version_info.js
 
     # build brython.js from base Javascript files
     sources = [
+        # initialize __BRYTHON__
         'brython_builtins',
-        'version_info',
+
+        # generated
+        'py_ast_classes', # from Python.asdl
+        'unicode_data',   # from Unicode database
+        'stdlib_paths',   # from current standard library files
+        'version_info',   # from version, implementation, timestamp
+
+        # core Brython scripts
         'python_tokenizer',
         'py_ast',
         'py2js',
         'loaders',
+        'py_utils',
         'py_object',
         'py_type',
-        'py_utils',
-        'py_sort',
         'py_builtin_functions',
+        'py_sort',
         'py_exceptions',
         'py_range_slice',
         'py_bytes',
         'py_set',
-        'js_objects',
-        'stdlib_paths',
         'py_import',
-        'unicode_data',
         'py_string',
         'py_int',
         'py_long_int',
@@ -89,21 +68,23 @@ def run():
         'py_dict',
         'py_list',
         'py_generator',
+        'js_objects',
         'py_dom',
         'py_pattern_matching',
-        'builtin_modules',
-        'builtins_docstrings',
         'async',
+        'py_flags',
+        'builtin_modules',
         'ast_to_js',
-        'symtable'
+        'symtable',
+        'builtins_docstrings'
     ]
 
-    res = """// brython.js brython.info
-// version {}
-// implementation {}
+    res = f"""// brython.js brython.info
+// version {version}
+// implementation {implementation}
 // version compiled from commented, indented source files at
 // github.com/brython-dev/brython
-""".format(version, implementation)
+"""
 
     res_no_static = res # same but without static stdlib files
     src_size = 0
@@ -133,26 +114,6 @@ def run():
 
     print(('size : originals %s compact %s gain %.2f' %
           (src_size, len(res), 100 * (src_size - len(res)) / src_size)))
-
-    # add scripts that use Python grammar to parse source code and produce
-    # the Abstract Syntax Tree
-    import transform_full_grammar
-    transform_full_grammar.generate_javascript()
-
-    src = ''
-    for fname in ['string_parser', 'number_parser', 'action_helpers',
-            'python_parser', 'full_grammar']:
-        src = open(abs_path(fname)+'.js').read() + '\n'
-        try:
-            mini = javascript_minifier.minify(src) + ";\n"
-        except:
-            print('error in', fname)
-            raise
-        res += mini
-
-    with open(abs_path('brython_standard_parser.js'), 'w', newline="\n") as out:
-        out.write(res)
-
 
     sys.path.append("scripts")
 

@@ -1,3 +1,5 @@
+var _b_ = __BRYTHON__.builtins
+
 test_jsobj = {
     null_value:null,
     undef_value:undefined,
@@ -45,15 +47,47 @@ var root = {
 }
 
 // Class: used to test how a Python class can inherit from a JS class
-class Rectangle {
+// Class: used to test how a Python class can inherit from a JS class
+class Polygon {
+    nb_sides(){
+        return 'sides'
+    }
+}
+class Rectangle extends Polygon{
     constructor(height, width) {
+        super()
         this.height = height;
         this.width = width;
     }
     surface(){
         return this.height * this.width
     }
+    get area(){
+        return this.height * this.width
+    }
+    set area(x){
+        console.log('set area to', x, this.height, this.width)
+        var s = this.height * this.width,
+            ratio = Math.sqrt(x / s)
+        this.height *= ratio
+        this.width *= ratio
+    }
+    *getSides() {
+      yield this.height;
+      yield this.width;
+      yield this.height;
+      yield this.width;
+    }
+
+  static displayName = "Rectangle";
+  static distance(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+
+    return Math.hypot(dx, dy);
+  }
 }
+
 window.Rectangle = Rectangle // required !
 
 // Constructor: used to test how a Python class can inherit from a
@@ -76,3 +110,41 @@ function jsFunction1696() {
 }
 
 var js_list = ['b', 'a', 'c']
+
+// for issue 2059
+window.make_js_list = function(){
+  return [0.5, 0.5]
+}
+
+window.test = function(t, ix, value){
+  if(t[ix] != value){
+    throw _b_.AssertionError.$factory(`at ${ix}, ${t[ix]} is not equal to ${value}`)
+  }
+}
+
+window.set_array_proto = function(){
+    Array.prototype.test = function () {
+        return "Array test"
+    }
+}
+
+window.del_array_proto = function(){
+    delete Array.prototype.test
+}
+
+// issue 2165
+function call(args, kwargs) {
+  console.debug(args, kwargs)
+  a = JSON.stringify(args)
+  b = JSON.stringify(kwargs)
+}
+
+// issue 2172
+Array.prototype.test2172 = function () {
+    console.debug("does work!")
+}
+
+demo_array  = []
+demo_array.test2172()
+demo_array.demo_array2 = []
+demo_array.demo_array2.test2172()

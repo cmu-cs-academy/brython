@@ -92,7 +92,8 @@ class Tester:
         self.cleanups.append([function, args, kw])
 
     def assertAlmostEqual(self, result, expected, msg=None):
-        if round(result - expected, 7) != 0:
+        diff = abs(result - expected)
+        if round(diff, 7) != 0:
             if msg is not None:
                 raise AssertionError(msg)
             raise AssertionError('assertEqual, expected %s, got %s'
@@ -149,9 +150,9 @@ class Tester:
     def assertIsNotNone(self, obj, msg=None):
         assert obj is not None, obj
 
-    def assertIsNot(self, a, b):
+    def assertIsNot(self, a, b, msg=None):
         if a is b:
-            raise AssertionError('%s is %s should be false' %(a,b))
+            raise AssertionError('%s is %s should be false' %(a, b))
 
     def assertIn(self, item, container):
         if not item in container:
@@ -378,10 +379,12 @@ class Support:
 
 support = Support()
 
-def assert_raises(exc_type, func, *args, msg=None, **kw):
+def assert_raises(exc_type, func, *args, msg=None, nb_args=None, **kw):
     try:
         func(*args, **kw)
     except exc_type as exc:
+        if nb_args is not None:
+            assert len(exc.args) == nb_args
         if msg is not None:
             if isinstance(msg, str):
                 if exc.args[0] != msg:
@@ -392,6 +395,20 @@ def assert_raises(exc_type, func, *args, msg=None, **kw):
                 assert msg.match(exc.args[0])
     else:
         raise AssertionError(f'should have raised {exc_type.__name__}')
+
+def unittest_one_method(test_class, method_name):
+    import unittest
+
+    suite = unittest.TestSuite()
+    suite.addTest(test_class(method_name))
+    runner = unittest.TextTestRunner()
+    runner.run(suite)
+
+def show_tokens(src):
+    import tokenize
+    import io
+    for token in tokenize.tokenize(io.BytesIO(src.encode('utf-8')).readline):
+        print(token)
 
 if __name__=='__main__':
     t = 1, 2

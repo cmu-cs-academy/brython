@@ -1,5 +1,8 @@
 // Regular expression
 
+
+var _debug = {value: 0}
+
 var $B = __BRYTHON__,
     _b_ = $B.builtins
 
@@ -46,10 +49,20 @@ var $error_2 = {
     __module__: "re"
 }
 
-var error = $B.$class_constructor("error", $error_2,
-    _b_.tuple.$factory([_b_.Exception]),["_b_.Exception"],[])
-error.__doc__ = _b_.None
-error.$factory = $B.$instance_creator(error)
+var error = $B.make_class("error",
+    function(message){
+        return {
+            __class__: error,
+            msg: message,
+            args: $B.fast_tuple([]),
+            __cause__: _b_.None,
+            __context__: _b_.None,
+            __suppress_context__: false
+        }
+    })
+error.__bases__ = [_b_.Exception, _b_.object]
+error.__mro__ = [_b_.Exception, _b_.BaseException, _b_.object]
+
 error.__str__ = function(self){
     var s = self.msg + ' at position ' + self.pos
     if(self.lineno > 1){
@@ -123,6 +136,1000 @@ function warn(klass, message, pos, text){
     // module _warning is in builtin_modules.js
     $B.imported._warnings.warn(warning)
 }
+
+function chr(i){
+    if(i < 0 || i > 1114111){
+        throw _b_.ValueError.$factory('Outside valid range')
+    }else if(i >= 0x10000 && i <= 0x10FFFF){
+        var code = (i - 0x10000)
+        return String.fromCodePoint(0xD800 | (code >> 10)) +
+            String.fromCodePoint(0xDC00 | (code & 0x3FF))
+    }else{
+        return String.fromCodePoint(i)
+    }
+}
+
+function ord(char){
+    return char.charCodeAt(0)
+}
+
+const LETTERS = {
+    b: ord('b'),
+    N: ord('N'),
+    P: ord('P'),
+    u: ord('u'),
+    U: ord('U'),
+    x: ord('x')
+}
+
+const PARENTH_OPEN = ord('('),
+      PARENTH_CLOSE = ord(')'),
+      BRACKET_OPEN = ord('['),
+      BRACKET_CLOSE = ord(']'),
+      BRACE_OPEN = ord('{'),
+      BRACE_CLOSE = ord('}'),
+      EQUAL = ord('='),
+      SUP = ord('>'),
+      INF = ord('<'),
+      MINUS = ord('-'),
+      PLUS = ord('+'),
+      OR = ord('|'),
+      DOT = ord('.'),
+      QUESTION_MARK = ord('?'),
+      EXCLAMATION_MARK = ord('!'),
+      COLON = ord(':'),
+      BACKSLASH = ord('\\'),
+      DOLLAR = ord('$'),
+      CARET = ord('^'),
+      LINEFEED = ord('\n')
+
+// pattern tokenizer
+
+function is_ascii(name){
+    return /^[\x00-\x7F]*$/.test(name)
+}
+
+function open_unicode_db(){
+    if($B.unicodedb === undefined){
+        var xhr = new XMLHttpRequest
+        xhr.open("GET",
+            $B.brython_path + "unicode.txt?" + (new Date()).getTime(), false)
+        xhr.onreadystatechange = function(){
+            if(this.readyState == 4){
+                if(this.status == 200){
+                    $B.unicodedb = this.responseText
+                }else{
+                    console.log(
+                        "Warning - could not load unicode.txt")
+                }
+            }
+        }
+        xhr.send()
+    }
+}
+
+function validate_named_char(description, pos){
+    // validate that \N{<description>} is in the Unicode db
+    // Load unicode table if not already loaded
+    if(description.length == 0){
+        fail("missing character name", pos)
+    }
+    open_unicode_db()
+    if($B.unicodedb !== undefined){
+        var re = new RegExp("^([0-9A-F]+);" +
+            description.toUpperCase() + ";.*$", "m")
+        search = re.exec($B.unicodedb)
+        if(search === null){
+            fail(`undefined character name '${description}'`, pos)
+        }
+        return parseInt(search[1], 16)
+    }else{
+        fail("could not load unicode.txt", pos)
+    }
+}
+
+function validate_group_name(sname, pos, is_bytes){
+    // sname is an instance of StringObj
+    if(! _b_.str.isidentifier(sname.string)){
+        fail(`bad character in group name '${sname.string}'`, pos + 4)
+    }
+    if(is_bytes && ! is_ascii(sname.string)){
+        var s = _b_.bytes.decode(_b_.bytes.$factory(sname.codepoints),
+                                 'ascii', 'backslashreplace')
+        warn(_b_.DeprecationWarning,
+            `bad character in group name '${s}' at position ${pos + 4}`)
+    }
+    return true
+}
+
+function validate_group_num(so, pos){
+    var s = so.string
+    if(s.match(/^\d+$/)){
+        return true
+    }
+    try{
+        var num = _b_.int.$factory(s)
+        warn(_b_.DeprecationWarning,
+            `bad character in group name '${s}' at position ${pos + 3}`,
+            pos + 3, s)
+        so.string = num + ''
+        return true
+    }catch(err){
+        return false
+    }
+}
+
+function validate_num_or_name(so, pos, is_bytes){
+    return validate_group_num(so, pos, is_bytes) ||
+               validate_group_name(so, pos - 1, is_bytes)
+}
+
+var character_classes = {
+    in_charset: to_codepoint_list('dDsSwW'),
+    in_re: to_codepoint_list('AbBdDsSwWZ')
+}
+
+function escaped_char(args){
+    var cps = args.codepoints,
+        pos = args.pos,
+        in_charset = args.in_charset,
+        is_bytes = args.is_bytes // if pattern is bytes
+    var special = cps[pos + 1]
+    if(special === undefined){
+        fail('bad escape (end of pattern)', pos)
+    }
+    var key = in_charset ? 'in_charset' : 'in_re'
+    if(in_charset && special == LETTERS.b){
+        // Inside a character range, \b represents the backspace character,
+        // for compatibility with Python’s string literals.
+        return '\b'
+    }
+    if(character_classes[key].indexOf(special) > -1){
+        return new CharacterClass(pos, special, 2)
+    }else if(special == LETTERS.N && ! is_bytes){
+        if(cps[pos + 2] != BRACE_OPEN){
+            fail('missing {', pos)
+        }
+        var i = pos + 3,
+            description = []
+        while(i < cps.length){
+            if(cps[i] == BRACE_CLOSE){
+                break
+            }
+            description.push(cps[i])
+            i++
+        }
+        if(description.length == 0){
+            fail("missing character name", pos)
+        }
+        if(i == cps.length){
+            fail("missing }, unterminated name", pos)
+        }
+        var cp = validate_named_char(from_codepoint_list(description), pos)
+        return {
+            type: 'N',
+            ord: cp,
+            char: chr(cp),
+            length: i - pos + 1
+        }
+    }else if(special == LETTERS.x){
+        // \xhh = character with hex value hh
+        var rest = from_codepoint_list(cps.slice(pos + 2)),
+            mo = /^[0-9a-fA-F]{0,2}/.exec(rest),
+            hh = mo ? mo[0] : ''
+        if(mo && mo[0].length == 2){
+            var cp = parseInt(mo[0], 16)
+            return {
+                type: 'x',
+                ord: cp,
+                char: chr(cp),
+                length: 2 + mo[0].length
+            }
+        }
+        fail('incomplete escape \\x' + hh, pos)
+    }else if(special == LETTERS.u){
+        // \uxxxx = character with 16-bit hex value xxxx
+        var rest = from_codepoint_list(cps.slice(pos + 2)),
+            mo = /^[0-9a-fA-F]{0,4}/.exec(rest),
+            xx = mo ? mo[0] : ''
+        if(mo && mo[0].length == 4){
+            var cp = parseInt(mo[0], 16)
+            return {
+                type: 'u',
+                ord: cp,
+                char: chr(cp),
+                length: 2 + mo[0].length
+            }
+        }
+        fail('incomplete escape \\u' + xx, pos)
+    }else if(special == LETTERS.U){
+        // \Uxxxxxxxx = character with 32-bit hex value xxxxxxxx
+        var rest = from_codepoint_list(cps.slice(pos + 2)),
+            mo = /^[0-9a-fA-F]{0,8}/.exec(rest),
+            xx = mo ? mo[0] : ''
+        if(mo && mo[0].length == 8){
+            var cp = parseInt(mo[0], 16)
+            if(cp > 0x10FFFF){
+                fail(`bad escape \\U${mo[0]}`, pos)
+            }
+            return {
+                type: 'U',
+                ord: cp,
+                char: chr(cp),
+                length: 2 + mo[0].length
+            }
+        }
+        fail('incomplete escape \\U' + xx, pos)
+    }else{
+        // octal ?
+        // If the first digit of number is 0, or number is 3 octal digits
+        // long, it will not be interpreted as a group match, but as the
+        // character with octal value number
+        var rest = from_codepoint_list(cps.slice(pos + 1)),
+            mo = /^[0-7]{3}/.exec(rest)
+        if(in_charset){
+            try{
+                var res = $B.test_escape(rest, -1)
+                if(res){
+                    return {
+                        type: 'u',
+                        ord: res[0].codePointAt(0),
+                        char: res[0],
+                        length: res[1]
+                    }
+                }
+            }catch(err){
+                // ignore
+            }
+        }
+        if(mo == null){
+            mo = /^0[0-7]*/.exec(rest)
+        }
+        if(mo){
+            var octal_value = parseInt(mo[0], 8)
+            if(octal_value > 0o377){
+                fail(`octal escape value \\` +
+                    `${mo[0]} outside of range 0-0o377`, pos)
+            }
+            return {
+                type: 'o',
+                ord: octal_value,
+                char: chr(octal_value),
+                length: 1 + mo[0].length
+            }
+        }
+        var mo = /^\d{1,2}/.exec(rest) // backref is at most 99
+        if(mo){
+            return {
+                type: 'backref',
+                value: parseInt(mo[0]),
+                length: 1 + mo[0].length
+            }
+        }
+        var trans = {a: chr(7), f: '\f', n: '\n', r: '\r', t: '\t', v: '\v'},
+            res = trans[chr(special)]
+        if(res){
+            return ord(res)
+        }
+        if(chr(special).match(/[a-zA-Z]/)){
+            fail("bad escape \\" + chr(special), pos)
+        }else{
+            return special
+        }
+    }
+}
+
+function check_character_range(t, positions){
+    // Check if last 2 items in t are a valid character range
+    var start = t[t.length - 2],
+        end = t[t.length - 1]
+    if(start instanceof CharacterClass || end instanceof CharacterClass){
+        fail(`bad character range ${start}-${end}`,
+            positions[positions.length - 2])
+    }else if(end < start){
+        fail(`bad character range ${start}-${end}`,
+            positions[positions.length - 2])
+    }
+    t.splice(t.length - 2, 2, {
+        type: 'character_range',
+        start: start,
+        end: end,
+        ord: [start.ord, end.ord]
+    })
+}
+
+function parse_character_set(text, pos, is_bytes){
+    // Parse character set starting at position "pos" in "text"
+    // pos is the position of the leading "["
+    var start = pos,
+        result = {items: []},
+        positions = []
+    pos++
+    if(text[pos] == CARET){
+        result.neg = true
+        pos++
+    }else if(text[pos] == BRACKET_CLOSE){
+        // a leading ] is the character "]", not the set end
+        result.items.push(']')
+        positions.push(pos)
+        pos++
+    }else if(text[pos] == BRACKET_OPEN){
+        // send FutureWarning
+        warn(_b_.FutureWarning, "Possible nested set", pos, text)
+    }
+    var range = false
+    while(pos < text.length){
+        var cp = text[pos],
+            char = chr(cp)
+        if(char == ']'){
+            if(pos == start + 2 && result.neg){
+                // in "[^]]", the first ] is the character "]"
+                result.items.push(']')
+            }else{
+                return [result, pos]
+            }
+        }
+        if(char == '\\'){
+            var escape = escaped_char({
+                    codepoints: text,
+                    pos,
+                    in_charset: true,
+                    is_bytes
+                })
+            if(typeof escape == "number"){
+                var s = chr(escape)
+                escape = {
+                    ord: escape,
+                    length: 2,
+                    toString: function(){
+                        return s
+                    }
+                }
+            }
+            if(escape.type == "num"){
+                // [\9] is invalid
+                fail("bad escape 1 \\" +
+                    escape.value.toString()[0], pos)
+            }
+            result.items.push(escape)
+            positions.push(pos)
+            if(range){
+                check_character_range(result.items, positions)
+            }
+            range = false
+            pos += escape.length
+        }else if(char == '-'){
+            // Character range, or character "-"
+            if(pos == start + 1 ||
+                    (result.neg && pos == start + 2) ||
+                    pos == text.length - 2 || // [a-]
+                    range ||
+                    (result.items.length > 0 &&
+                    result.items[result.items.length - 1].type ==
+                        "character_range")){
+                result.items.push({
+                    ord: cp,
+                    char,
+                    toString: function(){
+                        return this.char
+                    }
+                })
+                if(text[pos + 1] == cp){
+                    warn(_b_.FutureWarning, "Possible set difference", pos, text)
+                }
+                pos++
+                if(range){
+                    check_character_range(result.items, positions)
+                }
+                range = false
+            }else{
+                range = true
+                if(text[pos + 1] == cp){
+                    warn(_b_.FutureWarning, "Possible set difference", pos, text)
+                }
+                pos++
+            }
+        }else{
+            positions.push(pos)
+            result.items.push({
+                ord: cp,
+                char,
+                toString: function(){
+                    return this.char
+                }
+            })
+            if(range){
+                check_character_range(result.items, positions)
+            }
+            range = false
+            // FutureWarning for consecutive "&", "|" or "~"
+            if(char == "&" && text[pos + 1] == cp){
+                warn(_b_.FutureWarning, "Possible set intersection", pos, text)
+            }else if(char == "|" && text[pos + 1] == cp){
+                warn(_b_.FutureWarning, "Possible set union", pos, text)
+            }else if(char == "~" && text[pos + 1] == cp){
+                warn(_b_.FutureWarning, "Possible set symmetric difference",
+                    pos, text)
+            }
+            pos++
+        }
+    }
+    fail("unterminated character set", start)
+}
+
+function* tokenize(pattern, type, _verbose){
+    // pattern is a list of codepoints
+    var is_bytes = type == "bytes"
+    // verbose_stack is the stack of verbose state for each group in the regex
+    var verbose_stack = [_verbose],
+        verbose = _verbose,
+        parenth_pos
+    var pos = 0
+    while(pos < pattern.length){
+        var cp = pattern[pos],
+            char = String.fromCharCode(cp)
+        if(verbose){
+            // current group is in verbose mode
+            if(char == "#"){
+                // skip until next line feed
+                while(pos < pattern.length && pattern[pos] != 10){
+                    pos++
+                }
+                pos++
+                continue
+            }else{
+                while(pos < pattern.length &&
+                        [9, 10, 11, 12, 13, 32].indexOf(pattern[pos]) > -1){
+                    pos++
+                }
+            }
+            cp = pattern[pos]
+            if(cp === undefined){
+                break
+            }
+            char = String.fromCharCode(cp)
+            if(char == '#'){
+                continue
+            }
+        }
+        if(char == '('){
+            parenth_pos = pos
+            if(pattern[pos + 1] == QUESTION_MARK){
+                if(pattern[pos + 2] == LETTERS.P){
+                    if(pattern[pos + 3] == INF){
+                        var name = [],
+                            i = pos + 4
+                        while(i < pattern.length){
+                            if(pattern[i] == SUP){
+                                break
+                            }else if(pattern[i] == PARENTH_CLOSE){
+                                fail("missing >, unterminated name", pos)
+                            }
+                            name.push(pattern[i])
+                            i++
+                        }
+                        var sname = StringObj.from_codepoints(name)
+                        validate_group_name(sname, pos, is_bytes)
+                        name = sname
+                        if(i == pattern.length){
+                            fail("missing >, unterminated name", pos)
+                        }
+                        yield new Group(pos, {type: 'name_def', value: name})
+                        verbose_stack.push(verbose)
+                        pos = i + 1
+                        continue
+                    }else if(pattern[pos + 3] == EQUAL){
+                        var name = [],
+                            i = pos + 4
+                        while(i < pattern.length){
+                            if(pattern[i] == PARENTH_CLOSE){
+                                break
+                            }
+                            name.push(pattern[i])
+                            i++
+                        }
+                        name = StringObj.from_codepoints(name)
+                        validate_group_name(name, pos, is_bytes)
+                        if(i == pattern.length){
+                            fail("missing ), unterminated name", pos)
+                        }
+                        yield new BackReference(pos, 'name', name.string)
+                        pos = i + 1
+                        continue
+                    }else if(pattern[pos + 3] === undefined){
+                        fail("unexpected end of pattern", pos)
+                    }else{
+                        fail("unknown extension ?P" + chr(pattern[pos + 3]), pos)
+                    }
+                }else if(pattern[pos + 2] == PARENTH_OPEN){
+                    var ref = [],
+                        i = pos + 3
+                    while(i < pattern.length){
+                        if(pattern[i] == PARENTH_CLOSE){
+                            break
+                        }
+                        ref.push(pattern[i])
+                        i++
+                    }
+                    var sref = StringObj.from_codepoints(ref)
+                    if(sref.string.match(/^\d+$/)){
+                        ref = parseInt(sref.string)
+                    }else{
+                        validate_num_or_name(sref, pos, is_bytes)
+                        ref = sref.string
+                    }
+                    if(i == pattern.length){
+                        fail("missing ), unterminated name", pos)
+                    }
+                    yield new ConditionalBackref(pos, ref)
+                    pos = i + 1
+                    continue
+                }else if(pattern[pos + 2] == EQUAL){
+                    // (?=...) : lookahead assertion
+                    yield new Group(pos, {type: 'lookahead_assertion'})
+                    verbose_stack.push(verbose)
+                    pos += 3
+                    continue
+                }else if(pattern[pos + 2] == EXCLAMATION_MARK){
+                    // (?!...) : negative lookahead assertion
+                    yield new Group(pos, {type: 'negative_lookahead_assertion'})
+                    verbose_stack.push(verbose)
+                    pos += 3
+                    continue
+                }else if(from_codepoint_list(pattern.slice(pos + 2, pos + 4)) == '<!'){
+                    // (?<!...) : negative lookbehind
+                    yield new Group(pos, {type: 'negative_lookbehind'})
+                    verbose_stack.push(verbose)
+                    pos += 4
+                    continue
+                }else if(from_codepoint_list(pattern.slice(pos + 2, pos + 4)) == '<='){
+                    // (?<=...) : positive lookbehind
+                    yield new Group(pos, {type: 'positive_lookbehind'})
+                    verbose_stack.push(verbose)
+                    pos += 4
+                    continue
+                }else if(pattern[pos + 2] == INF){
+                    pos += 3
+                    if(pos == pattern.length){
+                        fail("unexpected end of pattern", pos)
+                    }
+                    fail("unknown extension ?<" + _b_.chr(pattern[pos]), pos)
+                }else if(pattern[pos + 2] == COLON){
+                    yield new Group(pos, {non_capturing: true})
+                    verbose_stack.push(verbose)
+                    pos += 3
+                    continue
+                }else if(pattern[pos + 2] == SUP){
+                    yield new Group(pos, {atomic: true})
+                    verbose_stack.push(verbose)
+                    pos += 3
+                    continue
+                }else if(pattern[pos + 2] === undefined){
+                    fail("unexpected end of pattern", pos)
+                }
+
+                var flags = to_codepoint_list('aiLmsux'),
+                    auL_flags = to_codepoint_list('auL'),
+                    flags_start = pos
+                if(pattern[pos + 2] == MINUS ||
+                        flags.indexOf(pattern[pos + 2]) > -1){
+                    if(pattern[pos + 2] == MINUS){
+                        var on_flags = [],
+                            has_off = true,
+                            off_flags = []
+                        pos += 3
+                    }else{
+                        var on_flags = [chr(pattern[pos + 2])],
+                            has_off = false,
+                            off_flags = [],
+                            auL = auL_flags.indexOf(pattern[pos + 2]) > -1 ?
+                                1 : 0,
+                            closed = false
+                        pos += 3
+                        while(pos < pattern.length){
+                            if(flags.indexOf(pattern[pos]) > -1){
+                                if(auL_flags.indexOf(pattern[pos]) > -1){
+                                    auL++
+                                    if(auL > 1){
+                                        fail("bad inline flags: flags 'a', 'u'" +
+                                            " and 'L' are incompatible", pos)
+                                    }
+                                }
+                                on_flags.push(chr(pattern[pos]))
+                                pos++
+                            }else if(pattern[pos] == MINUS){
+                                has_off = true
+                                closed = true
+                                pos++
+                                break
+                            }else if(String.fromCharCode(pattern[pos]).
+                                    match(/[a-zA-Z]/)){
+                                fail("unknown flag", pos)
+                            }else if(pattern[pos] == PARENTH_CLOSE){
+                                closed = true
+                                break
+                            }else if(pattern[pos] == COLON){
+                                yield new Group(pos, {name: "Group", type: "flags"})
+                                verbose_stack.push(verbose)
+                                closed = true
+                                break
+                            }else{
+                                fail("missing -, : or )", pos)
+                            }
+                        }
+                        if(! closed){
+                            fail("missing -, : or )", pos)
+                        }
+                    }
+                    if(has_off){
+                        while(pos < pattern.length){
+                            if(flags.indexOf(pattern[pos]) > -1){
+                                if(auL_flags.indexOf(pattern[pos]) > -1){
+                                    fail("bad inline flags: cannot turn off " +
+                                        "flags 'a', 'u' and 'L'", pos)
+                                }
+                                if(on_flags.indexOf(chr(pattern[pos])) > -1){
+                                    fail("bad inline flags: flag turned on and off", pos)
+                                }
+                                off_flags.push(chr(pattern[pos]))
+                                pos++
+                            }else if(pattern[pos] == COLON){
+                                yield new Group(pos, {name: "Group", type: "flags"})
+                                verbose_stack.push(verbose)
+                                break
+                            }else if(String.fromCharCode(pattern[pos]).
+                                    match(/[a-zA-Z]/)){
+                                fail("unknown flag", pos)
+                            }else if(off_flags.length == 0){
+                                fail("missing flag", pos)
+                            }else{
+                                fail("missing :", pos)
+                            }
+                        }
+                        if(off_flags.length == 0){
+                            fail("missing flag", pos)
+                        }
+                    }
+                    if(has_off && pattern[pos] != COLON){
+                        fail("missing :", pos)
+                    }
+                    if(on_flags.length == 0 && off_flags.length == 0){
+                        fail("missing flag", pos)
+                    }
+                    var set_flags = new SetFlags(flags_start,
+                        {on_flags, off_flags})
+
+                    yield set_flags
+                    // reset verbose
+                    if(on_flags.indexOf('x') > -1){
+                        verbose = true
+                        verbose_stack.push(verbose)
+                    }
+                    if(off_flags.indexOf('x') > -1){
+                        verbose = false
+                    }
+                    if(! closed){
+                        node = set_flags
+                    }
+                    pos++
+                }else if(pattern[pos + 2] == ord('#')){
+                    pos += 3
+                    while(pos < pattern.length){
+                        if(pattern[pos] == PARENTH_CLOSE){
+                            break
+                        }
+                        pos++
+                    }
+                    if(pos == pattern.length){
+                        fail("missing ), unterminated comment", pos)
+                    }
+                    pos++
+                    continue
+                }else{
+                    fail("unknown extension ?" + _b_.chr(pattern[pos + 2]),
+                        pos)
+                }
+            }else{
+                yield new Group(pos)
+                verbose_stack.push(verbose)
+                pos++
+            }
+        }else if(cp == PARENTH_CLOSE){
+            yield new GroupEnd(pos)
+            verbose_stack.pop()
+            verbose = $last(verbose_stack)
+            pos++
+        }else if(cp == BACKSLASH){
+            var escape = escaped_char({codepoints: pattern, pos, is_bytes})
+            if(escape instanceof CharacterClass){
+                yield escape
+                pos += escape.length
+            }else if(escape.char !== undefined){
+                yield new Char(pos, escape.ord)
+                pos += escape.length
+            }else if(escape.type == "backref"){
+                var len = escape.length
+                if(escape.value.length > 2){
+                    escape.value = escape.value.substr(0, 2)
+                    len = 2
+                }
+                yield new BackReference(pos, "num", escape.value)
+                pos += len
+            }else if(typeof escape == "number"){
+                // eg "\."
+                var esc = new Char(pos, escape)
+                esc.escaped = true
+                yield esc
+                pos += 2
+            }else{
+                yield new Char(pos, escape)
+                pos += escape.length
+            }
+        }else if(cp == BRACKET_OPEN){
+            // Set of characters
+            var set,
+                end_pos
+            [set, end_pos] = parse_character_set(pattern, pos, is_bytes)
+            yield new CharacterSet(pos, set)
+            pos = end_pos + 1
+        }else if('+?*'.indexOf(char) > -1){
+            yield new Repeater(pos, char)
+            pos++
+        }else if(cp == BRACE_OPEN){
+            var reps = /\{(\d*)((,)(\d*))?\}/.exec(
+                    from_codepoint_list(pattern.slice(pos)))
+            if(reps && reps[0] != '{}'){
+                if(reps[1] == ""){
+                    var limits = [0]
+                }else{
+                    var limits = [parseInt(reps[1])]
+                }
+                if(reps[4] !== undefined){
+                    if(reps[4] == ""){
+                        var max = Number.POSITIVE_INFINITY
+                    }else{
+                        var max = parseInt(reps[4])
+                    }
+                    limits.push(max)
+                }
+                yield new Repeater(pos, limits)
+                pos += reps[0].length
+            }else if(pattern[pos + 1] == BRACE_CLOSE){
+                // {} is the characters "{" and "}"
+                yield new Char(pos, BRACE_OPEN)
+                pos++
+            }else{
+                yield new Char(pos, BRACE_OPEN)
+                pos++
+            }
+        }else if(cp == OR){
+            yield new Or(pos)
+            pos++
+        }else if(cp == DOT){
+            yield new CharacterClass(pos, cp, 1)
+            pos++
+        }else if(cp == CARET){
+            yield new StringStart(pos)
+            pos++
+        }else if(cp == DOLLAR){
+            yield new StringEnd(pos)
+            pos++
+        }else{
+            yield new Char(pos, cp)
+            pos++
+        }
+    }
+}
+
+function transform_repl(data, pattern){
+    // data.repl is a StringObj instance
+    var repl = data.repl.string
+    repl = repl.replace(/\\n/g, '\n')
+    repl = repl.replace(/\\r/g, '\r')
+    repl = repl.replace(/\\t/g, '\t')
+    repl = repl.replace(/\\b/g, '\b')
+    repl = repl.replace(/\\v/g, '\v')
+    repl = repl.replace(/\\f/g, '\f')
+    repl = repl.replace(/\\a/g, '\x07')
+    // detect backreferences
+    var pos = 0,
+        escaped = false,
+        br = false,
+        repl1 = "",
+        has_backref = false
+    while(pos < repl.length){
+        br = false
+        if(repl[pos] == "\\"){
+            escaped = ! escaped
+            if(escaped){
+                pos++
+                continue
+            }
+        }else if(escaped){
+            escaped = false
+            var mo = /^\d+/.exec(repl.substr(pos))
+            if(mo){
+                var cps = to_codepoint_list(repl)
+                var escape = escaped_char({
+                        codepoints: cps,
+                        pos: pos - 1,
+                        is_bytes: cps.type == "bytes"
+                     })
+                if(escape.type == "o"){
+                    if(escape.ord > 0o377){
+                        fail(`octal escape value \\${mo[0]} ` +
+                            " outside of range 0-0o377", pos)
+                    }
+                    repl1 += escape.char
+                    pos += escape.length - 1
+                    continue
+                }else if(escape.type != "backref"){
+                    var group_num = mo[0].substr(0,
+                        Math.min(2, mo[0].length))
+                    fail(`invalid group reference ${group_num}`, pos)
+                }else{
+                    // only keep first 2 digits
+                    var group_num = mo[0].substr(0,
+                        Math.min(2, mo[0].length))
+                    // check that pattern has the specified group num
+                    if(pattern.groups === undefined){
+                        throw _b_.AttributeError.$factory("$groups")
+                    }
+                    if(pattern.groups[group_num] === undefined){
+                        fail(`invalid group reference ${group_num}`,
+                            pos)
+                    }else{
+                        mo[0] = group_num
+                    }
+                }
+                if(! has_backref){
+                    var parts = [repl.substr(0, pos - 1),
+                            parseInt(mo[0])]
+                }else{
+                    parts.push(repl.substring(next_pos, pos - 1))
+                    parts.push(parseInt(mo[0]))
+                }
+                has_backref = true
+                var next_pos = pos + mo[0].length
+                br = true
+                pos += mo[0].length
+            }else if(repl[pos] == "g"){
+                pos++
+                if(repl[pos] != '<'){
+                    fail("missing <", pos)
+                }
+                pos++
+                mo = /(.*?)>/.exec(repl.substr(pos))
+                if(mo){
+                    if(mo[1] == ""){
+                        pos += mo[0].length
+                        fail("missing group name", pos - 1)
+                    }
+                    var group_name = mo[1]
+                    if(group_name == '0'){
+                        //  The backreference \g<0> substitutes in the entire
+                        // substring matched by the RE.
+                    }else if(/^\d+$/.exec(group_name)){
+                        if(pattern.groups[group_name] === undefined){
+                            fail(`invalid group reference ${group_name}`,
+                                pos)
+                        }
+                    }else{
+                        try{
+                            var group_num = _b_.int.$factory(group_name)
+                            if(group_num < 0){
+                                fail(`bad character in group name ` +
+                                    `'${group_name}' at position ${pos}`, pos)
+                            }
+                            warn(_b_.DeprecationWarning,
+                                `bad character in group name '${group_name}' ` +
+                                `at position ${pos}`)
+                            mo[1] = group_name = group_num + ''
+                        }catch(err){
+                            if(! _b_.str.isidentifier(group_name)){
+                                var cps = to_codepoint_list(group_name)
+                                if($B.unicode_tables.XID_Start[cps[0]] === undefined){
+                                    fail("bad character in group name '" +
+                                        group_name + "'", pos)
+                                }else{
+                                    for(cp of cps.slice(1)){
+                                        if($B.unicode_tables.XID_Continue[cp] === undefined){
+                                            fail("bad character in group name '" +
+                                                group_name + "'", pos)
+                                        }
+                                    }
+                                }
+                            }else if(data.type == "bytes" && ! is_ascii(group_name)){
+                                var b = _b_.bytes.$factory(group_name, 'latin-1'),
+                                    s = _b_.bytes.decode(b, 'ascii', 'backslashreplace')
+                                warn(_b_.DeprecationWarning,
+                                    `bad character in group name '${s}'` +
+                                    ` at position ${pos}`)
+                            }
+                        }
+                        if(pattern.groups[group_name] === undefined){
+                            throw _b_.IndexError.$factory(
+                                `unknown group name '${group_name}'`,
+                                pos)
+                        }
+                    }
+                    if(! has_backref){
+                        var parts = [repl.substr(0, pos - 3),
+                                mo[1]]
+                    }else{
+                        parts.push(repl.substring(next_pos, pos - 3))
+                        parts.push(mo[1])
+                    }
+                    has_backref = true
+                    var next_pos = pos + mo[0].length
+                    br = true
+                    pos = next_pos
+                }else{
+                    if(repl.substr(pos).length > 0){
+                        fail("missing >, unterminated name", pos)
+                    }else{
+                        fail("missing group name", pos)
+                    }
+                }
+            }else{
+                if(/[a-zA-Z]/.exec(repl[pos])){
+                    fail("unknown escape", pos)
+                }
+                pos += repl[pos]
+            }
+        }
+        if(! br){
+            repl1 += repl[pos]
+            pos ++
+        }
+    }
+    data.repl1 = repl1
+    if(has_backref){
+        parts.push(repl.substr(next_pos))
+        data.repl = function(bmo){
+            var mo = bmo.mo,
+                res = parts[0],
+                groups = mo.$groups,
+                s = mo.string,
+                group,
+                is_bytes = s.type == 'bytes'
+            for(var i = 1, len = parts.length; i < len; i += 2){
+                if(parts[i] == 0){
+                    var x = s.substring(mo.start, mo.end)
+                    if(is_bytes){
+                        x = _b_.bytes.decode(x, 'latin-1')
+                    }
+                    res += x
+                }else if(groups[parts[i]] === undefined){
+                    if(mo.node.$groups[parts[i]] !== undefined){
+                        // group is defined in the RE, but didn't contribute
+                        // to the match
+                        // groups[parts[i]] = ''
+                    }else{
+                        // group is not defined in the RE
+                        pos++
+                        group_num = parts[i].toString().substr(0, 2)
+                        fail(`invalid group reference ${group_num}`, pos)
+                    }
+                }else{
+                    group = groups[parts[i]]
+                    var x = s.substring(group.start, group.end)
+                    if(is_bytes){
+                        x = _b_.bytes.decode(x, 'latin-1')
+                    }
+                    res += x
+                }
+                res += parts[i + 1]
+            }
+            return res
+        }
+    }else{
+        data.repl = new StringObj(repl)
+    }
+    return data
+}
+
+
 
 var Flag = $B.make_class("Flag",
     function(value){
@@ -220,35 +1227,58 @@ $B.set_func_names(Flag, "re")
 var no_flag = {}
 
 var Scanner = $B.make_class("Scanner",
-    function(pattern, string){
+    function(pattern, string, pos, endpos){
+        var $ = $B.args('__init__', 4,
+                    {pattern: null, string: null, pos: null, endpos:null},
+                    ['pattern', 'string', 'pos', 'endpos'],
+                    arguments, {pos: 0, endpos: _b_.None}, null, null),
+            endpos = endpos === _b_.None ? $.string.length : endpos
         return {
             __class__: Scanner,
-            $string: string,
-            pattern
+            $string: $.string,
+            pattern: $.pattern,
+            pos: $.pos,
+            endpos
         }
     }
 )
 
 Scanner.match = function(self){
-    return BPattern.match(self.pattern, self.$string)
+    return Pattern.match(self.pattern, self.$string)
 }
 
 Scanner.search = function(self){
     if(! self.$iterator){
         self.$iterator = $module.finditer(self.pattern, self.$string)
     }
-    try{
-        var nxt = _b_.next(self.$iterator)
-    }catch(err){
-        if($B.is_exc(err, [_b_.StopIteration])){
-            return _b_.None
-        }
-        throw err
+    // return last match
+    var mo = _b_.None
+    for(mo of self.$iterator.js_gen){
+        // set mo
     }
-    return nxt
+    return mo
 }
 
-var BPattern = $B.make_class("Pattern",
+var GroupIndex = $B.make_class("GroupIndex",
+    function(self, _default){
+        var res = $B.empty_dict()
+        res.__class__ = GroupIndex
+        for(var key in self.$groups){
+            if(isNaN(parseInt(key))){
+                _b_.dict.$setitem(res, key, self.$groups[key].num)
+            }
+        }
+        return res
+    }
+)
+GroupIndex.__mro__ = [_b_.dict, _b_.object]
+GroupIndex.__setitem__ = function(){
+    throw _b_.TypeError.$factory("read only")
+}
+
+$B.set_func_names(GroupIndex, "re")
+
+var Pattern = $B.make_class("Pattern",
     function(pattern){
         var nb_groups = 0
         for(var key in pattern.groups){
@@ -257,7 +1287,7 @@ var BPattern = $B.make_class("Pattern",
             }
         }
         return {
-            __class__: BPattern,
+            __class__: Pattern,
             pattern: pattern.text,
             groups: nb_groups,
             flags: pattern.flags,
@@ -267,7 +1297,15 @@ var BPattern = $B.make_class("Pattern",
     }
 )
 
-BPattern.__eq__ = function(self, other){
+Pattern.__copy__ = function(self){
+    return self
+}
+
+Pattern.__deepcopy__ = function(self){
+    return self
+}
+
+Pattern.__eq__ = function(self, other){
     if(other.$pattern && self.$pattern.type != other.$pattern.$type){
         // warn(_b_.BytesWarning, "cannot compare str and bytes pattern", 1)
     }
@@ -275,12 +1313,34 @@ BPattern.__eq__ = function(self, other){
         self.flags.value == other.flags.value
 }
 
-BPattern.__hash__ = function(self){
+Pattern.__hash__ = function(self){
     // best effort ;-)
     return _b_.hash(self.pattern) + self.flags.value
 }
 
-BPattern.__repr__ = BPattern.__str__ = function(self){
+Pattern.__new__ = Pattern.$factory
+
+Pattern.__reduce__ = function(self){
+    return Pattern.__reduce_ex__(self, 4)
+}
+
+Pattern.__reduce_ex__ = function(self, protocol){
+    var res = _reconstructor,
+        state = [self.__class__].concat(self.__class__.__mro__)
+    var d = $B.empty_dict()
+    _b_.dict.$setitem(d, 'pattern', self.pattern)
+    _b_.dict.$setitem(d, 'flags', self.flags.value)
+    state.push(d)
+    return $B.fast_tuple([res, $B.fast_tuple(state)])
+}
+
+function _reconstructor(cls, base, state){
+    var pattern = _b_.dict.$getitem(state, 'pattern'),
+        flags = Flag.$factory(_b_.dict.$getitem(state, 'flags'))
+    return $module.compile(pattern, flags)
+}
+
+Pattern.__repr__ = Pattern.__str__ = function(self){
     var text = self.$pattern.text,
         s = text
     if(self.$pattern.type == "bytes"){
@@ -308,8 +1368,8 @@ BPattern.__repr__ = BPattern.__str__ = function(self){
     return res + ')'
 }
 
-BPattern.findall = function(self){
-    var iter = BPattern.finditer.apply(null, arguments).js_gen,
+Pattern.findall = function(self){
+    var iter = Pattern.finditer.apply(null, arguments).js_gen,
         res = []
 
     while(true){
@@ -319,7 +1379,7 @@ BPattern.findall = function(self){
         }
         var bmo = next.value,
             mo = bmo.mo,
-            groups = BMO.groups(bmo)
+            groups = MatchObject.groups(bmo)
 
         // replace None by the empty string
         for(var i = 0, len = groups.length; i < len; i++){
@@ -337,7 +1397,7 @@ BPattern.findall = function(self){
     }
 }
 
-BPattern.finditer = function(self){
+Pattern.finditer = function(self){
     var $ = $B.args("finditer", 4,
             {self: null, string: null, pos: null, endpos: null},
             'self string pos endpos'.split(' '), arguments,
@@ -349,7 +1409,7 @@ BPattern.finditer = function(self){
             no_flag, $.string, $.pos, endpos)
 }
 
-BPattern.fullmatch = function(self, string){
+Pattern.fullmatch = function(self, string){
     var $ = $B.args("match", 4,
                     {self: null, string: null, pos: null, endpos: null},
                     ["self", "string", "pos", "endpos"], arguments,
@@ -362,40 +1422,22 @@ BPattern.fullmatch = function(self, string){
         throw _b_.TypeError.$factory("not the same type for pattern " +
             "and string")
     }
-    var mo = match($.self.$pattern, data.string, $.pos, $.endpos)
+    var fullmatch_pattern = create_fullmatch_pattern($.self.$pattern)
+    var mo = match(fullmatch_pattern, data.string, $.pos, $.endpos)
     if(mo && mo.end - mo.start == $.endpos - $.pos){
-        return BMO.$factory(mo)
+        return MatchObject.$factory(mo)
     }else{
         return _b_.None
     }
 }
-var GroupIndex = $B.make_class("GroupIndex",
-    function(self, _default){
-        var res = $B.empty_dict()
-        res.__class__ = GroupIndex
-        for(var key in self.$groups){
-            if(isNaN(parseInt(key))){
-                res.$string_dict[key] = [self.$groups[key].num,
-                    res.$version++]
-            }
-        }
-        return res
-    }
-)
-GroupIndex.__mro__ = [_b_.dict, _b_.object]
-GroupIndex.__setitem__ = function(){
-    throw _b_.TypeError.$factory("read only")
-}
 
-$B.set_func_names(GroupIndex, "re")
-
-BPattern.groupindex = {
+Pattern.groupindex = {
     __get__: function(self){
         return GroupIndex.$factory(self)
     }
 }
 
-BPattern.match = function(self, string){
+Pattern.match = function(self, string){
     var $ = $B.args("match", 4,
                     {self: null, string: null, pos: null, endpos: null},
                     ["self", "string", "pos", "endpos"], arguments,
@@ -410,31 +1452,31 @@ BPattern.match = function(self, string){
     }
     var mo = match($.self.$pattern, data.string, $.pos,
         $.endpos)
-    return mo ? BMO.$factory(mo) : _b_.None
+    return mo ? MatchObject.$factory(mo) : _b_.None
 }
 
-BPattern.scanner = function(self, string){
-    return Scanner.$factory(self, string)
+Pattern.scanner = function(self, string, pos, endpos){
+    return Scanner.$factory.apply(null, arguments) // self, string, pos, endpos)
 }
 
-BPattern.search = function(self, string){
+Pattern.search = function(self, string){
     var $ = $B.args("match", 4,
                     {self: null, string: null, pos: null, endpos: null},
                     ["self", "string", "pos", "endpos"], arguments,
                     {pos: 0, endpos: _b_.None}, null, null)
-    if($.endpos === _b_.None){
-        $.endpos = $.string.length
-    }
     var data = prepare({string: $.string})
     if(self.$pattern.type != data.string.type){
         throw _b_.TypeError.$factory("not the same type for pattern " +
             "and string")
     }
+    if($.endpos === _b_.None){
+        $.endpos = data.string.length
+    }
     var pos = $.pos
-    while(pos < $.endpos){
+    while(pos <= $.endpos){
         var mo = match(self.$pattern, data.string, pos)
         if(mo){
-            return BMO.$factory(mo)
+            return MatchObject.$factory(mo)
         }else{
             pos++
         }
@@ -442,11 +1484,11 @@ BPattern.search = function(self, string){
     return _b_.None
 }
 
-BPattern.split = function(){
+Pattern.split = function(){
     return $module.split.apply(null, arguments)
 }
 
-BPattern.sub = function(){
+Pattern.sub = function(){
     var $ = $B.args("match", 4,
                     {self: null, repl: null, string: null, count: null},
                     "self repl string count".split(' '), arguments,
@@ -460,7 +1502,7 @@ BPattern.sub = function(){
     return $module.sub($.self, $.repl, $.string, $.count)
 }
 
-$B.set_func_names(BPattern, "re")
+$B.set_func_names(Pattern, "re")
 
 function Node(parent){
     this.parent = parent
@@ -517,7 +1559,6 @@ BackReference.prototype.fixed_length = function(){
     var group = this.get_group()
     if(group.fixed_length === undefined){
         console.log("group", group, "no fixed length")
-        alert()
     }
     return group === undefined ? false : group.fixed_length()
 }
@@ -527,7 +1568,7 @@ BackReference.prototype.get_group = function(){
     return top.$groups[this.value]
 }
 
-BackReference.prototype.match = function(string, pos, groups){
+BackReference.prototype.match = function(string, pos, endpos, groups){
     this.repeat = this.repeat || {min: 1, max: 1}
 
     var group = groups[this.value]
@@ -547,13 +1588,14 @@ BackReference.prototype.match = function(string, pos, groups){
     // search (repetitions of) the matched group codepoints
     var _pos = pos,
         nb = 0,
-        len = string.codepoints.length,
         group_len = group_cps.length,
-        flag
-    while(_pos < len && nb < this.repeat.max){
+        flag,
+        cp
+    while(string.cp_at(_pos) !== undefined && nb < this.repeat.max){
         flag = true
         for(var i = 0; i < group_len; i++){
-            if(string.codepoints[_pos + i] != group_cps[i]){
+            cp = string.cp_at(_pos + i)
+            if(cp != group_cps[i]){
                 flag = false
                 break
             }
@@ -591,7 +1633,6 @@ var Case = function(){
 Case.prototype.add = function(item){
     this.items.push(item)
     item.parent = this
-    this.text += item.toString()
 }
 
 Case.prototype.fixed_length = function(){
@@ -610,7 +1651,9 @@ Case.prototype.fixed_length = function(){
 }
 
 Case.prototype.toString = function(){
-    return 'Case ' + this.text
+    var res = 'Case '
+    res += this.items.map(x => x + '').join(' ')
+    return this.text = res
 }
 
 var Choice = function(){
@@ -636,23 +1679,6 @@ Choice.prototype.fixed_length = function(){
      return len
 }
 
-function subgroups(item){
-    // Return all the subgroups below item
-    var groups = []
-    if(item.items){
-        for(var subitem of item.items){
-            if(subitem instanceof Group && subitem.num){
-                groups.push(subitem.num)
-                if(subitem.name){
-                    groups.push(subitem.name)
-                }
-            }
-            groups = groups.concat(subgroups(subitem))
-        }
-    }
-    return item.$subgroups = groups
-}
-
 Choice.prototype.toString = function(){
     return 'Choice'
 }
@@ -661,7 +1687,7 @@ var EmptyString = {
         toString: function(){
             return ''
         },
-        match: function(string, pos){
+        match: function(string, pos, endpos){
             return {nb_min: 0, nb_max: 0}
         },
         fixed_length: function(){
@@ -764,13 +1790,12 @@ Char.prototype.fixed_length = function(){
     return this.char === EmptyString ? 0 : 1
 }
 
-Char.prototype.match = function(string, pos){
+Char.prototype.match = function(string, pos, endpos){
     // Returns {pos1, pos2} such that "this" matches all the substrings
     // string[pos:i] with pos1 <= i < pos2, or false if no match
     this.repeat = this.repeat || {min: 1, max: 1}
 
-    var len = string.codepoints.length,
-        i = 0
+    var i = 0
 
     // browse string codepoints until they don't match, or the number of
     // matches is above the maximum allowed
@@ -786,9 +1811,11 @@ Char.prototype.match = function(string, pos){
             // For bytes pattern, case insensitive matching only works
             // for ASCII characters
             var char_upper = this.char.toUpperCase(),
-                char_lower = this.char.toLowerCase()
-            while(i < this.repeat.max && pos + i < len){
-                var char = chr(string.codepoints[pos + i])
+                char_lower = this.char.toLowerCase(),
+                cp
+            while(i < this.repeat.max && pos + i < endpos){
+                cp = string.cp_at(pos + i)
+                var char = chr(cp)
                 if(char.toUpperCase() != char_upper &&
                         char.toLowerCase() != char_lower){
                    break
@@ -796,13 +1823,16 @@ Char.prototype.match = function(string, pos){
                 i++
             }
         }else{
-            while(string.codepoints[pos + i] == this.cp &&
+            while(pos + i < endpos &&
+                    string.cp_at(pos + i) == this.cp &&
                     i < this.repeat.max){
                 i++
             }
         }
     }else{
-        while(string.codepoints[pos + i] == this.cp && i < this.repeat.max){
+        while(pos + i < endpos &&
+                string.cp_at(pos + i) == this.cp &&
+                i < this.repeat.max){
             i++
         }
     }
@@ -829,27 +1859,62 @@ Char.prototype.toString = function(){
     return res
 }
 
-function CharSeq(chars){
+function CharSeq(chars, flags){
     // sequence of consecutive characters
     this.chars = chars
+    this.flags = flags
+    this.merge_same_chars()
+}
+
+CharSeq.prototype.add_char = function(char){
+    this.chars.push(char)
+    this.merge_same_chars()
 }
 
 CharSeq.prototype.fixed_length = function(){
-    var len = 0
+    var len = 0,
+        cps = [],
+        char_len
     for(var char of this.chars){
-        len += char.fixed_length()
+        if(! char.repeat){
+            char_len = 1
+        }else if(char.repeat.min == char.repeat.max){
+            char_len = char.repeat.min
+        }else{
+            len = false
+            break
+        }
+        for(var i = 0; i < char_len; i++){
+            cps.push(char.cp)
+        }
+        len += char_len
     }
-    return len
+    this.cps = cps
+    return this.len = len
 }
 
-CharSeq.prototype.match = function(string, pos){
+CharSeq.prototype.match = function(string, pos, endpos){
     var mos = [],
         i = 0,
         backtrack,
         nb
+    this.len = this.len === undefined ? this.fixed_length() : this.len
+    // optimization if character sequence has a fixed length
+    if(this.len !== false && ! (this.flags.value & IGNORECASE.value)){
+        for(var i = 0; i < this.len; i++){
+            if(string.cp_at(pos + i) !== this.cps[i]){
+                return false
+            }
+        }
+        return {nb_min: this.len, nb_max: this.len}
+    }
     for(var i = 0, len = this.chars.length; i < len; i++){
         var char =  this.chars[i],
-            mo = char.match(string, pos) // form {nb_min, nb_max}
+            mo = char.match(string, pos, endpos) // form {nb_min, nb_max}
+        if(_debug.value){
+            console.log('CharSeq match, pos', pos, 'char', char, 'mo', mo)
+            alert()
+        }
         if(mo){
             nb = char.non_greedy ? mo.nb_min : mo.nb_max
             mos.push({nb,
@@ -865,7 +1930,8 @@ CharSeq.prototype.match = function(string, pos){
                 i--
                 mo = mos.pop()
                 pos -= mo.nb
-                if(mo.non_greedy && nb + 1 < mo.nb_max){
+                nb = mo.nb
+                if(mo.non_greedy && nb < mo.nb_max){
                     nb += 1
                     backtrack = true
                 }else if(! mo.non_greedy && nb - 1 >= mo.nb_min){
@@ -876,7 +1942,6 @@ CharSeq.prototype.match = function(string, pos){
                     pos += nb
                     mo.nb = nb
                     mos.push(mo)
-                    i++
                     break
                 }
             }
@@ -885,18 +1950,46 @@ CharSeq.prototype.match = function(string, pos){
             }
         }
     }
-    var match_len = 0
-    for(var mo of mos){
-        match_len += mo.nb
+    var nb = 0,
+        last_mo = $B.last(mos)
+    for(var mo of mos.slice(0, mos.length - 1)){
+        nb += mo.nb
     }
-    return {
-        nb_min: match_len,
-        nb_max: match_len
+    var res = {
+        nb_min: nb + last_mo.nb_min,
+        nb_max: nb + last_mo.nb_max
     }
+    return res
 }
 
-
-
+CharSeq.prototype.merge_same_chars = function(){
+    // b?b merged into b+ etc.
+    var current,
+        chars = [],
+        merged
+    for(var item of this.chars){
+        if(current && current.char == item.char &&
+                current.non_greedy === item.non_greedy){
+            if(! current.repeat){
+                current.repeat = {min: 1, max: 1}
+            }
+            if(item.repeat){
+                current.repeat.min += item.repeat.min
+                current.repeat.max += item.repeat.max
+            }else{
+                current.repeat.min += 1
+                current.repeat.max += 1
+            }
+            merged = true
+        }else{
+            chars.push(item)
+        }
+        current = item
+    }
+    if(merged){
+        this.chars = chars
+    }
+}
 
 CharSeq.prototype.toString = function(){
     var res = ''
@@ -928,14 +2021,14 @@ function CharacterClass(pos, cp, length, groups){
             break
         case 's':
             this.test_func = function(string, pos){
-                var cp = string.codepoints[pos]
+                var cp = string.cp_at(pos)
                 return $B.unicode_tables.Zs[cp] !== undefined ||
                     $B.unicode_bidi_whitespace.indexOf(cp) > -1
             }
             break
         case 'S':
             this.test_func = function(string, pos){
-                var cp = string.codepoints[pos]
+                var cp = string.cp_at(pos)
                 return cp !== undefined &&
                     $B.unicode_tables.Zs[cp] === undefined &&
                     $B.unicode_bidi_whitespace.indexOf(cp) == -1
@@ -943,13 +2036,13 @@ function CharacterClass(pos, cp, length, groups){
             break
         case '.':
             this.test_func = function(string, pos){
-                if(string.codepoints[pos] === undefined){
+                if(string.cp_at(pos) === undefined){
                     return false
                 }
                 if(this.flags.value & DOTALL.value){
                     return true
                 }else{
-                    return string.codepoints[pos] != 10
+                    return string.cp_at(pos) != 10
                 }
             }
             break
@@ -958,7 +2051,7 @@ function CharacterClass(pos, cp, length, groups){
                 if(this.flags === undefined){
                     console.log("\\d, no flags", this)
                 }
-                var cp = string.codepoints[pos],
+                var cp = string.cp_at(pos),
                     table = (this.flags.value & ASCII.value) ?
                         is_ascii_digit : is_digit
                 return table[cp]
@@ -966,7 +2059,7 @@ function CharacterClass(pos, cp, length, groups){
             break
         case 'D':
             this.test_func = function(string, pos){
-                var cp = string.codepoints[pos],
+                var cp = string.cp_at(pos),
                     table = (this.flags.value & ASCII.value) ?
                         is_ascii_digit : is_digit
                 return ! table[cp]
@@ -978,8 +2071,7 @@ function CharacterClass(pos, cp, length, groups){
                 if(this.is_bytes || (this.flags.value & ASCII.value)){
                     table = is_ascii_word
                 }
-                var cp = string.codepoints[pos],
-                    len = string.codepoints.length,
+                var cp = string.cp_at(pos),
                     ok = {nb_min: 0, nb_max: 0}
 
                 // return true if char at pos is at the beginning or start
@@ -987,11 +2079,11 @@ function CharacterClass(pos, cp, length, groups){
                 if(pos == 0 && table[cp]){
                     return ok
                 }
-                if(pos == len && table[string.codepoints[pos - 1]]){
+                if(string.cp_at(pos) === undefined && table[string.cp_at(pos - 1)]){
                     return ok
                 }
-                if(pos > 0 && pos < len){
-                    if((table[string.codepoints[pos - 1]]) !==
+                if(pos > 0 && string.cp_at(pos) !== undefined){
+                    if((table[string.cp_at(pos - 1)]) !==
                             table[cp]){
                         return ok
                     }
@@ -1006,20 +2098,23 @@ function CharacterClass(pos, cp, length, groups){
                     table = is_ascii_word
                 }
 
-                var cp = string.codepoints[pos],
-                    len = string.codepoints.length,
+                var cp = string.cp_at(pos),
                     ok = {nb_min: 0, nb_max: 0}
                 // test is true if char at pos is not at the beginning or
                 // start of a word
+                if(pos == 0 && cp === undefined){
+                    // empty string
+                    return false
+                }
                 if(pos == 0 && table[cp]){
                     return false
                 }
-                if(pos == len && table[string.codepoints[pos - 1]]){
+                if(cp === undefined &&
+                        table[string.cp_at(pos - 1)]){
                     return false
                 }
-                if(pos > 0 && pos < len){
-                    if((table[string.codepoints[pos - 1]]) !==
-                            table[cp]){
+                if(pos > 0 && cp !== undefined){
+                    if(table[string.cp_at(pos - 1)] !== table[cp]){
                         return false
                     }
                 }
@@ -1032,7 +2127,7 @@ function CharacterClass(pos, cp, length, groups){
                 if(this.is_bytes || (this.flags.value & ASCII.value)){
                     table = is_ascii_word
                 }
-                return table[string.codepoints[pos]]
+                return table[string.cp_at(pos)]
             }
             break
         case 'W':
@@ -1041,12 +2136,12 @@ function CharacterClass(pos, cp, length, groups){
                 if(this.is_bytes || (this.flags.value & ASCII.value)){
                     table = is_ascii_word
                 }
-                return ! table[string.codepoints[pos]]
+                return ! table[string.cp_at(pos)]
             }
             break
         case 'Z':
             this.test_func = function(string, pos){
-                if(pos >= string.codepoints.length){
+                if(string.cp_at(pos) === undefined){
                     return {nb_min: 0, nb_max: 0}
                 }
             }
@@ -1058,20 +2153,27 @@ CharacterClass.prototype.fixed_length = function(){
     return this.repeat ? false : 1
 }
 
-CharacterClass.prototype.match = function(string, pos){
+CharacterClass.prototype.match = function(string, pos, endpos){
     // Returns {pos1, pos2} such that "this" matches all the substrings
     // string[pos:i] with pos1 <= i < pos2, or false if no match
+    if(pos === undefined){
+        console.log('no pos')
+        throw Error()
+    }
+    var len = string.length
     this.repeat = this.repeat || {min: 1, max: 1}
-    var len = string.codepoints.length,
-        i = 0
 
     // browse string codepoints until they don't match, or the number of
     // matches is above the maximum allowed
-    while(pos + i <= len &&
-            i < this.repeat.max &&
-            this.test_func(string, pos + i, this.flags)){
+    var i = 0 
+    while(i < this.repeat.max && i < len){
+        var test = this.test_func(string, pos + i, this.flags)
+        if(! test){
+            break
+        }
         i++
     }
+
     var nb = i
     if(nb >= this.repeat.min){
         // Number of repeats ok
@@ -1104,28 +2206,28 @@ CharacterSet.prototype.fixed_length = function(){
     return 1
 }
 
-CharacterSet.prototype.match = function(string, pos){
+CharacterSet.prototype.match = function(string, pos, endpos){
     var ignore_case = this.flags && (this.flags.value & IGNORECASE.value),
         test,
         match = false,
-        len = string.codepoints.length,
         i = 0,
         cp
 
     this.repeat = this.repeat || {min: 1, max: 1}
 
-    while(i < this.repeat.max && pos + i < len){
+    while(i < this.repeat.max && (cp = string.cp_at(pos + i)) !== undefined){
         test = false
-        cp = string.codepoints[pos + i]
 
-        if(pos >= len){
+        if(string.cp_at(pos) === undefined){
             cp = EmptyString
         }
         try{
             $B.codepoint2jsstring(cp)
         }catch(err){
             console.log(err.message)
-            throw _b_.Exception.$factory('mauvais codepoint')
+            console.log('cp', cp, '\nstring', string, 'pos', pos)
+            console.log($B.print_stack())
+            throw _b_.Exception.$factory('bad codepoint')
         }
         var char = $B.codepoint2jsstring(cp),
             cps = cased_cps(cp, ignore_case, this.flags.value & ASCII.value),
@@ -1133,6 +2235,9 @@ CharacterSet.prototype.match = function(string, pos){
 
         for(var cp1 of cps){
             for(var item of this.set.items){
+                if(typeof item == 'string'){
+
+                }
                 if(Array.isArray(item.ord)){
                     if(cp1 >= item.ord[0] &&
                             cp1 <= item.ord[1]){
@@ -1153,15 +2258,20 @@ CharacterSet.prototype.match = function(string, pos){
                         }
                     }
                 }else if(item instanceof CharacterClass){
-                    test = !! item.match(string, pos + i) // boolean
+                    test = !! item.match(string, pos + i, endpos) // boolean
                 }else{
                     if(item.ord == cp1){
                         test = true
                         break
                     }
+                    item_str = typeof item == 'string' ? item : chr(item.ord)
+                    if(item_str == char){
+                        test = true
+                        break
+                    }
                     if(ignore_case && char_is_cased &&
-                            (char.toUpperCase() == chr(item.ord).toUpperCase() ||
-                            char.toLowerCase() == chr(item.ord).toLowerCase())){
+                            (char.toUpperCase() == item_str.toUpperCase() ||
+                            char.toLowerCase() == item_str.toLowerCase())){
                         test = true
                         break
                     }
@@ -1225,12 +2335,11 @@ ConditionalBackref.prototype.fixed_length = function(){
     return false
 }
 
-ConditionalBackref.prototype.match = function(string, pos, groups){
+ConditionalBackref.prototype.match = function(string, pos, endpos, groups){
     var re = groups[this.group_ref] ? this.re_if_exists :
             this.re_if_not_exists,
         pattern = {node: re, text: re + ''},
-        mo = match(pattern, string, pos, undefined,
-            false, groups)
+        mo = match(pattern, string, pos, endpos, false, groups)
     if(mo){
         return {nb_min: mo.end - mo.start, nb_max: mo.end - mo.start}
     }
@@ -1247,7 +2356,7 @@ var Group = function(pos, extension){
     this.items = []
     this.chars = []
     this.groups = []
-    for(key in extension){
+    for(var key in extension){
         this[key] = extension[key]
     }
     if(extension && extension.type){
@@ -1262,7 +2371,11 @@ var Group = function(pos, extension){
 Group.prototype.add = Node.prototype.add
 
 Group.prototype.toString = function(){
-    var res = 'Group #' + this.num + ' ' + this.pattern
+    if(this.num === undefined){
+        var res = 'Group ' + this.type + ' ' + this.pattern
+    }else{
+        var res = 'Group #' + this.num + ' ' + this.pattern
+    }
     if(this.repeat !== undefined){
         res += ' repeat {' + this.repeat.min + ',' + this.repeat.max + '}'
         if(this.non_greedy){
@@ -1275,6 +2388,23 @@ Group.prototype.toString = function(){
 BackReference.prototype.nb_repeats = Group.prototype.nb_repeats
 
 Group.prototype.fixed_length = Node.prototype.fixed_length
+
+function groups_in(pattern, group_list){
+    if(group_list === undefined){
+        group_list = new Set()
+    }
+    if(pattern instanceof Group && pattern.hasOwnProperty('num')){
+        group_list.add(pattern.num)
+    }
+    if(pattern.items){
+        for(var subpattern of pattern.items){
+            for(var group of groups_in(subpattern, group_list)){
+                group_list.add(group)
+            }
+        }
+    }
+    return group_list
+}
 
 function GroupRef(group_num, item){
     this.num = group_num
@@ -1290,7 +2420,7 @@ function Lookbehind(item){
     this.neg = this.re.type == "negative_lookbehind"
 }
 
-Lookbehind.prototype.match = function(string, pos, groups){
+Lookbehind.prototype.match = function(string, pos, endpos, groups){
     var ok = {nb_min: 0, nb_max: 0},
         pattern = {node: this.re, text: this.re + ''},
         length = this.re.length,
@@ -1298,8 +2428,7 @@ Lookbehind.prototype.match = function(string, pos, groups){
     if(pos - length < 0){
         mo = false
     }else{
-        mo = match(pattern, string, pos - length, undefined,
-            false, groups)
+        mo = match(pattern, string, pos - length, endpos, false, groups)
     }
     if(mo){
         return this.neg ? false : ok
@@ -1329,10 +2458,10 @@ function StringStart(pos){
     this.pos = pos
 }
 
-StringStart.prototype.match = function(string, pos){
+StringStart.prototype.match = function(string, pos, endpos){
     var ok = {nb_min:0, nb_max: 0}
     if(this.flags.value & MULTILINE.value){
-        return (pos == 0 || string.codepoints[pos - 1] == 10) ? ok : false
+        return (pos == 0 || string.cp_at(pos - 1) == 10) ? ok : false
     }
     return pos == 0 ? ok : false
 }
@@ -1349,15 +2478,15 @@ function StringEnd(pos){
     this.pos = pos
 }
 
-StringEnd.prototype.match = function(string, pos){
-    var ok = {nb_min:0, nb_max: 0}
+StringEnd.prototype.match = function(string, pos, endpos){
+    var ok = {nb_min:0, nb_max: 0},
+        cp = string.cp_at(pos)
     if(this.flags.value & MULTILINE.value){
         return (pos > string.codepoints.length - 1 ||
-            string.codepoints[pos] == 10) ? ok : false
+            cp == 10) ? ok : false
     }
-    return pos > string.codepoints.length - 1 ? ok :
-           (pos == string.codepoints.length - 1 &&
-               string.codepoints[pos] == 10) ? ok : false
+    return pos > endpos - 1 ? ok :
+           (pos == endpos - 1 && cp == 10) ? ok : false
 }
 
 StringEnd.prototype.fixed_length = function(){
@@ -1368,367 +2497,10 @@ StringEnd.prototype.toString = function(){
     return '$<end>'
 }
 
-function validate(name, pos){
-    // name is a StringObj
-    sname = name.string
-    name = name.codepoints
-    if(name.length == 0){
-        fail("missing group name", pos)
-    }else if(chr(name[0]).match(/\d/) || name.indexOf(ord('.')) > - 1){
-        fail(`bad character in group name '${sname}'`, pos)
-    }
-
-    var $B = self.__BRYTHON__,
-        cp = name[0]
-    if($B.unicode_tables.XID_Start[cp]){
-        var pos = 1
-        while(pos < name.length){
-            cp = name[pos]
-            if($B.unicode_tables.XID_Continue[cp]){
-                pos++
-            }else{
-                break
-            }
-        }
-        if(pos != name.length){
-            console.log("bad character", pos, name)
-            fail(`bad character in group name '${sname}'`, pos)
-        }
-    }else{
-        fail(`bad character in group name '${sname}'`, pos)
-    }
-}
-
-function chr(i){
-    if(i < 0 || i > 1114111){
-        throw _b_.ValueError.$factory('Outside valid range')
-    }else if(i >= 0x10000 && i <= 0x10FFFF){
-        var code = (i - 0x10000)
-        return String.fromCodePoint(0xD800 | (code >> 10)) +
-            String.fromCodePoint(0xDC00 | (code & 0x3FF))
-    }else{
-        return String.fromCodePoint(i)
-    }
-}
-
-var character_classes = {
-    in_charset: to_codepoint_list('bdDsSwW'),
-    in_re: to_codepoint_list('AbBdDsSwWZ')
-}
-
-function escaped_char(args){
-    var cps = args.codepoints,
-        pos = args.pos,
-        in_charset = args.in_charset,
-        is_bytes = args.is_bytes // if pattern is bytes
-    var special = cps[pos + 1]
-    if(special === undefined){
-        fail('bad escape (end of pattern)', pos)
-    }
-    var key = in_charset ? 'in_charset' : 'in_re'
-    if(character_classes[key].indexOf(special) > -1){
-        return new CharacterClass(pos, special, 2)
-    }else if(special == ord('N') && ! is_bytes){
-        if(cps[pos + 2] != ord('{')){
-            fail('missing {', pos)
-        }
-        var i = pos + 3,
-            description = []
-        while(i < cps.length){
-            if(cps[i] == ord('}')){
-                break
-            }
-            description.push(cps[i])
-            i++
-        }
-        if(description.length == 0){
-            fail("missing character name", pos)
-        }
-        if(i == cps.length){
-            fail("missing }, unterminated name", pos)
-        }
-        var cp = validate_named_char(from_codepoint_list(description), pos)
-        return {
-            type: 'N',
-            ord: cp,
-            char: chr(cp),
-            length: i - pos + 1
-        }
-    }else if(special == ord('x')){
-        // \xhh = character with hex value hh
-        var rest = from_codepoint_list(cps.slice(pos + 2)),
-            mo = /^[0-9a-fA-F]{0,2}/.exec(rest),
-            hh = mo ? mo[0] : ''
-        if(mo && mo[0].length == 2){
-            var cp = eval("0x" + mo[0])
-            return {
-                type: 'x',
-                ord: cp,
-                char: chr(cp),
-                length: 2 + mo[0].length
-            }
-        }
-        fail('incomplete escape \\x' + hh, pos)
-    }else if(special == ord('u')){
-        // \uxxxx = character with 16-bit hex value xxxx
-        var rest = from_codepoint_list(cps.slice(pos + 2)),
-            mo = /^[0-9a-fA-F]{0,4}/.exec(rest),
-            xx = mo ? mo[0] : ''
-        if(mo && mo[0].length == 4){
-            var cp = eval("0x" + mo[0])
-            return {
-                type: 'u',
-                ord: cp,
-                char: chr(cp),
-                length: 2 + mo[0].length
-            }
-        }
-        fail('incomplete escape \\u' + xx, pos)
-    }else if(special == ord('U')){
-        // \Uxxxxxxxx = character with 32-bit hex value xxxxxxxx
-        var rest = from_codepoint_list(cps.slice(pos + 2)),
-            mo = /^[0-9a-fA-F]{0,8}/.exec(rest),
-            xx = mo ? mo[0] : ''
-        if(mo && mo[0].length == 8){
-            var cp = eval("0x" + mo[0])
-            if(cp > 0x10FFFF){
-                fail(`bad escape \\U${mo[0]}`, pos)
-            }
-            return {
-                type: 'U',
-                ord: cp,
-                char: chr(cp),
-                length: 2 + mo[0].length
-            }
-        }
-        fail('incomplete escape \\U' + xx, pos)
-    }else{
-        // octal ?
-        // If the first digit of number is 0, or number is 3 octal digits
-        // long, it will not be interpreted as a group match, but as the
-        // character with octal value number
-        var rest = from_codepoint_list(cps.slice(pos + 1)),
-            mo = /^[0-7]{3}/.exec(rest)
-        if(mo == null){
-            mo = /^0[0-7]*/.exec(rest)
-        }
-        if(mo){
-            var octal_value = eval('0o' + mo[0])
-            if(octal_value > 0o377){
-                fail(`octal escape value \\` +
-                    `${mo[0]} outside of range 0-0o377`, pos)
-            }
-            return {
-                type: 'o',
-                ord: octal_value,
-                char: chr(octal_value),
-                length: 1 + mo[0].length
-            }
-        }
-        var mo = /^\d+/.exec(rest)
-        if(mo){
-            return {
-                type: 'backref',
-                value: parseInt(mo[0]),
-                length: 1 + mo[0].length
-            }
-        }
-        var trans = {f: '\f', n: '\n', r: '\r', t: '\t', v: '\v'},
-            res = trans[chr(special)]
-        if(res){
-            return ord(res)
-        }
-        if(chr(special).match(/[a-zA-Z]/)){
-            fail("bad escape \\" + chr(special), pos)
-        }else{
-            return special
-        }
-    }
-}
-
-function check_character_range(t, positions){
-    // Check if last 2 items in t are a valid character range
-    var start = t[t.length - 2],
-        end = t[t.length - 1]
-    if(start instanceof CharacterClass || end instanceof CharacterClass){
-        fail(`bad character range ${start}-${end}`,
-            positions[positions.length - 2])
-    }else if(end < start){
-        fail(`bad character range ${start}-${end}`,
-            positions[positions.length - 2])
-    }
-    t.splice(t.length - 2, 2, {
-        type: 'character_range',
-        start: start,
-        end: end,
-        ord: [start.ord, end.ord]
-    })
-}
-
-function parse_character_set(text, pos, is_bytes){
-    // Parse character set starting at position "pos" in "text"
-    // pos is the position of the leading "["
-    var start = pos,
-        result = {items: []},
-        positions = []
-    pos++
-    if(text[pos] == ord('^')){
-        result.neg = true
-        pos++
-    }else if(text[pos] == ord(']')){
-        // a leading ] is the character "]", not the set end
-        result.items.push(']')
-        positions.push(pos)
-        pos++
-    }else if(text[pos] == ord('[')){
-        // send FutureWarning
-        warn(_b_.FutureWarning, "Possible nested set", pos, text)
-    }
-    var range = false
-    while(pos < text.length){
-        var cp = text[pos],
-            char = chr(cp)
-        if(char == ']'){
-            if(pos == start + 2 && result.neg){
-                // in "[^]]", the first ] is the character "]"
-                result.items.push(']')
-            }else{
-                return [result, pos]
-            }
-        }
-        if(char == '\\'){
-            var escape = escaped_char({
-                    codepoints: text,
-                    pos,
-                    in_charset: true,
-                    is_bytes
-                })
-            if(typeof escape == "number"){
-                var s = chr(escape)
-                escape = {
-                    ord: escape,
-                    length: 2,
-                    toString: function(){
-                        return s
-                    }
-                }
-            }
-            if(escape.type == "num"){
-                // [\9] is invalid
-                fail("bad escape 1 \\" +
-                    escape.value.toString()[0], pos)
-            }
-            result.items.push(escape)
-            positions.push(pos)
-            if(range){
-                check_character_range(result.items, positions)
-            }
-            range = false
-            pos += escape.length
-        }else if(char == '-'){
-            // Character range, or character "-"
-            if(pos == start + 1 ||
-                    (result.neg && pos == start + 2) ||
-                    pos == text.length - 1 ||
-                    range ||
-                    (result.items.length > 0 &&
-                    result.items[result.items.length - 1].type ==
-                        "character_range")){
-                result.items.push({
-                    ord: cp,
-                    char,
-                    toString: function(){
-                        return this.char
-                    }
-                })
-                if(text[pos + 1] == cp){
-                    warn(_b_.FutureWarning, "Possible set difference", pos, text)
-                }
-                pos++
-                if(range){
-                    check_character_range(result.items, positions)
-                }
-                range = false
-            }else{
-                range = true
-                if(text[pos + 1] == cp){
-                    warn(_b_.FutureWarning, "Possible set difference", pos, text)
-                }
-                pos++
-            }
-        }else{
-            positions.push(pos)
-            result.items.push({
-                ord: cp,
-                char,
-                toString: function(){
-                    return this.char
-                }
-            })
-            if(range){
-                check_character_range(result.items, positions)
-            }
-            range = false
-            // FutureWarning for consecutive "&", "|" or "~"
-            if(char == "&" && text[pos + 1] == cp){
-                warn(_b_.FutureWarning, "Possible set intersection", pos, text)
-            }else if(char == "|" && text[pos + 1] == cp){
-                warn(_b_.FutureWarning, "Possible set union", pos, text)
-            }else if(char == "~" && text[pos + 1] == cp){
-                warn(_b_.FutureWarning, "Possible set symmetric difference",
-                    pos, text)
-            }
-            pos++
-        }
-    }
-    fail("unterminated character set", start)
-}
-
-function open_unicode_db(){
-    if($B.unicodedb === undefined){
-        var xhr = new XMLHttpRequest
-        xhr.open("GET",
-            $B.brython_path + "unicode.txt?" + (new Date()).getTime(), false)
-        xhr.onreadystatechange = function(){
-            if(this.readyState == 4){
-                if(this.status == 200){
-                    $B.unicodedb = this.responseText
-                }else{
-                    console.log(
-                        "Warning - could not load unicode.txt")
-                }
-            }
-        }
-        xhr.send()
-    }
-}
-
-function validate_named_char(description, pos){
-    // validate that \N{<description>} is in the Unicode db
-    // Load unicode table if not already loaded
-    if(description.length == 0){
-        fail("missing character name", pos)
-    }
-    open_unicode_db()
-    if($B.unicodedb !== undefined){
-        var re = new RegExp("^([0-9A-F]+);" +
-            description.toUpperCase() + ";.*$", "m")
-        search = re.exec($B.unicodedb)
-        if(search === null){
-            fail(`undefined character name '${description}'`, pos)
-        }
-        return eval("0x" + search[1])
-    }else{
-        fail("could not load unicode.txt", pos)
-    }
-}
-
 var cache = new Map()
 
 function compile(pattern, flags){
-    // data has attributes "pattern" (instance of StringObj)
-    // and "type" ("str" or "bytes")
-    if(pattern.__class__ === BPattern){
+    if(pattern.__class__ === Pattern){
         if(flags !== no_flag){
             throw _b_.ValueError.$factory("no flags")
         }
@@ -1742,7 +2514,8 @@ function compile(pattern, flags){
     var original_pattern = pattern,
         original_flags = flags,
         type = pattern.type,
-        choices
+        choices,
+        allow_global_flags = true
     pattern = pattern.codepoints
     var is_bytes = type !== "str"
     if(is_bytes && flags && (flags.value & U.value)){
@@ -1766,7 +2539,9 @@ function compile(pattern, flags){
         lookbehind,
         node = new Node(),
         accept_inline_flag = true,
-        verbose = (flags.value || 0) & VERBOSE.value
+        verbose = (flags.value || 0) & VERBOSE.value,
+        comment = false,
+        backrefs = {}
     node.$groups = groups
     for(var item of tokenize(pattern, type, verbose)){
         item.flags = flags
@@ -1775,6 +2550,10 @@ function compile(pattern, flags){
             item.lookbehind = lookbehind
             lookbehind.parent = item
             lookbehind = false
+        }
+        if(allow_global_flags &&
+                (group_stack.length > 0 || ! (item instanceof SetFlags))){
+            allow_global_flags = false
         }
         if(item instanceof Group){
             group_stack.push(item)
@@ -1789,7 +2568,6 @@ function compile(pattern, flags){
                 group_num--
             }else if(item.type == "name_def"){
                 var value = item.value
-                validate(value, pos)
                 if(groups[value.string] !== undefined){
                     fail(`redefinition of group name` +
                         ` '${value.string}' as group ${group_num}; was group` +
@@ -1846,8 +2624,13 @@ function compile(pattern, flags){
                 delete item.num
             }
             if(item instanceof Group && item.items.length == 0){
-                item.add(new Char(pos, EmptyString, group_stack.concat([item])))
+                item.add(EmptyString)
             }else if(item instanceof ConditionalBackref){
+                if(groups[item.group_ref] === undefined){
+                    // might be defined later; store in backrefs and check
+                    // when all items have been processed
+                    backrefs[item.group_ref] = backrefs[item.group_ref] | pos + 3
+                }
                 if(item.re_if_exists.items.length == 0){
                     item.re_if_exists.add(EmptyString)
                 }else if(item.re_if_not_exists.items.length == 0){
@@ -1919,11 +2702,11 @@ function compile(pattern, flags){
                 if(node.items && node.items.length > 0){
                     var previous = $last(node.items)
                     if(previous instanceof CharSeq){
-                        previous.chars.push(item)
+                        previous.add_char(item)
                         added_to_charseq = true
                     }else if(previous instanceof Char && ! previous.repeater){
                         node.items.pop()
-                        node.items.push(new CharSeq([previous, item]))
+                        node.items.push(new CharSeq([previous, item], flags))
                         added_to_charseq = true
                     }
                 }
@@ -1960,13 +2743,23 @@ function compile(pattern, flags){
                 }
                 if(previous.repeater){
                     if(item.op == '?' && ! previous.non_greedy){
+                        if(previous.possessive){
+                            fail('multiple repeat', pos)
+                        }
                         previous.non_greedy = true
                         if(previous instanceof CharacterClass &&
                                 previous.value == '.'){
                             previous.min_repeat_one = true
                         }
                     }else{
-                        fail("multiple repeat", pos)
+                        if(item instanceof Repeater && item.op == '+'){
+                            if(previous.possessive || previous.non_greedy){
+                                fail('multiple repeat', pos)
+                            }
+                            previous.possessive = true
+                        }else{
+                            fail("multiple repeat", pos)
+                        }
                     }
                 }else{
                     // convert to minimum and maximum number of repeats
@@ -2067,6 +2860,11 @@ function compile(pattern, flags){
                  item instanceof StringEnd){
             node.add(item)
         }else if(item instanceof SetFlags){
+            if(group_stack.length == 0 && ! allow_global_flags){
+                // pattern like (?x) only allowed as first in reg exp
+                fail('global flags not at the start of the ' +
+                        'expression', item.pos)
+            }
             // copy flags, otherwise re.ASCII etc might be modified
             flags = Flag.$factory(flags.value || U.value)
             if(item.on_flags.indexOf('u') > -1){
@@ -2087,7 +2885,8 @@ function compile(pattern, flags){
                     throw _b_.ValueError.$factory("ASCII and UNICODE flags " +
                         "are incompatible")
                 }
-            }else if(item.on_flags.indexOf('a') > -1){
+            }
+            if(item.on_flags.indexOf('a') > -1){
                 if(group_stack.length == 0 &&
                         original_flags && original_flags.value & U.value){
                     throw _b_.ValueError.$factory("ASCII and UNICODE flags " +
@@ -2133,6 +2932,11 @@ function compile(pattern, flags){
             accept_inline_flag = false
         }
     }
+    for(ref in backrefs){
+        if(groups[ref] === undefined){
+            fail('invalid group name ' + ref, backrefs[ref])
+        }
+    }
     if(group_stack.length > 0){
         var last = group_stack[group_stack.length - 1]
         fail("missing ), unterminated subpattern", last.pos)
@@ -2157,7 +2961,9 @@ function compile(pattern, flags){
         cache.set(original_pattern.py_obj, new Map())
     }
     cache.get(original_pattern.py_obj).set(original_flags.value || 0, res)
-    show(node)
+    if(_debug.value){
+        show(node)
+    }
     return res
 }
 
@@ -2174,370 +2980,17 @@ function show(node, indent){
     }
 }
 
-function ord(char){
-    return char.charCodeAt(0)
-}
-
-function* tokenize(pattern, type, _verbose){
-    // pattern is a list of codepoints
-    var is_bytes = type == "bytes"
-    // verbose_stack is the stack of verbose state for each group in the regex
-    var verbose_stack = [_verbose],
-        verbose = _verbose
-    var pos = 0
-    while(pos < pattern.length){
-        var cp = pattern[pos],
-            char = String.fromCharCode(cp)
-        if(verbose){
-            // current group is in verbose mode
-            if(char == "#"){
-                // skip until next line feed
-                while(pos < pattern.length && pattern[pos] != 10){
-                    pos++
-                }
-                pos++
-                continue
-            }else{
-                while(pos < pattern.length &&
-                        [9, 10, 11, 12, 13, 32].indexOf(pattern[pos]) > -1){
-                    pos++
-                }
-            }
-            cp = pattern[pos]
-            if(cp === undefined){
-                break
-            }
-            char = String.fromCharCode(cp)
-            if(char == '#'){
-                continue
-            }
-        }
-        if(char == '('){
-            if(pattern[pos + 1] == ord('?')){
-                if(pattern[pos + 2] == ord('P')){
-                    if(pattern[pos + 3] == ord('<')){
-                        var name = [],
-                            i = pos + 4
-                        while(i < pattern.length){
-                            if(pattern[i] == ord('>')){
-                                break
-                            }else if(pattern[i] == ord(')')){
-                                fail("missing >, unterminated name", pos)
-                            }
-                            name.push(pattern[i])
-                            i++
-                        }
-                        name = StringObj.from_codepoints(name)
-                        validate(name, pos)
-                        if(i == pattern.length){
-                            fail("missing >, unterminated name", pos)
-                        }
-                        yield new Group(pos, {type: 'name_def', value: name})
-                        verbose_stack.push(verbose)
-                        pos = i + 1
-                        continue
-                    }else if(pattern[pos + 3] == ord('=')){
-                        var name = [],
-                            i = pos + 4
-                        while(i < pattern.length){
-                            if(pattern[i] == ord(')')){
-                                break
-                            }
-                            name.push(pattern[i])
-                            i++
-                        }
-                        name = StringObj.from_codepoints(name)
-                        validate(name, pos)
-                        if(i == pattern.length){
-                            fail("missing ), unterminated name", pos)
-                        }
-                        yield new BackReference(pos, 'name', name.string)
-                        pos = i + 1
-                        continue
-                    }else if(pattern[pos + 3] === undefined){
-                        fail("unexpected end of pattern", pos)
-                    }else{
-                        fail("unknown extension ?P" + chr(pattern[pos + 3]), pos)
-                    }
-                }else if(pattern[pos + 2] == ord('(')){
-                    var ref = [],
-                        i = pos + 3
-                    while(i < pattern.length){
-                        if(pattern[i] == ord(')')){
-                            break
-                        }
-                        ref.push(pattern[i])
-                        i++
-                    }
-                    var sref = StringObj.from_codepoints(ref)
-                    if(sref.string.match(/^\d+$/)){
-                        ref = parseInt(sref.string)
-                    }else{
-                        validate(sref, pos)
-                        ref = sref.string
-                    }
-                    if(i == pattern.length){
-                        fail("missing ), unterminated name", pos)
-                    }
-                    yield new ConditionalBackref(pos, ref)
-                    pos = i + 1
-                    continue
-                }else if(pattern[pos + 2] == ord('=')){
-                    // (?=...) : lookahead assertion
-                    yield new Group(pos, {type: 'lookahead_assertion'})
-                    verbose_stack.push(verbose)
-                    pos += 3
-                    continue
-                }else if(pattern[pos + 2] == ord('!')){
-                    // (?!...) : negative lookahead assertion
-                    yield new Group(pos, {type: 'negative_lookahead_assertion'})
-                    verbose_stack.push(verbose)
-                    pos += 3
-                    continue
-                }else if(from_codepoint_list(pattern.slice(pos + 2, pos + 4)) == '<!'){
-                    // (?<!...) : negative lookbehind
-                    yield new Group(pos, {type: 'negative_lookbehind'})
-                    verbose_stack.push(verbose)
-                    pos += 4
-                    continue
-                }else if(from_codepoint_list(pattern.slice(pos + 2, pos + 4)) == '<='){
-                    // (?<=...) : positive lookbehind
-                    yield new Group(pos, {type: 'positive_lookbehind'})
-                    verbose_stack.push(verbose)
-                    pos += 4
-                    continue
-                }else if(pattern[pos + 2] == ord('<')){
-                    pos += 3
-                    if(pos == pattern.length){
-                        fail("unexpected end of pattern", pos)
-                    }
-                    fail("unknown extension ?<" + _b_.chr(pattern[pos]), pos)
-                }else if(pattern[pos + 2] == ord(':')){
-                    yield new Group(pos, {non_capturing: true})
-                    verbose_stack.push(verbose)
-                    pos += 3
-                    continue
-                }else if(pattern[pos + 2] === undefined){
-                    fail("unexpected end of pattern", pos)
-                }
-
-                var flags = to_codepoint_list('aiLmsux'),
-                    auL_flags = to_codepoint_list('auL'),
-                    flags_start = pos
-                if(pattern[pos + 2] == ord('-') ||
-                        flags.indexOf(pattern[pos + 2]) > -1){
-                    if(pattern[pos + 2] == ord('-')){
-                        var on_flags = [],
-                            has_off = true,
-                            off_flags = []
-                        pos += 3
-                    }else{
-                        var on_flags = [chr(pattern[pos + 2])],
-                            has_off = false,
-                            off_flags = [],
-                            auL = auL_flags.indexOf(pattern[pos + 2]) > -1 ?
-                                1 : 0,
-                            closed = false
-                        pos += 3
-                        while(pos < pattern.length){
-                            if(flags.indexOf(pattern[pos]) > -1){
-                                if(auL_flags.indexOf(pattern[pos]) > -1){
-                                    auL++
-                                    if(auL > 1){
-                                        fail("bad inline flags: flags 'a', 'u'" +
-                                            " and 'L' are incompatible", pos)
-                                    }
-                                }
-                                on_flags.push(chr(pattern[pos]))
-                                pos++
-                            }else if(pattern[pos] == ord('-')){
-                                has_off = true
-                                closed = true
-                                pos++
-                                break
-                            }else if(String.fromCharCode(pattern[pos]).
-                                    match(/[a-zA-Z]/)){
-                                fail("unknown flag", pos)
-                            }else if(pattern[pos] == ord(')')){
-                                closed = true
-                                break
-                            }else if(pattern[pos] == ord(':')){
-                                yield new Group(pos, {name: "Group", type: "flags"})
-                                verbose_stack.push(verbose)
-                                closed = true
-                                break
-                            }else{
-                                fail("missing -, : or )", pos)
-                            }
-                        }
-                        if(! closed){
-                            fail("missing -, : or )", pos)
-                        }
-                    }
-                    if(has_off){
-                        while(pos < pattern.length){
-                            if(flags.indexOf(pattern[pos]) > -1){
-                                if(auL_flags.indexOf(pattern[pos]) > -1){
-                                    fail("bad inline flags: cannot turn off " +
-                                        "flags 'a', 'u' and 'L'", pos)
-                                }
-                                if(on_flags.indexOf(chr(pattern[pos])) > -1){
-                                    fail("bad inline flags: flag turned on and off", pos)
-                                }
-                                off_flags.push(chr(pattern[pos]))
-                                pos++
-                            }else if(pattern[pos] == ord(':')){
-                                yield new Group(pos, {name: "Group", type: "flags"})
-                                verbose_stack.push(verbose)
-                                break
-                            }else if(String.fromCharCode(pattern[pos]).
-                                    match(/[a-zA-Z]/)){
-                                fail("unknown flag", pos)
-                            }else if(off_flags.length == 0){
-                                fail("missing flag", pos)
-                            }else{
-                                fail("missing :", pos)
-                            }
-                        }
-                        if(off_flags.length == 0){
-                            fail("missing flag", pos)
-                        }
-                    }
-                    if(has_off && pattern[pos] != ord(':')){
-                        fail("missing :", pos)
-                    }
-                    if(on_flags.length == 0 && off_flags.length == 0){
-                        fail("missing flag", pos)
-                    }
-                    var set_flags = new SetFlags(flags_start,
-                        {on_flags, off_flags})
-                    yield set_flags
-                    // reset verbose
-                    if(on_flags.indexOf('x') > -1){
-                        verbose = true
-                    }
-                    if(off_flags.indexOf('x') > -1){
-                        verbose = false
-                    }
-                    if(! closed){
-                        node = set_flags
-                    }
-                    pos++
-                }else if(pattern[pos + 2] == ord('#')){
-                    pos += 3
-                    while(pos < pattern.length){
-                        if(pattern[pos] == ord(')')){
-                            break
-                        }
-                        pos++
-                    }
-                    if(pos == pattern.length){
-                        fail("missing ), unterminated comment", pos)
-                    }
-                    pos++
-                    continue
-                }else{
-                    fail("unknown extension ?" + _b_.chr(pattern[pos + 2]),
-                        pos)
-                }
-            }else{
-                yield new Group(pos)
-                verbose_stack.push(verbose)
-                pos++
-            }
-        }else if(cp == ord(')')){
-            yield new GroupEnd(pos)
-            verbose_stack.pop()
-            verbose = $last(verbose_stack)
-            pos++
-        }else if(cp == ord('\\')){
-            var escape = escaped_char({codepoints: pattern, pos, is_bytes})
-            if(escape instanceof CharacterClass){
-                yield escape
-                pos += escape.length
-            }else if(escape.char !== undefined){
-                yield new Char(pos, escape.ord)
-                pos += escape.length
-            }else if(escape.type == "backref"){
-                yield new BackReference(pos, "num", escape.value)
-                pos += escape.length
-            }else if(typeof escape == "number"){
-                // eg "\."
-                var esc = new Char(pos, escape)
-                esc.escaped = true
-                yield esc
-                pos += 2
-            }else{
-                yield new Char(pos, escape)
-                pos += escape.length
-            }
-        }else if(cp == ord('[')){
-            // Set of characters
-            var set,
-                end_pos
-            [set, end_pos] = parse_character_set(pattern, pos, is_bytes)
-            yield new CharacterSet(pos, set)
-            pos = end_pos + 1
-        }else if('+?*'.indexOf(char) > -1){
-            yield new Repeater(pos, char)
-            pos++
-        }else if(cp == ord('{')){
-            var reps = /\{(\d*)((,)(\d*))?\}/.exec(
-                    from_codepoint_list(pattern.slice(pos)))
-            if(reps && reps[0] != '{}'){
-                if(reps[1] == ""){
-                    var limits = [0]
-                }else{
-                    var limits = [parseInt(reps[1])]
-                }
-                if(reps[4] !== undefined){
-                    if(reps[4] == ""){
-                        var max = Number.POSITIVE_INFINITY
-                    }else{
-                        var max = parseInt(reps[4])
-                    }
-                    limits.push(max)
-                }
-                yield new Repeater(pos, limits)
-                pos += reps[0].length
-            }else if(pattern[pos + 1] == ord('}')){
-                // {} is the characters "{" and "}"
-                yield new Char(pos, ord('{'))
-                pos++
-            }else{
-                yield new Char(pos, ord('{'))
-                pos++
-            }
-        }else if(cp == ord('|')){
-            yield new Or(pos)
-            pos++
-        }else if(cp == ord('.')){
-            yield new CharacterClass(pos, cp, 1)
-            pos++
-        }else if(cp == ord('^')){
-            yield new StringStart(pos)
-            pos++
-        }else if(cp == ord('$')){
-            yield new StringEnd(pos)
-            pos++
-        }else{
-            yield new Char(pos, cp)
-            pos++
-        }
-    }
-}
-
 function to_codepoint_list(s){
     var items = []
     if(typeof s == "string" || _b_.isinstance(s, _b_.str)){
         if(typeof s != "string"){
             s = s.valueOf()
         }
-        for(const char of s){
+        for(var char of s){
             items.push(char.codePointAt(0))
         }
         items.type = "unicode"
-    }else if(_b_.isinstance(s, bytes_like)){
+    }else if(_b_.isinstance(s, [_b_.bytes, _b_.bytearray, _b_.memoryview])){
         if(_b_.isinstance(s, _b_.memoryview)){
             items = s.obj.source
         }else{
@@ -2550,19 +3003,19 @@ function to_codepoint_list(s){
     return items
 }
 
+$B.nb_from_cp = 0
 function from_codepoint_list(codepoints, type){
+    $B.nb_from_cp++
     // Return a string
     if(type == "bytes"){
         return _b_.bytes.$factory(codepoints)
     }
     var s = ''
-    for(const cp of codepoints){
+    for(var cp of codepoints){
         s += _b_.chr(cp)
     }
     return $B.String(s)
 }
-
-var bytes_like = [_b_.bytes, _b_.bytearray, _b_.memoryview]
 
 function string2bytes(s){
     var t = []
@@ -2573,195 +3026,13 @@ function string2bytes(s){
 }
 
 function check_pattern_flags(pattern, flags){
-    if(pattern.__class__ === BPattern){
+    if(pattern.__class__ === Pattern){
         if(flags !== no_flag){
             throw _b_.ValueError.$factory(
                 "cannot process flags argument with a compiled pattern")
         }
     }
     return pattern
-}
-
-function transform_repl(data, pattern){
-    // data.repl is a StringObj instance
-    var repl = data.repl.string
-    repl = repl.replace(/\\n/g, '\n')
-    repl = repl.replace(/\\r/g, '\r')
-    repl = repl.replace(/\\t/g, '\t')
-    repl = repl.replace(/\\b/g, '\b')
-    repl = repl.replace(/\\v/g, '\v')
-    repl = repl.replace(/\\f/g, '\f')
-    repl = repl.replace(/\\a/g, '\x07')
-    // detect backreferences
-    var pos = 0,
-        escaped = false,
-        br = false,
-        repl1 = "",
-        has_backref = false
-    while(pos < repl.length){
-        br = false
-        if(repl[pos] == "\\"){
-            escaped = ! escaped
-            if(escaped){
-                pos++
-                continue
-            }
-        }else if(escaped){
-            escaped = false
-            var mo = /^\d+/.exec(repl.substr(pos))
-            if(mo){
-                var cps = to_codepoint_list(repl)
-                var escape = escaped_char({
-                        codepoints: cps,
-                        pos: pos - 1,
-                        is_bytes: cps.type == "bytes"
-                     })
-                if(escape.type == "o"){
-                    if(escape.ord > 0o377){
-                        fail(`octal escape value \\${mo[0]} ` +
-                            " outside of range 0-0o377", pos)
-                    }
-                    repl1 += escape.char
-                    pos += escape.length - 1
-                    continue
-                }else if(escape.type != "backref"){
-                    var group_num = mo[0].substr(0,
-                        Math.min(2, mo[0].length))
-                    fail(`invalid group reference ${group_num}`, pos)
-                }else{
-                    // only keep first 2 digits
-                    var group_num = mo[0].substr(0,
-                        Math.min(2, mo[0].length))
-                    // check that pattern has the specified group num
-                    if(pattern.groups === undefined){
-                        console.log("pattern", pattern)
-                        throw _b_.AttributeError.$factory("$groups")
-                    }
-                    if(pattern.groups[group_num] === undefined){
-                        fail(`invalid group reference ${group_num}`,
-                            pos)
-                    }else{
-                        mo[0] = group_num
-                    }
-                }
-                if(! has_backref){
-                    var parts = [repl.substr(0, pos - 1),
-                            parseInt(mo[0])]
-                }else{
-                    parts.push(repl.substring(next_pos, pos - 1))
-                    parts.push(parseInt(mo[0]))
-                }
-                has_backref = true
-                var next_pos = pos + mo[0].length
-                br = true
-                pos += mo[0].length
-            }else if(repl[pos] == "g"){
-                pos++
-                if(repl[pos] != '<'){
-                    fail("missing <", pos)
-                }
-                pos++
-                mo = /(.*?)>/.exec(repl.substr(pos))
-                if(mo){
-                    if(mo[1] == ""){
-                        pos += mo[0].length
-                        fail("missing group name", pos - 1)
-                    }
-                    var group_name = mo[1]
-                    if(/^\d+$/.exec(group_name)){
-                        if(pattern.groups[group_name] === undefined){
-                            fail(`invalid group reference ${group_name}`,
-                                pos)
-                        }
-                    }else{
-                        if(! _b_.str.isidentifier(group_name)){
-                            var cps = to_codepoint_list(group_name)
-                            if($B.unicode_tables.XID_Start[cps[0]] === undefined){
-                                fail("bad character in group name '" +
-                                    group_name + "'", pos)
-                            }else{
-                                for(cp of cps.slice(1)){
-                                    if($B.unicode_tables.XID_Continue[cp] === undefined){
-                                        fail("bad character in group name '" +
-                                            group_name + "'", pos)
-                                    }
-                                }
-                            }
-                        }
-                        if(pattern.groups[group_name] === undefined){
-                            throw _b_.IndexError.$factory(
-                                `unknown group name '${group_name}'`,
-                                pos)
-                        }
-                    }
-                    if(! has_backref){
-                        var parts = [repl.substr(0, pos - 3),
-                                mo[1]]
-                    }else{
-                        parts.push(repl.substring(next_pos, pos - 3))
-                        parts.push(mo[1])
-                    }
-                    has_backref = true
-                    var next_pos = pos + mo[0].length
-                    br = true
-                    pos = next_pos
-                }else{
-                    if(repl.substr(pos).length > 0){
-                        fail("missing >, unterminated name", pos)
-                    }else{
-                        fail("missing group name", pos)
-                    }
-                }
-            }else{
-                if(/[a-zA-Z]/.exec(repl[pos])){
-                    fail("unknown escape", pos)
-                }
-                pos += repl[pos]
-            }
-        }
-        if(! br){
-            repl1 += repl[pos]
-            pos ++
-        }
-    }
-    data.repl1 = repl1
-    if(has_backref){
-        parts.push(repl.substr(next_pos))
-data.repl = function(bmo){
-            var mo = bmo.mo,
-                res = parts[0],
-                groups = mo.$groups,
-                s = mo.string,
-                group,
-                is_bytes = s.type == 'bytes'
-            for(var i = 1, len = parts.length; i < len; i += 2){
-                if(groups[parts[i]] === undefined){
-                    if(mo.node.$groups[parts[i]] !== undefined){
-                        // group is defined in the RE, but didn't contribute
-                        // to the match
-                        // groups[parts[i]] = ''
-                    }else{
-                        // group is not defined in the RE
-                        pos++
-                        group_num = parts[i].toString().substr(0, 2)
-                        fail(`invalid group reference ${group_num}`, pos)
-                    }
-                }else{
-                    group = groups[parts[i]]
-                    var x = s.substring(group.start, group.end)
-                    if(is_bytes){
-                        x = _b_.bytes.decode(x, 'latin-1')
-                    }
-                    res += x
-                }
-                res += parts[i + 1]
-            }
-            return res
-        }
-    }else{
-        data.repl = new StringObj(repl)
-    }
-    return data
 }
 
 function StringObj(obj){
@@ -2772,6 +3043,7 @@ function StringObj(obj){
     this.py_obj = obj
     this.codepoints = []
     this.type = "str"
+    this.is_string = typeof obj == 'string'
     if(typeof obj == "string" ||
             (obj instanceof String && ! obj.codepoints)){
         // Python object represented as a Javascript string
@@ -2786,6 +3058,7 @@ function StringObj(obj){
                 i++
             }
         }
+        this.length = _b_.str.__len__(obj)
         if(obj instanceof String){
             // store for next use
             obj.codepoints = this.codepoints
@@ -2796,10 +3069,12 @@ function StringObj(obj){
         this.string = obj.string
         this.codepoints = obj.codepoints
         this.index_map = obj.index_map
+        this.length = _b_.str.__len__(obj)
     }else if(_b_.isinstance(obj, _b_.str)){ // str subclass
-        var so = new StringObj(obj.valueOf())
+        var so = new StringObj(_b_.str.$factory(obj))
         this.string = so.string
         this.codepoints = so.codepoints
+        this.length = _b_.str.__len__(obj)
     }else if(_b_.isinstance(obj, [_b_.bytes, _b_.bytearray])){
         this.string = _b_.bytes.decode(obj, 'latin1')
         this.codepoints = obj.source
@@ -2818,9 +3093,26 @@ function StringObj(obj){
         this.codepoints = obj
     }else{
         throw _b_.TypeError.$factory(
-            'expected string or bytes-like object')
+            `expected string or bytes-like object, got '${$B.class_name(obj)}'`)
     }
-    this.length = this.codepoints.length
+    if(this.length === undefined){
+        this.length = this.codepoints.length
+    }
+}
+
+StringObj.prototype.cp_at = function(pos){
+    if(pos >= this.length){
+        return undefined
+    }
+    /*
+    if(typeof this.string == 'string'){
+        return this.string.charCodeAt(pos)
+    }
+    */
+    var res = this.codepoints[pos]
+    if(res !== undefined){
+        return res
+    }
 }
 
 StringObj.prototype.substring = function(start, end){
@@ -2847,6 +3139,9 @@ StringObj.prototype.substring = function(start, end){
 }
 
 StringObj.prototype.to_str = function(){
+    if(this.hasOwnProperty('string')){
+        return this.string
+    }
     return from_codepoint_list(this.codepoints, this.type)
 }
 
@@ -2860,8 +3155,8 @@ StringObj.from_codepoints = function(cps){
 }
 
 function prepare(args){
-    // Check that all arguments are of the same type (string of bytes-like)
-    // Return an object with all attributes transformed into CodePoints
+    // Check that all arguments are of the same type (string or bytes-like).
+    // Return an object with all attributes transformed into StringObj
     // instances
     var res = {},
         keys = Object.keys(args),
@@ -2877,9 +3172,11 @@ function prepare(args){
     return res
 }
 
+
 function subn(pattern, repl, string, count, flags){
     // string is a StringObj instance
     // pattern is either a Pattern instance or a StringObj instance
+    var t0 = window.performance.now()
     var res = '',
         pos = 0,
         nb_sub = 0
@@ -2892,9 +3189,10 @@ function subn(pattern, repl, string, count, flags){
         repl1 = data1.repl1
     }
     pos = 0
-    for(var bmo of $module.finditer(BPattern.$factory(pattern), string.to_str()).js_gen){
-        // finditer yields instances of BMatchObject
-        var mo = bmo.mo // instance of MatchObject
+    var s = string.to_str()
+    for(var bmo of $module.finditer(Pattern.$factory(pattern), s).js_gen){
+        // finditer yields instances of MatchObject
+        var mo = bmo.mo // instance of MO
         res += from_codepoint_list(string.codepoints.slice(pos, mo.start))
         if(typeof repl == "function"){
             var x = $B.$call(repl)(bmo)
@@ -2907,14 +3205,15 @@ function subn(pattern, repl, string, count, flags){
         }
         nb_sub++
         pos = mo.end
-        if(pos >= string.length){
-            break
-        }
         if(count != 0 && nb_sub >= count){
             break
         }
     }
-    res += from_codepoint_list(string.codepoints.slice(pos))
+    if(string.is_string){
+        res += string.string.substr(pos)
+    }else{
+        res += from_codepoint_list(string.codepoints.slice(pos))
+    }
     if(pattern.type === "bytes"){
         res = _b_.str.encode(res, "latin-1")
     }
@@ -2925,19 +3224,40 @@ function subn(pattern, repl, string, count, flags){
 var escaped = [9, 10, 11, 12, 13, 32, 35, 36, 38, 40, 41, 42, 43, 45, 46, 63,
                91, 92, 93, 94, 123, 124, 125, 126]
 
+function starts_with_string_start(pattern){
+    // returns true if the pattern starts with ^ or \A
+    if(pattern.node){
+        pattern = pattern.node
+    }
+    if(pattern.items){
+        if(pattern.items.length == 0){
+            return false
+        }
+        return starts_with_string_start(pattern.items[0])
+    }else if(pattern instanceof CharacterClass){
+        return pattern.value == 'A'
+    }else if(pattern instanceof StringStart){
+        return true
+    }else{
+        return false
+    }
+}
+
 function* iterator(pattern, string, flags, original_string, pos, endpos){
     var result = [],
-        pos = pos | 0
-    while(pos <= string.length){
+        pos = pos | 0,
+        cp,
+        accept_one = true // used to test one position after string end
+    while((cp = string.cp_at(pos)) !== undefined || accept_one){
         var mo = match(pattern, string, pos, endpos)
         if(mo){
-            yield BMO.$factory(mo)
+            yield MatchObject.$factory(mo)
             if(mo.end == mo.start){
                 // If match has zero with, retry at the same position but
                 // with the flag no_zero_width set, to avoid infinite loops
                 mo = match(pattern, string, pos, endpos, true)
                 if(mo){
-                    yield BMO.$factory(mo)
+                    yield MatchObject.$factory(mo)
                     pos = mo.end
                 }else{
                     pos++ // at least 1, else infinite loop
@@ -2948,13 +3268,19 @@ function* iterator(pattern, string, flags, original_string, pos, endpos){
         }else{
             pos++
         }
+        if(cp === undefined){
+            accept_one = false
+        }
+        if(starts_with_string_start(pattern)){
+            break
+        }
     }
     delete original_string.in_iteration
 }
 
-var _debug = {value: false}
 
 function MO(node, pos, mo, len){
+    // Match Object
     this.node = node
     this.start = pos
     this.mo = mo
@@ -2966,6 +3292,9 @@ function MO(node, pos, mo, len){
 }
 
 MO.prototype.backtrack = function(string, groups){
+    if(this.node.possessive){
+        return false
+    }
     if(this.node.non_greedy && this.nb < this.nb_max){
         this.nb++
         this.end = this.start + this.len * this.nb
@@ -2995,6 +3324,7 @@ function del_groups(groups, node){
 }
 
 function GroupMO(node, start, matches, string, groups, endpos){
+    // Match Object for Groups
     this.node = node
     this.start = start
     this.matches = matches
@@ -3004,8 +3334,20 @@ function GroupMO(node, start, matches, string, groups, endpos){
     this.$groups = groups
 }
 
+$B.nb_group_backtrack = 0
+$B.t_group_backtrack = 0
+
 GroupMO.prototype.backtrack = function(string, groups){
+    if(_debug.value){
+        console.log('group MO backtrack, this', this)
+        alert()
+    }
+    $B.nb_group_backtrack++
+    var t0 = performance.now()
     // Try backtracking in the last match
+    if(this.node.possessive || this.node.atomic){
+        return false
+    }
     if(this.matches.length > 0){
         var _match = $last(this.matches),
             mos = _match.mos,
@@ -3021,8 +3363,11 @@ GroupMO.prototype.backtrack = function(string, groups){
                         // update GroupMO object
                         mos.push(_mo)
                         this.end = _mo.end
-                        var ix = this.$groups.$last[this.$groups.$last.length - 1]
-                        this.$groups[ix].end = _mo.end
+                        if(this.$groups.$last.length > 0){
+                            var ix = this.$groups.$last[this.$groups.$last.length - 1]
+                            this.$groups[ix].end = _mo.end
+                        }
+                        $B.t_group_backtrack += performance.now() - t0
                         return true
                     }
                 }
@@ -3033,6 +3378,7 @@ GroupMO.prototype.backtrack = function(string, groups){
                     groups[this.node.num].end = mo.end
                 }
                 this.end = mo.end
+                $B.t_group_backtrack += performance.now() - t0
                 return true
             }
         }
@@ -3048,8 +3394,15 @@ GroupMO.prototype.backtrack = function(string, groups){
             del_groups(groups, this.node)
             this.end = this.start
         }
+        $B.t_group_backtrack += performance.now() - t0
         return true
     }
+    // Group fails; if some of its subgroups succeded, remove them from
+    // groups
+    if(this.node.repeat.min > 0){
+        del_groups(groups, this.node)
+    }
+    $B.t_group_backtrack += performance.now() - t0
     return false
 }
 
@@ -3074,16 +3427,25 @@ GroupMO.prototype.groups = function(_default){
     return $B.fast_tuple(res)
 }
 
-var BMO = $B.make_class("Match",
+// Brython MatchObject
+var MatchObject = $B.make_class("Match",
     function(mo){
         return {
-            __class__: BMO,
+            __class__: MatchObject,
             mo
         }
     }
 )
 
-BMO.__getitem__ = function(){
+MatchObject.__copy__ = function(self){
+    return self
+}
+
+MatchObject.__deepcopy__ = function(self){
+    return self
+}
+
+MatchObject.__getitem__ = function(){
     var $ = $B.args("__getitem__", 2, {self: null, key: null},
                 ['self', 'key'], arguments, {}, null, null),
         self = $.self,
@@ -3103,14 +3465,14 @@ BMO.__getitem__ = function(){
     throw _b_.IndexError.$factory("no such group")
 }
 
-BMO.__repr__ = BMO.__str__ =  function(self){
+MatchObject.__repr__ = MatchObject.__str__ =  function(self){
     return self.mo.toString()
 }
 
-BMO.end = function(self){
+MatchObject.end = function(self){
     var $ = $B.args('end', 2, {self: null, group: null}, ['self', 'group'],
                 arguments, {group: 0}, null, null)
-    var group = BMO.group(self, $.group)
+    var group = MatchObject.group(self, $.group)
     if(group === _b_.None){
         return -1
     }else if($.group == 0){
@@ -3120,13 +3482,13 @@ BMO.end = function(self){
     }
 }
 
-BMO.endpos = {
-    __get__: function(self){
+MatchObject.endpos = _b_.property.$factory(
+    function(self){
         return self.mo.endpos
     }
-}
+)
 
-BMO.expand = function(){
+MatchObject.expand = function(){
     var $ = $B.args("expand", 2, {self: null, template: null},
                 ['self', 'template'], arguments, {}, null, null)
     var data = {
@@ -3134,13 +3496,13 @@ BMO.expand = function(){
     }
     data = transform_repl(data, {groups: $.self.mo.node.$groups})
     if(typeof data.repl == "function"){
-        return $B.$call(data.repl)(BMO.$factory($.self.mo))
+        return $B.$call(data.repl)(MatchObject.$factory($.self.mo))
     }else{
         return data.repl1
     }
 }
 
-BMO.group = function(self){
+MatchObject.group = function(self){
     var $ = $B.args("group", 1, {self: null}, ['self'], arguments,
                 {}, 'args', null),
             self = $.self,
@@ -3175,7 +3537,7 @@ BMO.group = function(self){
     return $B.fast_tuple(result)
 }
 
-BMO.groupdict = function(){
+MatchObject.groupdict = function(){
     /*
     Return a dictionary containing all the named subgroups of the match, keyed
     by the subgroup name. The default argument is used for groups that did not
@@ -3200,7 +3562,7 @@ BMO.groupdict = function(){
     return d
 }
 
-BMO.groups = function(self){
+MatchObject.groups = function(self){
     var $ = $B.args("group", 2, {self: null, default: null},
                 ['self', 'default'], arguments,
                 {default: _b_.None}, null, null),
@@ -3209,25 +3571,25 @@ BMO.groups = function(self){
     return self.mo.groups(_default)
 }
 
-BMO.lastindex = {
-    /* The integer index of the last matched capturing group, or None if no
-       group was matched at all.
-    */
-    __get__: function(self){
+MatchObject.lastindex = _b_.property.$factory(
+   function(self){
+        /* The integer index of the last matched capturing group, or None if
+           no group was matched at all.
+        */
         var last = self.mo.$groups.$last
         if(last.length == 0){
             return _b_.None
         }
         return parseInt($last(last))
     }
-}
+)
 
-BMO.lastgroup = {
-    /* The name of the last matched capturing group, or None if the group
-       didn't have a name, or if no group was matched at all.
-    */
-    __get__: function(self){
-        var lastindex = BMO.lastindex.__get__(self)
+MatchObject.lastgroup = _b_.property.$factory(
+    function(self){
+        /* The name of the last matched capturing group, or None if the group
+           didn't have a name, or if no group was matched at all.
+        */
+        var lastindex = MatchObject.lastindex.fget(self)
         if(lastindex === _b_.None){
             return _b_.None
         }
@@ -3235,23 +3597,23 @@ BMO.lastgroup = {
             name = group.item.name
         return name === undefined ? _b_.None : name
     }
-}
+)
 
-BMO.pos = {
-    __get__: function(self){
+MatchObject.pos = _b_.property.$factory(
+    function(self){
         return self.mo.start
     }
-}
+)
 
-BMO.re = {
-    __get__: function(self){
+MatchObject.re = _b_.property.$factory(
+    function(self){
         return self.mo.node.pattern
     }
-}
+)
 
-BMO.regs = {
-    __get__: function(self){
-        var res = [$B.fast_tuple([self.mo.start, self.mo.end])]
+MatchObject.regs = _b_.property.$factory(
+    function(self){
+        var res = [$B.fast_tuple($B.fast_tuple([self.mo.start, self.mo.end]))]
         for(var group_num in self.mo.node.$groups){
             if(isFinite(group_num)){
                 var group = self.mo.node.$groups[group_num].item
@@ -3262,9 +3624,9 @@ BMO.regs = {
         }
         return $B.fast_tuple(res)
     }
-}
+)
 
-BMO.span = function(){
+MatchObject.span = function(){
     /*
     Match.span([group])
 
@@ -3287,10 +3649,10 @@ BMO.span = function(){
     return $B.fast_tuple([span.start, span.end])
 }
 
-BMO.start = function(self){
+MatchObject.start = function(self){
     var $ = $B.args('end', 2, {self: null, group: null}, ['self', 'group'],
                 arguments, {group: 0}, null, null)
-    var group = BMO.group(self, $.group)
+    var group = MatchObject.group(self, $.group)
     if(group === _b_.None){
         return -1
     }else if($.group == 0){
@@ -3300,18 +3662,13 @@ BMO.start = function(self){
     }
 }
 
-BMO.string = {
-    __get__: function(self){
+MatchObject.string = _b_.property.$factory(
+    function(self){
         return self.mo.string.to_str()
     }
-}
+)
 
-$B.set_func_names(BMO, 're')
-
-function test_after_min_repeat_one(items, pattern, string, pos,
-                            endpos, no_zero_width, groups){
-
-}
+$B.set_func_names(MatchObject, 're')
 
 function log(){
     if(_debug.value){
@@ -3319,18 +3676,44 @@ function log(){
     }
 }
 
+function create_fullmatch_pattern(pattern){
+    // transform <pattern> into "(?:<pattern>)$"
+    // use a new pattern object, otherwise if pattern is in cache the
+    // value in cache would be changed
+    var new_pattern = {}
+    for(var key in pattern){
+        if(key == 'node'){
+            continue
+        }
+        new_pattern[key] = pattern[key]
+    }
+
+    var ncgroup = new Group() // non-capturing group
+    ncgroup.pos = 0
+    ncgroup.non_capturing = true
+    for(var item of pattern.node.items){
+        ncgroup.add(item)
+    }
+    var se = new StringEnd()
+    se.flags = Flag.$factory(32)
+    new_pattern.node = new Node()
+    new_pattern.node.add(ncgroup)
+    new_pattern.node.add(se)
+    return new_pattern
+}
+
 function match(pattern, string, pos, endpos, no_zero_width, groups){
     // Follow the pattern tree structure
-    log('match pattern', pattern.text, 'pos', pos, string.substring(pos))
-    var string1 = string
+    if(_debug.value){
+        console.log('match pattern', pattern.text, 'pos', pos, string.substring(pos))
+        alert()
+    }
     if(endpos !== undefined){
         if(endpos < pos){
             return false
-        }else if(endpos < string.length){
-            string1 = new StringObj('')
-            string1.codepoints = string.codepoints.slice(0, endpos)
-            string1.length = endpos
         }
+    }else{
+        endpos = string.length
     }
     if(pattern.node instanceof Node){
         show(pattern.node)
@@ -3339,7 +3722,7 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
         groups = {$last:[]}
     }
     if(pattern.text === undefined){
-        console.log('pas de texte', pattern)
+        console.log('no text', pattern)
     }
     var node = pattern.node,
         mo
@@ -3352,7 +3735,25 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
                 mo = match({node: _case, text: _case.text}, string, pos,
                     endpos, no_zero_width, groups)
                 if(mo){
+                    // remove groups inside choice and before successful case
+                    // that did not contribute to the match
+                    var groups_succeed = groups_in(_case),
+                        min_num = Math.min(Array.from(groups_succeed))
+                    for(var group_num of groups_in(node)){
+                        if(group_num < min_num){
+                            delete groups[group_num]
+                        }
+                    }
+                    if(_debug.value){
+                        console.log('case', _case + '', 'of choice', node +
+                            ' succeeds, groups', groups)
+                    }
                     return mo
+                }else{
+                    if(_debug.value){
+                        console.log('case', _case + '', 'of choice', node +
+                            ' fails')
+                    }
                 }
             }
             return false
@@ -3378,21 +3779,26 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
                 var initial_groups = Object.keys(groups)
                 mos = []
                 match_start = pos
-                log("pattern", pattern.text, "loop in group match, match start", match_start)
+                if(_debug.value){
+                    console.log("pattern", pattern.text,
+                        "loop in group match, match start", match_start)
+                }
                 var i = 0
                 while(i < node.items.length){
                     var item = node.items[i]
-                    log('item', i, '/', node.items.length - 1,
-                        'of pattern', pattern.text)
+                    if(_debug.value){
+                        console.log('item', i, '/', node.items.length - 1,
+                            'of pattern', pattern.text)
+                    }
                     var mo = match({node: item, text: item + ''}, string, pos,
                         endpos, no_zero_width, groups)
                     if(mo){
                         if(item instanceof Group &&
                                 item.type == "lookahead_assertion"){
-                            log("lookahead assertion", item, "succeeds")
+                            log("lookahead assertion", item + '',
+                                "succeeds, mo", mo)
                         }else{
                             mos.push(mo)
-                            log('item ' + item, 'succeeds, mo', mo, mos, 'groups', groups)
                             pos = mo.end
                         }
                         i++
@@ -3401,15 +3807,19 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
                         log("negative lookahead assertion", item, "fails : ok !")
                         i++
                     }else{
-                        log('item ' + item, 'of group fails, nb_repeat',
-                            nb_repeat, 'node repeat', node.repeat)
+                        if(_debug.value){
+                            console.log('item ' + item, 'of group fails, nb_repeat',
+                                nb_repeat, 'node repeat', node.repeat)
+                        }
                         var backtrack = false
                         while(mos.length > 0){
                             var mo = mos.pop()
                             if(mo.backtrack === undefined){
-                                log('pas de backtrack pour', mo)
+                                log('no backtrack for', mo)
                             }
-                            log('try backtrack on mo', mo)
+                            if(_debug.value){
+                                console.log('try backtrack on mo', mo)
+                            }
                             if(mo.backtrack(string, groups)){
                                 log('can backtrack, mo', mo)
                                 mos.push(mo)
@@ -3427,8 +3837,9 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
                             if(node.type == "negative_lookahead_assertion"){
                                 // If a negative lookahead assertion fails,
                                 // return a match
-                                return new GroupMO(node, start, matches,
+                                var res = new GroupMO(node, start, matches,
                                     string, groups, endpos)
+                                return res
                             }
                             if(nb_repeat == 0){
                                 // remove the groups introduced before
@@ -3487,7 +3898,7 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
                     return res
                 }
                 log('loop on group', pattern.text, 'nb repeats', nb_repeat,
-                    'nb zero length', nb_zerolength_repeat)
+                    'nb zero length', nb_zerolength_repeat, 'groups', groups)
                 if(nb_zerolength_repeat == 65535){
                     return matches.length == 0 ? false :
                        new GroupMO(node, start, matches, string, groups,
@@ -3496,11 +3907,12 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
             }
         }
     }else{
-        if(node.match === undefined){
-            console.log('pas de match', node)
+        // for BackReference, Char, CharSeq, CharacterClass, CharacterSet,
+        // ConditionalBackref, Lookbehind, StringStart, StringEnd
+        var mo = node.match(string, pos, endpos, groups)
+        if(_debug.value){
+            console.log(node + '', "mo", mo)
         }
-        var mo = node.match(string1, pos, groups)
-        log(node, "mo", mo)
         if(mo){
             var len = mo.group_len === undefined ? 1 : mo.group_len,
                 ix = node.non_greedy ? mo.nb_min : mo.nb_max,
@@ -3512,13 +3924,14 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
     }
 }
 
+// expose re module API
 var $module = {
     cache: cache,
     compile: function(){
         var $ = $B.args("compile", 2, {pattern: null, flags: null},
                     ['pattern', 'flags'], arguments, {flags: no_flag},
                     null, null)
-        if($.pattern && $.pattern.__class__ === BPattern){
+        if($.pattern && $.pattern.__class__ === Pattern){
             if($.flags !== no_flag){
                 throw _b_.ValueError.$factory(
                     "cannot process flags argument with a compiled pattern")
@@ -3531,7 +3944,7 @@ var $module = {
             $.flags = Flag.$factory($.flags)
         }
         var jspat = compile(data.pattern, $.flags)
-        return BPattern.$factory(jspat)
+        return Pattern.$factory(jspat)
     },
     error: error,
     escape: function(){
@@ -3542,12 +3955,12 @@ var $module = {
             res = []
         for(var cp of pattern.codepoints){
             if(escaped.indexOf(cp) > -1){
-                res.push(ord('\\'))
+                res.push(BACKSLASH)
             }
             res.push(cp)
         }
         res = from_codepoint_list(res, data.type)
-        if(data.type == "bytes"){
+        if(data.type == "bytes" && _b_.isinstance(res, _b_.str)){
             res = _b_.str.encode(res, 'latin1')
         }
         return res
@@ -3569,11 +3982,11 @@ var $module = {
                 flags = $.flags,
                 data
         pattern = check_pattern_flags(pattern, flags)
-        if(pattern.__class__ === BPattern){
+        if(pattern.__class__ === Pattern){
             data = prepare({string})
         }else{
             data = prepare({string, pattern})
-            pattern = BPattern.$factory(compile(data.pattern, flags))
+            pattern = Pattern.$factory(compile(data.pattern, flags))
         }
         if(data.type === "str"){
             function conv(s){
@@ -3594,7 +4007,7 @@ var $module = {
             }
             var bmo = next.value,
                 mo = bmo.mo,
-                groups = BMO.groups(bmo)
+                groups = MatchObject.groups(bmo)
 
             // replace None by the empty string
             for(var i = 0, len = groups.length; i < len; i++){
@@ -3626,21 +4039,41 @@ var $module = {
         var original_string = string,
             data
         pattern = check_pattern_flags(pattern, flags)
-        if(pattern.__class__ === BPattern){
+        if(pattern.__class__ === Pattern){
             data = prepare({string})
             flags = pattern.flags
         }else{
             data = prepare({string, pattern})
-            pattern = BPattern.$factory(compile(data.pattern, flags))
+            pattern = Pattern.$factory(compile(data.pattern, flags))
         }
-        if(pattern.__class__ !== BPattern){
+        if(pattern.__class__ !== Pattern){
             throw Error("pattern not a Python object")
         }
         return $B.generator.$factory(iterator)(pattern.$pattern, data.string,
             flags, original_string)
     },
     fullmatch: function(){
-        var bmo = $module.match.apply(null, arguments)
+        var $ = $B.args("fullmatch", 3, {pattern: null, string: null, flags: null},
+                    ['pattern', 'string', 'flags'], arguments,
+                    {flags: no_flag}, null, null),
+                pattern = $.pattern,
+                string = $.string,
+                flags = $.flags
+        pattern = check_pattern_flags(pattern, flags)
+        var data
+        if(pattern.__class__ === Pattern){
+            data = prepare({string})
+            pattern = pattern.$pattern
+        }else{
+            data = prepare({pattern, string})
+            pattern = compile(data.pattern, flags)
+        }
+
+        var new_pattern = create_fullmatch_pattern(pattern)
+
+        // match transformed RE
+        var res = match(new_pattern, data.string, 0)
+        var bmo = res === false ? _b_.None : MatchObject.$factory(res)
         if(bmo !== _b_.None){
             if(bmo.mo.string.codepoints.length != bmo.mo.end - bmo.mo.start){
                 return _b_.None
@@ -3650,7 +4083,7 @@ var $module = {
         }
         return _b_.None
     },
-    Match: BMO,
+    Match: MatchObject,
     match: function(){
         var $ = $B.args("match", 3, {pattern: null, string: null, flags: null},
                     ['pattern', 'string', 'flags'], arguments,
@@ -3660,7 +4093,7 @@ var $module = {
                 flags = $.flags
         pattern = check_pattern_flags(pattern, flags)
         var data
-        if(pattern.__class__ === BPattern){
+        if(pattern.__class__ === Pattern){
             data = prepare({string})
             pattern = pattern.$pattern
         }else{
@@ -3668,14 +4101,16 @@ var $module = {
             pattern = compile(data.pattern, flags)
         }
         var res = match(pattern, data.string, 0)
-        return res === false ? _b_.None : BMO.$factory(res)
+        return res === false ? _b_.None : MatchObject.$factory(res)
     },
-    Pattern: BPattern,
+    Pattern,
     purge: function(){
         var $ = $B.args("purge", 0, {}, [], arguments, {}, null, null)
         cache.clear()
         return _b_.None
     },
+    _reconstructor,
+    Scanner,
     search: function(){
         var $ = $B.args("search", 3, {pattern: null, string: null, flags: null},
                     ['pattern', 'string', 'flags'], arguments,
@@ -3685,14 +4120,37 @@ var $module = {
                 flags = $.flags,
                 data
         pattern = check_pattern_flags(pattern, flags)
-        if(pattern.__class__ === BPattern){
+        if(pattern.__class__ === Pattern){
             data = prepare({string})
         }else{
             data = prepare({string, pattern})
-            pattern = BPattern.$factory(compile(data.pattern, flags))
+            pattern = Pattern.$factory(compile(data.pattern, flags))
         }
         data.pattern = pattern
-        // optimization
+        // optimizations
+        if(pattern.pattern.startsWith('\\A') ||
+                pattern.pattern.startsWith('^')){
+            if(! (pattern.$pattern.node.items[0] instanceof Choice)){
+                var mo = match(data.pattern.$pattern, data.string, 0)
+                if(mo){
+                    return MatchObject.$factory(mo)
+                }else if(pattern.flags.value & MULTILINE.value){
+                    var pos = 0,
+                        cp
+                    while((cp = data.string.cp_at(pos)) !== undefined){
+                        if(cp == LINEFEED){
+                            mo = match(data.pattern.$pattern, data.string, pos + 1)
+                            if(mo){
+                                return MatchObject.$factory(mo)
+                            }
+                        }
+                        pos++
+                    }
+                }else{
+                    return _b_.None
+                }
+            }
+        }
         if(pattern.$pattern.fixed_length !== false &&
                 isFinite(pattern.$pattern.fixed_length) &&
                 pattern.pattern.endsWith('$') &&
@@ -3700,23 +4158,30 @@ var $module = {
             var mo = match(data.pattern.$pattern, data.string,
                 data.string.length - pattern.$pattern.fixed_length)
             if(mo){
-                return BMO.$factory(mo)
+                return MatchObject.$factory(mo)
             }
             return _b_.None
         }
         var pos = 0
+        if(data.string.codepoints.length == 0){
+            mo = match(data.pattern.$pattern, data.string, 0)
+            if(mo){
+                mo.start = mo.end = 0
+            }
+            return mo ? MatchObject.$factory(mo) : _b_.None
+        }
         while(pos < data.string.codepoints.length){
             var mo = match(data.pattern.$pattern, data.string, pos)
             if(mo){
-                return BMO.$factory(mo)
+                return MatchObject.$factory(mo)
             }else{
                 pos++
             }
         }
         return _b_.None
     },
-    set_debug: function(){
-        _debug.value = true
+    set_debug: function(value){
+        _debug.value = value
     },
     split: function(){
         var $ = $B.args("split", 4,
@@ -3730,14 +4195,15 @@ var $module = {
             pos = 0,
             nb_split = 0,
             data
-        if(pattern.__class__ !== BPattern){
+        if(pattern.__class__ !== Pattern){
             data = prepare({pattern, string})
-            pattern = BPattern.$factory(compile(data.pattern, flags))
+            var comp = compile(data.pattern, flags)
+            pattern = Pattern.$factory(comp)
         }else{
             data = {pattern, string}
         }
         for(var bmo of $module.finditer(pattern, $.string).js_gen){
-            var mo = bmo.mo, // finditer returns instances of BMO
+            var mo = bmo.mo, // finditer returns instances of MatchObject
                 groupobj = mo.$groups
             res.push(data.string.substring(pos, mo.start))
             for(var key in mo.node.$groups){
@@ -3761,7 +4227,13 @@ var $module = {
         }
         res.push(data.string.substring(pos))
         if(data.type === "bytes"){
-            res = res.map(function(x){return _b_.str.encode(x, "latin-1")})
+            res = res.map(
+                function(x){
+                    return _b_.isinstance(x, _b_.bytes) ?
+                               x :
+                               _b_.str.encode(x, "latin-1")
+                }
+            )
         }
         return res
     },
@@ -3778,7 +4250,7 @@ var $module = {
             data
         check_pattern_flags(pattern, flags)
         if(typeof repl != "function"){
-            if(pattern.__class__ != BPattern){
+            if(pattern.__class__ != Pattern){
                 data = prepare({pattern, string, repl})
                 pattern = compile(data.pattern, flags)
             }else{
@@ -3788,7 +4260,7 @@ var $module = {
             }
             data = transform_repl(data, pattern)
         }else{
-            if(pattern.__class__ != BPattern){
+            if(pattern.__class__ != Pattern){
                 data = prepare({pattern, string})
                 pattern = compile(data.pattern, flags)
             }else{
@@ -3811,7 +4283,7 @@ var $module = {
             count = $.count,
             flags = $.flags,
             data
-        if(pattern.__class__ != BPattern){
+        if(pattern.__class__ != Pattern){
             data = prepare({pattern, repl, string})
         }else{
             data = prepare({repl, string})
@@ -3831,6 +4303,8 @@ var DOTALL = $module.S = $module.DOTALL = Flag.$factory(16)
 var U = $module.U = $module.UNICODE = Flag.$factory(32)
 var VERBOSE = $module.X = $module.VERBOSE = Flag.$factory(64)
 $module.cache = cache
+$module._compile = $module.compile
+
 
 var inline_flags = {
     i: IGNORECASE,

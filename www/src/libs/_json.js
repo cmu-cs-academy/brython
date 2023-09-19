@@ -23,16 +23,16 @@ function to_json(obj, level){
             indent:_b_.None, separators:_b_.None, "default":_b_.None,
             sort_keys:_b_.False},
         $ = $B.args("to_json", 2, {obj: null, level: null}, ['obj', 'level'],
-                    arguments, {level: 1}, null, "kw"),
-        kw = $.kw.$string_dict
+                    arguments, {level: 1}, null, "kw")
 
-    for(key in $defaults){
-        if(kw[key] === undefined){
-            kw[key] = $defaults[key]
-        }else{
-            kw[key] = kw[key][0]
+    for(var key in $defaults){
+        if(! $.kw.$jsobj.hasOwnProperty(key)){
+            $.kw.$jsobj[key] = $defaults[key]
         }
     }
+
+    // Transform Python dict into Javascript object
+    var kw = $.kw.$jsobj
 
     var indent = kw.indent,
         ensure_ascii = kw.ensure_ascii,
@@ -57,9 +57,9 @@ function to_json(obj, level){
                 _b_.str.$factory(indent))
         }
     }
-    var kwarg = {$nat: "kw", kw: {}}
+    var kwarg = {$kw: [{}]}
     for(var key in kw){
-        kwarg.kw[key] = kw[key]
+        kwarg.$kw[0][key] = kw[key]
     }
 
     switch(typeof obj){
@@ -149,7 +149,7 @@ function to_json(obj, level){
         return "null"
     }else if(_b_.isinstance(obj, _b_.dict)){
         var res = [],
-            items = $B.dict_to_list(obj)
+            items = Array.from($B.make_js_iterator(_b_.dict.items(obj)))
         if(sort_keys){
             // Sort keys by alphabetical order
             items.sort()
@@ -549,10 +549,7 @@ var JSONDecoder = $B.make_class("JSONDecoder",
                 parse_float: _b_.None, parse_int: _b_.None,
                 parse_constant: _b_.None, object_pairs_hook: _b_.None},
             $ = $B.args("decode", 0, {}, [], arguments, {}, null, "kw")
-        var kw = {}
-        for(var key in $.kw.$string_dict){
-            kw[key] = $.kw.$string_dict[key][0]
-        }
+        var kw = $.kw.$jsobj
         for(var key in $defaults){
             if(kw[key] === undefined){
                 kw[key] = $defaults[key]

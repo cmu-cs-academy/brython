@@ -909,5 +909,149 @@ assert trace == [(Plugin, Client),
                  (Plugin1, Plugin),
                  (Plugin1, Client),
                  (Plugin1, PluginBase)]
-                 
+
+# `klass.x = y` is `klass.__class__.__setattr__(klass, x, y)`
+t = []
+class Meta(type):
+
+  def __setattr__(cls, attr, value):
+    t.append('Meta setattr')
+    type.__setattr__(cls, attr, value)
+
+class A(metaclass=Meta):
+    ONE = 1
+
+assert not t
+A.TWO = 2
+assert len(t) == 1
+
+# bases of a class may not be classes
+t = []
+
+class Base:
+
+  def __new__(cls, *args):
+    t.append('new')
+    return object.__new__(cls)
+
+  def __init__(*args):
+    t.append('init')
+
+  def f(self):
+    return 99
+
+base = Base()
+assert t == ['new', 'init']
+base.g = 12
+
+base2 = Base()
+assert len(t) == 4
+
+base2.truc = 754
+
+class A(base, base2):
+  x = 8
+
+assert len(t) == 6
+
+assert hasattr(Base, '__mro__')
+assert not hasattr(A, '__mro__')
+
+assert A.f() == 99
+assert not hasattr(A, "g") # although A.__bases__[0] has "g"
+
+assert not isinstance(A, type)
+
+assert A.__class__ is Base
+
+t = list[int]
+
+assert not issubclass(t, type)
+
+class B(list[int]):
+  pass
+
+# class with abstract method cannot be instanciated
+import abc
+
+class AbstractClass(metaclass=abc.ABCMeta):
+
+    @abc.abstractmethod
+    def abstractMethod1(self):
+        pass
+
+
+class ConcreteClass(AbstractClass):
+
+    def __init__(self):
+        self.me = "me"
+
+
+assert_raises(TypeError, ConcreteClass)
+
+# instances of a class that defines __eq__ and not __hash__
+# are not hashable
+class A:
+
+  def __eq__(self, other):
+    return True
+
+hash(A)
+assert_raises(TypeError, hash, A())
+
+# metaclass __new__ and __init__ receive extra keyword arguments
+class Meta(type):
+
+  def __new__(meta, name, bases, ns, **kw):
+      assert kw == {'x': 9}
+      return type.__new__(meta, name, bases, ns)
+
+  def __init__(cls, name, bases, ns, **kw):
+      assert kw == {'x': 9}
+
+class A(x=9, metaclass=Meta):
+    pass
+
+# create classes with type()
+t = []
+
+class Meta(type):
+
+    def __new__(*args):
+        t.append('new')
+        return type.__new__(*args)
+
+    def __init__(*args):
+        t.append('init')
+
+
+class B(metaclass=Meta):
+    pass
+
+assert t == ['new', 'init']
+
+C = type('C', (B,), {'x': 1})
+assert C.__class__ is Meta
+assert t == ['new', 'init', 'new', 'init']
+
+assert_raises(TypeError, type, 'D', (), {'x': 1}, metaclass=Meta)
+
+D = type('D', (), {'x': 1})
+assert D.__class__ is type
+
+# issue 2159
+class A:
+  @property
+  def m(self):
+    return 1
+
+assert A().m == 1
+
+class B(A):
+ @property
+ def m(self):
+   return super().m + 1
+
+assert B().m == 2
+
 print('passed all tests..')

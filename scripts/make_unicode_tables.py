@@ -1,22 +1,8 @@
+"""Generate /src/unicode_data.js from Unicode database files downloaded from
+unicode.org by script downloads.py.
+"""
+
 import os
-import urllib.request
-
-unicode_url = "https://www.unicode.org/Public/UCD/latest/ucd/"
-
-# Load required files from unicode.org
-if not os.path.exists("ucd"):
-    os.mkdir("ucd")
-
-for path in ["UnicodeData.txt", "CaseFolding.txt", "DerivedCoreProperties.txt"]:
-    abs_path = os.path.join("ucd", path)
-    if True: #not os.path.exists(abs_path):
-        f = urllib.request.urlopen(unicode_url + path)
-        print(f)
-        with open(abs_path, "wb") as out:
-            buf = f.read()
-            if not buf:
-                break
-            out.write(buf)
 
 dest_dir = os.path.join(os.path.dirname(os.getcwd()), "www", "src")
 
@@ -28,6 +14,8 @@ dest_dir = os.path.join(os.path.dirname(os.getcwd()), "www", "src")
 #   points of the form start + i * step for i in range(number) has this GC
 # - a list with 2 elements [start, number] when step is 1
 letters = {}
+digits_mapping = {}
+
 start = None
 gc = None
 
@@ -44,6 +32,8 @@ with open(os.path.join("ucd", "UnicodeData.txt")) as f:
         count[gc] = count.get(gc, 0) + 1
         char = to_int(parts[0])
         bidi_class = parts[4]
+        if gc == 'Nd':
+            digits_mapping[char] = int(parts[6])
         if bidi_class in ["WS", "B", "S"]:
             bidi_ws.append(char)
         if gc in letters:
@@ -69,6 +59,11 @@ with open(os.path.join("ucd", "UnicodeData.txt")) as f:
             letters[gc] = [char]
 
 last_char = char
+
+for start, nb, step in letters['Nd']:
+    for nd in range(0, nb, step):
+        if nd != digits_mapping[start + nd]:
+            print(hex(start + nd), nd, digits_mapping[start + nd])
 
 casefold = {}
 with open(os.path.join("ucd", "CaseFolding.txt")) as f:
@@ -182,6 +177,8 @@ with open(os.path.join(dest_dir, "unicode_data.js"), "w",
     out.write("var $B = __BRYTHON__\n")
     out.write("$B.unicode = ")
     json.dump(data, out, separators=[",", ":"])
+    out.write('\n$B.digits_mapping = ')
+    json.dump(digits_mapping, out, separators=[",", ":"])
     out.write("\n$B.unicode_casefold = " +
         str(casefold).replace(" ", ""))
     out.write("\n$B.unicode_bidi_whitespace = " +
@@ -189,7 +186,7 @@ with open(os.path.join(dest_dir, "unicode_data.js"), "w",
     out.write("\n$B.unicode_identifiers = ")
     json.dump(identifiers, out, separators=[",", ":"])
     out.write("""\n$B.unicode_tables = {}
-for(var gc in $B.unicode){
+for(const gc in $B.unicode){
     $B.unicode_tables[gc] = {}
     $B.unicode[gc].forEach(function(item){
         if(Array.isArray(item)){
@@ -203,7 +200,7 @@ for(var gc in $B.unicode){
     })
 }
 
-for(var key in $B.unicode_identifiers){
+for(const key in $B.unicode_identifiers){
     $B.unicode_tables[key] = {}
     for(const item of $B.unicode_identifiers[key]){
         if(Array.isArray(item)){

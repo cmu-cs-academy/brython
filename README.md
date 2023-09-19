@@ -63,7 +63,7 @@ You can choose the latest stable release :
 
 ```html
 <script type="text/javascript"
-    src="https://cdn.jsdelivr.net/npm/brython@3.10.7/brython.min.js">
+    src="https://cdn.jsdelivr.net/npm/brython@3.11.3/brython.min.js">
 </script>
 ```
 
@@ -73,19 +73,19 @@ with the [available stdlib](https://github.com/brython-dev/brython/tree/master/w
 
 ```html
 <script type="text/javascript"
-    src="https://cdn.jsdelivr.net/npm/brython@3.10.7/brython_stdlib.js">
+    src="https://cdn.jsdelivr.net/npm/brython@3.11.3/brython_stdlib.js">
 </script>
 ```
 
 jsDelivr supports version ranges, so if you want the latest of the
-3.10.x versions:
+3.11.x versions:
 
 ```html
 <script type="text/javascript"
-    src="https://cdn.jsdelivr.net/npm/brython@3.10/brython.min.js">
+    src="https://cdn.jsdelivr.net/npm/brython@3.11/brython.min.js">
 </script>
 <script type="text/javascript"
-    src="https://cdn.jsdelivr.net/npm/brython@3.10/brython_stdlib.js">
+    src="https://cdn.jsdelivr.net/npm/brython@3.11/brython_stdlib.js">
 </script>
 ```
 
@@ -103,8 +103,12 @@ or the latest of the 3.x.y versions:
 If you want to use the latest development version, you can load these scripts
 instead:
 ```html
-<script src="https://raw.githack.com/brython-dev/brython/master/www/src/brython.js"></script>
-<script src="https://raw.githack.com/brython-dev/brython/master/www/src/brython_stdlib.js"></script>
+<script src="https://raw.githack.com/brython-dev/brython/master/www/src/brython.js"
+        crossorigin="anonymous">
+</script>
+<script src="https://raw.githack.com/brython-dev/brython/master/www/src/brython_stdlib.js"
+        crossorigin="anonymous">
+</script>
 ```
 
 Local install
@@ -152,12 +156,8 @@ Documentation
 You can start by reading the official [Brython tutorial](https://brython.info/static_tutorial/en/index.html).
 
 Full documentation is available on the [official site](http://www.brython.info "Brython Homepage").
-You can read the docs in [English](http://brython.info/static_doc/en/intro.html),
-[French](http://brython.info/static_doc/fr/intro.html) and
-[Spanish](http://brython.info/static_doc/es/intro.html).
-
-The most updated docs usually are the English and French versions so if you
-want to be up-to-date, please, use these versions.
+You can read the docs in [English](http://brython.info/static_doc/en/intro.html) and
+[French](http://brython.info/static_doc/fr/intro.html).
 
 Curious about [how Brython works](https://github.com/brython-dev/brython/wiki/How%20Brython%20works) ?
 

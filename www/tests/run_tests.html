@@ -92,7 +92,7 @@ def testTraceback(qunit):
             trace = traceback.format_exc()
             assert "line 9, in f" in trace
             assert "line 6, in h" in trace
-            assert "line 5, in lambda" in trace
+            assert "line 5, in <lambda>" in trace
             assert "line 2, in g" in trace
 
         # issue 976
@@ -155,6 +155,25 @@ qunit_add_tests(test_utils.load_brython_test_cases('.'))
 # except:
 #     fail_qunit('Loading test.test_grammar', traceback.format_exc())
     </script>
+
+<!-- for Web Components tests -->
+<ui-group child-config='{"fill": true}'>
+    <ui-config selector="ui-button:nth-child(4n + 7)">
+        {
+            "fill": true,
+            "color": "gray"
+        }
+    </ui-config>
+</ui-group>
+
+ <ui-app>
+      <button>Button</button>
+ </ui-app>
+ <ui-test target-id="test">Test Component</ui-test>
+ <ui-test1893 target-id="test">Test Component</ui-test1893>
+ <demo-component2082></demo-component2082>
+ <ui-demo-component2169>TEST</ui-demo-component2169>
+ <demo-component2181></demo-component2181>
 
   </body>
 </html>
