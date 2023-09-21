@@ -49,12 +49,12 @@ from warnings import warn as _warn
 from math import log as _log, exp as _exp, pi as _pi, e as _e, ceil as _ceil
 from math import sqrt as _sqrt, acos as _acos, cos as _cos, sin as _sin
 from math import tau as TWOPI, floor as _floor, isfinite as _isfinite
-from os import urandom as _urandom
-from _collections_abc import Set as _Set, Sequence as _Sequence
+# from os import urandom as _urandom
+# from _collections_abc import Set as _Set, Sequence as _Sequence
 from operator import index as _index
 from itertools import accumulate as _accumulate, repeat as _repeat
 from bisect import bisect as _bisect
-import os as _os
+# import os as _os
 import _random
 
 try:
@@ -432,7 +432,7 @@ class Random(_random.Random):
         # too many calls to _randbelow(), making them slower and
         # causing them to eat more entropy than necessary.
 
-        if not isinstance(population, _Sequence):
+        if not isinstance(population, (list, str, tuple, bytearray, range, memoryview, bytes)):
             raise TypeError("Population must be a sequence.  "
                             "For dicts or sets, use sorted(d).")
         n = len(population)
@@ -781,41 +781,41 @@ class Random(_random.Random):
 ## --------------- Operating System Random Source  ------------------
 
 
-class SystemRandom(Random):
-    """Alternate random number generator using sources provided
-    by the operating system (such as /dev/urandom on Unix or
-    CryptGenRandom on Windows).
+# class SystemRandom(Random):
+#     """Alternate random number generator using sources provided
+#     by the operating system (such as /dev/urandom on Unix or
+#     CryptGenRandom on Windows).
 
-     Not available on all systems (see os.urandom() for details).
+#      Not available on all systems (see os.urandom() for details).
 
-    """
+#     """
 
-    def random(self):
-        """Get the next random number in the range [0.0, 1.0)."""
-        return (int.from_bytes(_urandom(7)) >> 3) * RECIP_BPF
+#     def random(self):
+#         """Get the next random number in the range [0.0, 1.0)."""
+#         return (int.from_bytes(_urandom(7)) >> 3) * RECIP_BPF
 
-    def getrandbits(self, k):
-        """getrandbits(k) -> x.  Generates an int with k random bits."""
-        if k < 0:
-            raise ValueError('number of bits must be non-negative')
-        numbytes = (k + 7) // 8                       # bits / 8 and rounded up
-        x = int.from_bytes(_urandom(numbytes))
-        return x >> (numbytes * 8 - k)                # trim excess bits
+#     def getrandbits(self, k):
+#         """getrandbits(k) -> x.  Generates an int with k random bits."""
+#         if k < 0:
+#             raise ValueError('number of bits must be non-negative')
+#         numbytes = (k + 7) // 8                       # bits / 8 and rounded up
+#         x = int.from_bytes(_urandom(numbytes))
+#         return x >> (numbytes * 8 - k)                # trim excess bits
 
-    def randbytes(self, n):
-        """Generate n random bytes."""
-        # os.urandom(n) fails with ValueError for n < 0
-        # and returns an empty bytes string for n == 0.
-        return _urandom(n)
+#     def randbytes(self, n):
+#         """Generate n random bytes."""
+#         # os.urandom(n) fails with ValueError for n < 0
+#         # and returns an empty bytes string for n == 0.
+#         return _urandom(n)
 
-    def seed(self, *args, **kwds):
-        "Stub method.  Not used for a system random number generator."
-        return None
+#     def seed(self, *args, **kwds):
+#         "Stub method.  Not used for a system random number generator."
+#         return None
 
-    def _notimplemented(self, *args, **kwds):
-        "Method should not be called for a system random number generator."
-        raise NotImplementedError('System entropy source does not have state.')
-    getstate = setstate = _notimplemented
+#     def _notimplemented(self, *args, **kwds):
+#         "Method should not be called for a system random number generator."
+#         raise NotImplementedError('System entropy source does not have state.')
+#     getstate = setstate = _notimplemented
 
 
 # ----------------------------------------------------------------------
@@ -893,8 +893,8 @@ def _test(N=2000):
 ## ------------------------------------------------------
 ## ------------------ fork support  ---------------------
 
-if hasattr(_os, "fork"):
-    _os.register_at_fork(after_in_child=_inst.seed)
+# if hasattr(_os, "fork"):
+#     _os.register_at_fork(after_in_child=_inst.seed)
 
 
 if __name__ == '__main__':
