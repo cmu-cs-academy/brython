@@ -766,4 +766,7 @@ assert gAnswer == 0xAAF3C2EF5D598ACC, gAnswer
 # digits in non-latin alphabets
 assert int('9' + chr(int('17E4', 16)) + 'b', 16) == 2379
 
+assert int(3.9) == 3
+assert int(-3.9) == -3
+
 print('passed all tests...')
