@@ -590,7 +590,7 @@ _b_.UnboundLocalError.__str__ = function(self){
 $B.set_func_names(_b_.UnboundLocalError, 'builtins')
 
 // Shortcut to create a NameError
-$B.name_error = function(name, obj){
+$B.name_error = function(name){
     var exc = _b_.NameError.$factory(`name '${name}' is not defined`)
     exc.name = name
     exc.$stack = $B.frames_stack.slice()
@@ -719,8 +719,7 @@ $B.offer_suggestions_for_attribute_error = function(exc){
 }
 
 $B.offer_suggestions_for_name_error = function(exc){
-    // exc.args[0] is exc.name in Brython master
-    var name = exc.args[0],
+    var name = exc.name,
         frame = $B.last(exc.$stack)
     if(typeof name != 'string'){
         return null;
