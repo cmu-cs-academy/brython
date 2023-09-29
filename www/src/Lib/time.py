@@ -1,4 +1,4 @@
-from browser import self as window
+# from browser import self as window
 import _locale
 import javascript
 
@@ -220,7 +220,7 @@ def monotonic():
     return now() / 1000.
 
 def perf_counter():
-    return window.performance.now() / 1000.
+    return now() / 1000.
 
 def process_time():
     return now() / 1000.
