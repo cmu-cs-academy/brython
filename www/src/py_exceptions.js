@@ -374,8 +374,9 @@ var show_stack = $B.show_stack = function(stack){
 // (cf issue #1806)
 // The line '// placeholder' is meant to be replaced by exception-specific
 // code passed to make_exc()
-var be_factory = `
-    var _b_ = __BRYTHON__.builtins
+var be_factory =`
+    var $B = __BRYTHON__,
+    _b_ = $B.builtins
     var err = Error()
     err.args = $B.fast_tuple(Array.from(arguments))
     err.__class__ = _b_.BaseException
