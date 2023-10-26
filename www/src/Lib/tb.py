@@ -14,10 +14,8 @@ class Trace:
 
 def format_exc():
     trace = Trace()
-    exc_info = sys.exc_info()
-    exc_class = exc_info[0].__name__
-    exc_msg = str(exc_info[1])
-    tb = exc_info[2]
+    exc_class, exc, tb = sys.exc_info()
+    exc_msg = str(exc)
 
     def handle_repeats(filename, lineno, count_repeats):
         if count_repeats > 0:
@@ -33,7 +31,7 @@ def format_exc():
                     break
             if count_repeats:
                 trace.write(f'[Previous line repeated {count_repeats} ' +
-                    f' more time{"s" if count_repeats > 1 else ""}]')
+                    f'more time{"s" if count_repeats > 1 else ""}]')
 
     def show_line():
         trace.write(f'  File "{filename}", line {lineno}, in {name}')
@@ -47,6 +45,7 @@ def format_exc():
     started = False
     save_filename = None
     save_lineno = None
+    save_scope = None
     same_line = False
     count_repeats = 0
 
@@ -59,23 +58,35 @@ def format_exc():
         lineno = frame.f_lineno
         name = code.co_name
         filename = code.co_filename
-        if filename == save_filename and lineno == save_lineno:
+        if filename == save_filename and lineno == save_lineno \
+                and name == save_name:
             count_repeats += 1
             tb = tb.tb_next
             continue
         handle_repeats(save_filename, save_lineno, count_repeats)
         save_filename = filename
         save_lineno = lineno
+        save_name = name
         count_repeats = 0
         show_line()
         tb = tb.tb_next
 
     handle_repeats(filename, lineno, count_repeats)
 
-    if isinstance(exc_info[1], SyntaxError):
-        trace.write(syntax_error(exc_info[1].args))
+    if isinstance(exc, SyntaxError):
+        trace.write(syntax_error(exc.args))
     else:
-        trace.write(f"{exc_class}: {exc_msg}")
+        message = exc_msg
+        if isinstance(exc, AttributeError):
+            suggestion = __BRYTHON__.offer_suggestions_for_attribute_error(exc)
+            if suggestion is not None:
+                message += f". Did you mean: '{suggestion}'?"
+        elif isinstance(exc, NameError):
+            suggestion = __BRYTHON__.offer_suggestions_for_name_error(exc)
+            if suggestion is not None:
+                message += f". Did you mean: '{suggestion}'?"
+        trace.write(f"{exc_class}: {message}")
+
     return trace.format()
 
 def print_exc(file=None):

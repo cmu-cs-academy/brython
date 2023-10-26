@@ -645,7 +645,7 @@ the end.
     <script type="text/python"  id="script9">
     from browser import document, html
 
-    logo = "https://www.python.org/static/community_logos/python-logo-master-v3-TM.png"
+    logo = "python-logo.png"
 
     def insert_image(event):
         document["zone9"].clear()
@@ -1044,6 +1044,7 @@ the end.
     TEXTAREA content to disk.
     <p>It uses the interface
     <a href="https://developer.mozilla.org/en-US/docs/Web/API/File" target="_blank" class="external">File</a> of the DOM API.
+    <p>The "save" button must be an anchor (HTML tag A) with attribute "download" set.
     </span>
 </div>
 <div class="example" id="ex5">
@@ -1270,24 +1271,26 @@ for example in document.get(selector=".example"):
 <!-- end copy -->
 
 <script type="text/javascript" src="/src/brython_builtins.js"></script>
+
+<script type="text/javascript" src="/src/py_ast_classes.js"></script>
+<script type="text/javascript" src="/src/stdlib_paths.js"></script>
+<script type="text/javascript" src="/src/unicode_data.js"></script>
 <script type="text/javascript" src="/src/version_info.js"></script>
+
 <script type="text/javascript" src="/src/python_tokenizer.js"></script>
 <script type="text/javascript" src="/src/py_ast.js"></script>
 <script type="text/javascript" src="/src/py2js.js"></script>
 <script type="text/javascript" src="/src/loaders.js"></script>
+<script type="text/javascript" src="/src/py_utils.js"></script>
 <script type="text/javascript" src="/src/py_object.js"></script>
 <script type="text/javascript" src="/src/py_type.js"></script>
-<script type="text/javascript" src="/src/py_utils.js"></script>
-<script type="text/javascript" src="/src/py_sort.js"></script>
 <script type="text/javascript" src="/src/py_builtin_functions.js"></script>
+<script type="text/javascript" src="/src/py_sort.js"></script>
 <script type="text/javascript" src="/src/py_exceptions.js"></script>
 <script type="text/javascript" src="/src/py_range_slice.js"></script>
 <script type="text/javascript" src="/src/py_bytes.js"></script>
 <script type="text/javascript" src="/src/py_set.js"></script>
-<script type="text/javascript" src="/src/js_objects.js"></script>
-<script type="text/javascript" src="/src/stdlib_paths.js"></script>
 <script type="text/javascript" src="/src/py_import.js"></script>
-<script type="text/javascript" src="/src/unicode_data.js"></script>
 <script type="text/javascript" src="/src/py_string.js"></script>
 <script type="text/javascript" src="/src/py_int.js"></script>
 <script type="text/javascript" src="/src/py_long_int.js"></script>
@@ -1295,11 +1298,13 @@ for example in document.get(selector=".example"):
 <script type="text/javascript" src="/src/py_complex.js"></script>
 <script type="text/javascript" src="/src/py_dict.js"></script>
 <script type="text/javascript" src="/src/py_list.js"></script>
+<script type="text/javascript" src="/src/js_objects.js"></script>
 <script type="text/javascript" src="/src/py_generator.js"></script>
 <script type="text/javascript" src="/src/py_dom.js"></script>
 <script type="text/javascript" src="/src/py_pattern_matching.js"></script>
-<script type="text/javascript" src="/src/builtin_modules.js"></script>
 <script type="text/javascript" src="/src/async.js"></script>
+<script type="text/javascript" src="/src/py_flags.js"></script>
+<script type="text/javascript" src="/src/builtin_modules.js"></script>
 <script type="text/javascript" src="/src/ast_to_js.js"></script>
 <script type="text/javascript" src="/src/symtable.js"></script>
 

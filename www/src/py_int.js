@@ -37,10 +37,7 @@ var int = {
     __class__: _b_.type,
     __dir__: _b_.object.__dir__,
     __mro__: [_b_.object],
-    $infos: {
-        __module__: "builtins",
-        __name__: "int"
-    },
+    __qualname__: 'int',
     $is_class: true,
     $native: true,
     $descriptors: {
@@ -48,7 +45,8 @@ var int = {
         "denominator": true,
         "imag": true,
         "real": true
-    }
+    },
+    $is_int_subclass: true
 }
 
 var int_or_long = int.$int_or_long = function(bigint){
@@ -69,6 +67,7 @@ int.$to_js_number = function(obj){
 }
 
 int.$to_bigint = bigint_value
+int.$int_value = int_value
 
 int.as_integer_ratio = function(){
   var $ = $B.args("as_integer_ratio", 1, {self:null}, ["self"],
@@ -80,7 +79,7 @@ int.from_bytes = function() {
     var $ = $B.args("from_bytes", 3,
         {bytes:null, byteorder:null, signed:null},
         ["bytes", "byteorder", "signed"],
-        arguments, {signed: false}, null, null)
+        arguments, {byteorder: 'big', signed: false}, null, null)
 
     var x = $.bytes,
         byteorder = $.byteorder,
@@ -124,8 +123,8 @@ int.from_bytes = function() {
 int.to_bytes = function(){
     var $ = $B.args("to_bytes", 3,
         {self: null, len: null, byteorder: null, signed: null},
-        ["self", "len", "byteorder", "*", "signed"],
-        arguments, {signed: false}, null, null),
+        ["self", "len", "byteorder", "signed"],
+        arguments, {len: 1, byteorder: 'big', signed: false}, null, null),
         self = $.self,
         len = $.len,
         byteorder = $.byteorder,
@@ -179,20 +178,21 @@ int.__abs__ = function(self){
     return Math.abs(int_value(self))
 }
 
-int.__add__ = function(self, other){
-    if(typeof other == "number"){
-        return int_or_long(BigInt(self) + BigInt(other))
-    }else if(other.__class__ === $B.long_int){
-        return int_or_long(BigInt(self) + other.value)
-    }else if(typeof other == "boolean"){
-        return int_or_long(BigInt(self) + (other ? 1n : 0n))
-    }else if(_b_.isinstance(other, _b_.int)){
-        return int.__add__(self, other.$brython_value)
-    }
-    return _b_.NotImplemented
+var op_model =
+`var _b_ = __BRYTHON__.builtins
+if(typeof other == "number"){
+    return _b_.int.$int_or_long(BigInt(self) + BigInt(other))
+}else if(other.__class__ === $B.long_int){
+    return _b_.int.$int_or_long(BigInt(self) + other.value)
+}else if(typeof other == "boolean"){
+    return _b_.int.$int_or_long(BigInt(self) + (other ? 1n : 0n))
+}else if(_b_.isinstance(other, _b_.int)){
+    return _b_.int.__add__(self, other.$brython_value)
 }
+return _b_.NotImplemented
+`
 
-var op_model = int.__add__ + ''
+int.__add__ = Function('self', 'other', op_model)
 
 int.__bool__ = function(self){
     return int_value(self).valueOf() == 0 ? false : true
@@ -212,6 +212,9 @@ int.__divmod__ = function(self, other){
 
 int.__eq__ = function(self, other){
     var self_as_int = int_value(self)
+    if(self_as_int.__class__ === $B.long_int){
+        return $B.long_int.__eq__(self_as_int, other)
+    }
     if(_b_.isinstance(other, int)){
         return int_value(self) == int_value(other)
     }
@@ -263,10 +266,10 @@ function preformat(self, fmt){
 
 
 int.__format__ = function(self, format_spec){
-    var fmt = new $B.parse_format_spec(format_spec)
+    var fmt = new $B.parse_format_spec(format_spec, self)
     if(fmt.type && 'eEfFgG%'.indexOf(fmt.type) != -1){
         // Call __format__ on float(self)
-        return _b_.float.__format__(self, format_spec)
+        return _b_.float.__format__($B.fast_float(self), format_spec)
     }
     fmt.align = fmt.align || ">"
     var res = preformat(self, fmt)
@@ -304,18 +307,24 @@ int.__floordiv__ = function(self, other){
     return _b_.NotImplemented
 }
 
+int.$getnewargs = function(self){
+    return $B.fast_tuple([int_value(self)])
+}
+
+int.__getnewargs__ = function(){
+    return int.$getnewargs($B.single_arg('__getnewargs__', 'self', arguments))
+}
+
 int.__hash__ = function(self){
-    if(self.$brython_value){
+    if(self.$brython_value !== undefined){
         // int subclass
-        var hash_method = $B.$getattr(self.__class__, '__hash__')
-        if(hash_method === int.__hash__){
-            if(typeof self.$brython_value == "number"){
-                return self.$brython_value
-            }else{ // long int
-                return $B.long_int.__hash__(self.$brython_value)
-            }
-        }else{
-            return hash_method(self)
+        if(self.__hashvalue__ !== undefined){
+            return self.__hashvalue__
+        }
+        if(typeof self.$brython_value == "number"){
+            return self.__hashvalue__ = self.$brython_value
+        }else{ // long int
+            return self.__hashvalue__ = $B.long_int.__hash__(self.$brython_value)
         }
     }
     return self.valueOf()
@@ -362,14 +371,21 @@ int.__mod__ = function(self, other) {
     return _b_.NotImplemented
 }
 
-eval('int.__mul__ = ' + op_model.replace(/\+/g, '*').replace(/add/g, "mul"))
+int.__mul__ = Function('self', 'other',
+    op_model.replace(/\+/g, '*').replace(/add/g, "mul"))
 
 int.__ne__ = function(self, other){
     var res = int.__eq__(self, other)
     return (res  === _b_.NotImplemented) ? res : !res
 }
 
-int.__neg__ = function(self){return -self}
+int.__neg__ = function(self){
+    var self_as_int = int_value(self)
+    if(self_as_int.__class__ === $B.long_int){
+        return $B.long_int.__neg__(self_as_int)
+    }
+    return -self
+}
 
 int.__new__ = function(cls, value, base){
     if(cls === undefined){
@@ -405,7 +421,6 @@ function extended_euclidean(a, b){
       return [d, v, u - (a / b) * v]
     }
 }
-
 
 int.__pow__ = function(self, other, z){
     if(! _b_.isinstance(other, int)){
@@ -494,18 +509,17 @@ function __newobj__(){
     return res
 }
 
-int.__reduce_ex__ = function(self){
-    return $B.fast_tuple([
-        __newobj__,
-        $B.fast_tuple([self.__class__ || int, int_value(self)]),
-        _b_.None,
-        _b_.None,
-        _b_.None])
-}
-
 int.__repr__ = function(self){
     $B.builtins_repr_check(int, arguments) // in brython_builtins.js
-    return int_value(self).toString()
+    var value = int_value(self),
+        x = value.__class__ === $B.long_int ? value.value : value
+
+    if($B.int_max_str_digits != 0 &&
+            x >= 10n ** BigInt($B.int_max_str_digits)){
+        throw _b_.ValueError.$factory(`Exceeds the limit ` +
+            `(${$B.int_max_str_digits}) for integer string conversion`)
+    }
+    return x.toString()
 }
 
 int.__setattr__ = function(self, attr, value){
@@ -525,7 +539,7 @@ int.__setattr__ = function(self, attr, value){
     return _b_.None
 }
 
-eval('int.__sub__ = ' +
+int.__sub__ = Function('self', 'other',
      op_model.replace(/\+/g, '-').replace(/__add__/g, '__sub__'))
 
 int.__truediv__ = function(self, other){
@@ -583,30 +597,29 @@ for(var attr of ['numerator', 'denominator', 'imag', 'real']){
 }
 
 // code for operands & | ^
-int.__and__ = function(self, other){
-    if(typeof other == "number"){
-        // transform into BigInt: JS converts numbers to 32 bits
-        return int_or_long(BigInt(self) & BigInt(other))
-    }else if(typeof other == "boolean"){
-        return self & (other ? 1 : 0)
-    }else if(other.__class__ === $B.long_int){
-        return int_or_long(BigInt(self) & other.value)
-    }else if(_b_.isinstance(other, _b_.int)){
-        // int subclass
-        return int.__and__(self, other.$brython_value)
-    }
-    return _b_.NotImplemented
+var model =
+`var _b_ = __BRYTHON__.builtins
+if(typeof other == "number"){
+    // transform into BigInt: JS converts numbers to 32 bits
+    return _b_.int.$int_or_long(BigInt(self) & BigInt(other))
+}else if(typeof other == "boolean"){
+    return self & (other ? 1 : 0)
+}else if(other.__class__ === $B.long_int){
+    return _b_.int.$int_or_long(BigInt(self) & other.value)
+}else if(_b_.isinstance(other, _b_.int)){
+    // int subclass
+    return _b_.int.__and__(self, other.$brython_value)
 }
+return _b_.NotImplemented`
 
-var model = int.__and__ + ''
-
-eval("int.__lshift__ = " +
+int.__and__ = Function('self', 'other', model)
+int.__lshift__ = Function('self', 'other',
      model.replace(/&/g, '<<').replace(/__and__/g, '__lshift__'))
-eval("int.__rshift__ = " +
+int.__rshift__ = Function('self', 'other',
      model.replace(/&/g, '>>').replace(/__and__/g, '__rshift__'))
-eval("int.__or__ = " +
+int.__or__ = Function('self', 'other',
      model.replace(/&/g, '|').replace(/__and__/g, '__or__'))
-eval("int.__xor__ = " +
+int.__xor__ = Function('self', 'other',
      model.replace(/&/g, '^').replace(/__and__/g, '__xor__'))
 
 int.__ge__ = function(self, other){
@@ -682,11 +695,12 @@ var $valid_digits = function(base) {
 
 int.$factory = function(value, base){
     var missing = {},
-        $ = $B.args("int", 2, {x: null, base: null}, ["x", "/", "base"],
-            arguments, {x: missing, base: missing}, null, null),
+        $ = $B.args("int", 2, {x: null, base: null}, ["x", "base"],
+            arguments, {x: missing, base: missing}, null, null, 1),
             value = $.x,
             base = $.base === undefined ? missing : $.base,
-            initial_value = value
+            initial_value = value,
+            explicit_base = base !== missing
 
     // int() with no argument returns 0
     if(value === missing || value === undefined){
@@ -699,6 +713,9 @@ int.$factory = function(value, base){
     if(_b_.isinstance(value, [_b_.bytes, _b_.bytearray])){
         // transform to string
         value = $B.$getattr(value, 'decode')('latin-1')
+    }else if(explicit_base && ! _b_.isinstance(value, _b_.str)){
+        throw _b_.TypeError.$factory(
+            "int() can't convert non-string with explicit base")
     }else if(_b_.isinstance(value, _b_.memoryview)){
         value = $B.$getattr(_b_.memoryview.tobytes(value), 'decode')('latin-1')
     }
@@ -766,8 +783,9 @@ int.$factory = function(value, base){
     }
 
     if(typeof value != "string"){ // string subclass
-        value = value.valueOf()
+        value = _b_.str.$to_string(value)
     }
+
     var _value = value.trim(),    // remove leading/trailing whitespace
         sign = ''
 
@@ -796,7 +814,7 @@ int.$factory = function(value, base){
                 base = 2
             }else if(_pre == "0O"){
                 base = 8
-            }else if(_pre == "0X"){
+           }else if(_pre == "0X"){
                 base = 16
             }else if(_value.startsWith('0')){
                 _value = _value.replace(/_/g, '')
@@ -812,7 +830,7 @@ int.$factory = function(value, base){
         }
         if((_pre == "0B" && base == 2) || _pre == "0O" || _pre == "0X"){
             _value = _value.substr(2)
-            while(_value.startsWith("_")){
+            if(_value.startsWith('_')){ // case "0b_0"
                 _value = _value.substr(1)
             }
         }
@@ -822,48 +840,80 @@ int.$factory = function(value, base){
         // _value doesn't start with 0b, 0o, 0x
         base = 10
     }
-
     var _digits = $valid_digits(base),
         _re = new RegExp("^[+-]?[" + _digits + "]" +
         "[" + _digits + "_]*$", "i"),
         match = _re.exec(_value)
     if(match === null){
-        invalid(base)
+        // try with number in non-latin alphabets
+        res = 0
+        var coef = 1
+        for(var char of _value){
+            var cp = char.codePointAt(0),
+                digit = $B.digits_mapping[cp]
+            if(digit === undefined){
+                if(base > 10 && _digits.indexOf(char.toUpperCase()) > -1){
+                    digit = char.toUpperCase().charCodeAt(0) - 55
+                }else{
+                    invalid(base)
+                }
+            }
+            if(digit < base){
+                res = $B.rich_op('__mul__', res, base)
+                res = $B.rich_op('__add__', res, digit)
+            }else{
+                invalid(base)
+            }
+        }
+        return res
     }else{
         _value = _value.replace(/_/g, "")
     }
 
-    if(base == 10){
-        res = BigInt(_value)
+    if(base == 2){
+        res = BigInt('0b' + _value)
+    }else if(base == 8){
+        res = BigInt('0o' + _value)
+    }else if(base == 16){
+        res = BigInt('0x' + _value)
     }else{
-        base = BigInt(base)
-        var res = 0n,
-            coef = 1n,
-            char
-        for(var i = _value.length - 1; i >= 0; i--){
-            char = _value[i].toUpperCase()
-            res += coef * BigInt(_digits.indexOf(char))
-            coef *= base
+        if($B.int_max_str_digits != 0 &&
+                _value.length > $B.int_max_str_digits){
+            throw _b_.ValueError.$factory("Exceeds the limit " +
+                `(${$B.int_max_str_digits}) for integer string conversion: ` +
+                `value has ${value.length} digits; use ` +
+                "sys.set_int_max_str_digits() to increase the limit.")
+        }
+        if(base == 10){
+            res = BigInt(_value)
+        }else {
+            base = BigInt(base)
+            var res = 0n,
+                coef = 1n,
+                char
+            for(var i = _value.length - 1; i >= 0; i--){
+                char = _value[i].toUpperCase()
+                res += coef * BigInt(_digits.indexOf(char))
+                coef *= base
+            }
         }
     }
     if(sign == '-'){
         res = -res
     }
-    var num = Number(res)
-    if(! Number.isSafeInteger(num)){
-        return $B.fast_long_int(res)
-    }else{
-        return Number(res)
-    }
+    return int_or_long(res)
 }
-
 $B.set_func_names(int, "builtins")
 
 _b_.int = int
 
 // Boolean type
-$B.$bool = function(obj){ // return true or false
-    if(obj === null || obj === undefined ){ return false}
+$B.$bool = function(obj, bool_class){ // return true or false
+    // bool_class is set if called by built-in bool()
+    // In this case, if __bool__ is called, it is on obj.__class__
+    if(obj === null || obj === undefined ){
+        return false
+    }
     switch(typeof obj){
         case "boolean":
             return obj
@@ -872,18 +922,41 @@ $B.$bool = function(obj){ // return true or false
             if(obj){return true}
             return false
         default:
-            if(obj.$is_class){return true}
+            if(obj.$is_class){
+                return true
+            }
             var klass = obj.__class__ || $B.get_class(obj),
                 missing = {},
-                bool_method = $B.$getattr(klass, "__bool__", missing)
+                bool_method = bool_class ?
+                              $B.$getattr(klass, "__bool__", missing):
+                              $B.$getattr(obj, "__bool__", missing)
+            var test = false // klass.$infos.__name__ == 'FlagBoundary'
+            if(test){
+                console.log('bool(obj)', obj, 'bool_class', bool_class,
+                            'klass', klass, 'apply bool method', bool_method)
+                console.log('$B.$call(bool_method)', bool_method + '')
+            }
             if(bool_method === missing){
-                try{return _b_.len(obj) > 0}
-                catch(err){return true}
+                var len_method = $B.$getattr(klass, '__len__', missing)
+                if(len_method === missing){
+                    return true
+                }
+                return len_method(obj) > 0
             }else{
-                var res = $B.$call(bool_method)(obj)
+                try{
+                    var res = bool_class ?
+                              $B.$call(bool_method)(obj) :
+                              $B.$call(bool_method)()
+
+                }catch(err){
+                    throw err
+                }
                 if(res !== true && res !== false){
                     throw _b_.TypeError.$factory("__bool__ should return " +
                         "bool, returned " + $B.class_name(res))
+                }
+                if(test){
+                    console.log('bool method returns', res)
                 }
                 return res
             }
@@ -894,11 +967,9 @@ var bool = {
     __bases__: [int],
     __class__: _b_.type,
     __mro__: [int, _b_.object],
-    $infos:{
-        __name__: "bool",
-        __module__: "builtins"
-    },
+    __qualname__: 'bool',
     $is_class: true,
+    $not_basetype: true, // bool cannot be a base class
     $native: true,
     $descriptors: {
         "numerator": true,
@@ -964,8 +1035,8 @@ bool.$factory = function(){
     // Calls $B.$bool, which is used inside the generated JS code and skips
     // arguments control.
     var $ = $B.args("bool", 1, {x: null}, ["x"],
-        arguments,{x: false}, null, null)
-    return $B.$bool($.x)
+        arguments, {x: false}, null, null)
+    return $B.$bool($.x, true)
 }
 
 bool.numerator = int.numerator

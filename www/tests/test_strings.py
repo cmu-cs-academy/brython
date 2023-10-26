@@ -468,4 +468,24 @@ assert_raises(TypeError, ord, 'ab')
 # issue 2154
 assert 'abcdef'[3:1] == ''
 
+# issue 2132
+text = codecs.encode("Beautiful is better than ugly.", "rot13")
+assert text == "Ornhgvshy vf orggre guna htyl."
+
+# issue 2136
+s = " "
+s *= 3
+assert s == "   "
+
+# issue 2137
+assert '\u007f'.encode('utf-8') == b'\x7f'
+assert '\u07ff'.encode('utf-8') == b'\xdf\xbf'
+assert '\uffff'.encode('utf-8') == b'\xef\xbf\xbf'
+
+# issue 2154
+assert 'abcdef'[3:1] == ''
+
+# issue 2155
+assert_raises(TypeError, ord, 'ab')
+
 print("passed all tests...")

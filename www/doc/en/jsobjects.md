@@ -97,7 +97,9 @@ py_obj = window.js_obj.to_dict()
 
 If the Javascript object is a function, the arguments passed to the Python
 function are converted into Javascript objects, using the reverse of the
-above table.
+above table. If the argument is a Python dictionary, it is converted into a
+Javascript object; keys in the Python dictionary are converted to strings in
+the Javascript object.
 
 Take care, a Javascript function can't be called with keyword arguments, this
 raises a `TypeError` exception : if the function is defined by
@@ -112,7 +114,7 @@ and if it is called from a Brython script by
 window.foo(y=0, x=1)
 ```
 
-passing the arguments in the excepted order is not possible, because the
+passing the arguments in the expected order is not possible, because the
 Brython script doesn't know the signature of the Javascript function.
 
 
@@ -173,7 +175,7 @@ jq.ajax('/cgi-bin/post_test.py',
 )
 
 # add an option to a SELECT box
-jq('#sel').append('<option>three')
+jq('#sel').append('<' + 'option>three')
 
 # access element attributes
 assert jq('#c').attr('id') == 'c'

@@ -11,24 +11,26 @@
 <script src="../tests/ace/ext-language_tools.js" type="text/javascript" charset="utf-8"></script>
 
 <script type="text/javascript" src="/src/brython_builtins.js"></script>
+
+<script type="text/javascript" src="/src/py_ast_classes.js"></script>
+<script type="text/javascript" src="/src/stdlib_paths.js"></script>
+<script type="text/javascript" src="/src/unicode_data.js"></script>
 <script type="text/javascript" src="/src/version_info.js"></script>
+
 <script type="text/javascript" src="/src/python_tokenizer.js"></script>
 <script type="text/javascript" src="/src/py_ast.js"></script>
 <script type="text/javascript" src="/src/py2js.js"></script>
 <script type="text/javascript" src="/src/loaders.js"></script>
+<script type="text/javascript" src="/src/py_utils.js"></script>
 <script type="text/javascript" src="/src/py_object.js"></script>
 <script type="text/javascript" src="/src/py_type.js"></script>
-<script type="text/javascript" src="/src/py_utils.js"></script>
-<script type="text/javascript" src="/src/py_sort.js"></script>
 <script type="text/javascript" src="/src/py_builtin_functions.js"></script>
+<script type="text/javascript" src="/src/py_sort.js"></script>
 <script type="text/javascript" src="/src/py_exceptions.js"></script>
 <script type="text/javascript" src="/src/py_range_slice.js"></script>
 <script type="text/javascript" src="/src/py_bytes.js"></script>
 <script type="text/javascript" src="/src/py_set.js"></script>
-<script type="text/javascript" src="/src/js_objects.js"></script>
-<script type="text/javascript" src="/src/stdlib_paths.js"></script>
 <script type="text/javascript" src="/src/py_import.js"></script>
-<script type="text/javascript" src="/src/unicode_data.js"></script>
 <script type="text/javascript" src="/src/py_string.js"></script>
 <script type="text/javascript" src="/src/py_int.js"></script>
 <script type="text/javascript" src="/src/py_long_int.js"></script>
@@ -37,20 +39,22 @@
 <script type="text/javascript" src="/src/py_dict.js"></script>
 <script type="text/javascript" src="/src/py_list.js"></script>
 <script type="text/javascript" src="/src/py_generator.js"></script>
+<script type="text/javascript" src="/src/js_objects.js"></script>
 <script type="text/javascript" src="/src/py_dom.js"></script>
 <script type="text/javascript" src="/src/py_pattern_matching.js"></script>
-<script type="text/javascript" src="/src/builtin_modules.js"></script>
 <script type="text/javascript" src="/src/async.js"></script>
+<script type="text/javascript" src="/src/py_flags.js"></script>
+<script type="text/javascript" src="/src/builtin_modules.js"></script>
 <script type="text/javascript" src="/src/ast_to_js.js"></script>
 <script type="text/javascript" src="/src/symtable.js"></script>
 
-<script type="text/javascript" src="../src/brython_stdlib.js"></script>
+<!-- script type="text/javascript" src="../src/brython_stdlib.js"></script -->
 
 <script type="text/python3" src="make_report.py">
 </script>
 
 </head>
-<body onload="brython({debug:1, cache:'none', static_stdlib_import:true})">
+<body onload="brython({debug:1, static_stdlib_import:true})">
 
 <select name="filename" id="files" autocomplete="off">
     <option value="benchmarks/assignment.py">simple assignment</option>
@@ -59,6 +63,7 @@
     <option value="benchmarks/assignment_float.py">simple assignment to float</option>
     <option value="benchmarks/big_integers.py">big integers</option>
     <option value="benchmarks/hash_string.py">hash string</option>
+    <option value="benchmarks/hash_float.py">hash float</option>
     <option value="benchmarks/build_dict.py">build dictionary</option>
     <option value="benchmarks/add_dict.py">build dictionary 2</option>
     <option value="benchmarks/set_dict_item.py">set dictionary item</option>
@@ -81,6 +86,7 @@
     <option value="benchmarks/create_instance_simple_class.py">create instance of simple class</option>
     <option value="benchmarks/create_instance_with_init.py">create instance of class with init</option>
     <option value="benchmarks/call_instance_method.py">call instance method</option>
+    <option value="benchmarks/set_instance_attribute.py">set instance attribute</option>
     <!--
     <option value="benchmarks/pystone.py">pystone</option>
     <option value="benchmarks/bm_ai.py">bm_ai (n-queens)</option>

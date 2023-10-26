@@ -1,0 +1,661 @@
+<!doctype html>
+<html>
+<head>
+<meta name="description" content="Brython">
+<meta name="keywords" content="Python,Brython">
+<meta name="author" content="Dan Stromberg, Pierre Quentel">
+<meta http-equiv="content-type" content="text/html;charset=iso-8859-1">
+
+<script type="text/javascript" src="/src/brython_builtins.js"></script>
+
+<script type="text/javascript" src="/src/py_ast_classes.js"></script>
+<script type="text/javascript" src="/src/stdlib_paths.js"></script>
+<script type="text/javascript" src="/src/unicode_data.js"></script>
+<script type="text/javascript" src="/src/version_info.js"></script>
+
+<script type="text/javascript" src="/src/python_tokenizer.js"></script>
+<script type="text/javascript" src="/src/py_ast.js"></script>
+<script type="text/javascript" src="/src/py2js.js"></script>
+<script type="text/javascript" src="/src/loaders.js"></script>
+<script type="text/javascript" src="/src/py_utils.js"></script>
+<script type="text/javascript" src="/src/py_object.js"></script>
+<script type="text/javascript" src="/src/py_type.js"></script>
+<script type="text/javascript" src="/src/py_builtin_functions.js"></script>
+<script type="text/javascript" src="/src/py_sort.js"></script>
+<script type="text/javascript" src="/src/py_exceptions.js"></script>
+<script type="text/javascript" src="/src/py_range_slice.js"></script>
+<script type="text/javascript" src="/src/py_bytes.js"></script>
+<script type="text/javascript" src="/src/py_set.js"></script>
+<script type="text/javascript" src="/src/py_import.js"></script>
+<script type="text/javascript" src="/src/py_string.js"></script>
+<script type="text/javascript" src="/src/py_int.js"></script>
+<script type="text/javascript" src="/src/py_long_int.js"></script>
+<script type="text/javascript" src="/src/py_float.js"></script>
+<script type="text/javascript" src="/src/py_complex.js"></script>
+<script type="text/javascript" src="/src/py_dict.js"></script>
+<script type="text/javascript" src="/src/py_list.js"></script>
+<script type="text/javascript" src="/src/py_generator.js"></script>
+<script type="text/javascript" src="/src/js_objects.js"></script>
+<script type="text/javascript" src="/src/py_dom.js"></script>
+<script type="text/javascript" src="/src/py_pattern_matching.js"></script>
+<script type="text/javascript" src="/src/async.js"></script>
+<script type="text/javascript" src="/src/py_flags.js"></script>
+<script type="text/javascript" src="/src/builtin_modules.js"></script>
+<script type="text/javascript" src="/src/ast_to_js.js"></script>
+<script type="text/javascript" src="/src/symtable.js"></script>
+
+<!-- script type="text/python" src="show_source.py"></script -->
+
+<style>
+.plugin {
+    width: 20px;
+    background-color: #fff;
+    border-width: 2px;
+    border-radius: 10px;
+    border-color: #000;
+    padding-right: 0px;
+    margin-right: 0px;
+}
+
+.plugins {
+    backgroundColor: pink;
+}
+
+.plugout {
+    width: 20px;
+    background-color: #fff;
+    border-width: 2px;
+    border-color: #000;
+    margin-left: 0px;
+    padding-left: 0px;
+}
+
+.controlValue {
+    width: 2em;
+    font-size: 0.5em;
+}
+
+input[type=range] {
+  height: 1em;
+  -webkit-appearance: none;
+  margin: 0.2em 0;
+  width: 6em;
+}
+
+input[type=range]:focus {
+  outline: none;
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+  width: 5em;
+  height: 1em;
+  cursor: pointer;
+  animate: 0.2s;
+  box-shadow: 0px 0px 0px #000000;
+  background: #B6B6B6;
+  border: 1px solid #8A8A8A;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  box-shadow: 1px 1px 1px #828282;
+  border: 1px solid #8A8A8A;
+  height: 0.9em;
+  width: 1em;
+  background: #DADADA;
+  cursor: pointer;
+  -webkit-appearance: none;
+}
+
+input[type=range]:focus::-webkit-slider-runnable-track {
+  background: #B6B6B6;
+}
+
+input[type=range]::-moz-range-track {
+  width: 5em;
+  height: 1em;
+  cursor: pointer;
+  animate: 0.2s;
+  box-shadow: 0px 0px 0px #000000;
+  background: #B6B6B6;
+  border: 1px solid #8A8A8A;
+}
+
+input[type=range]::-moz-range-thumb {
+  box-shadow: 1px 1px 1px #828282;
+  border: 1px solid #8A8A8A;
+  height: 0.9em;
+  width: 1em;
+  background: #DADADA;
+  cursor: pointer;
+}
+
+input[type=range]::-ms-track {
+  width: 100%;
+  height: 16px;
+  cursor: pointer;
+  animate: 0.2s;
+  background: transparent;
+  border-color: transparent;
+  color: transparent;
+}
+
+input[type=range]::-ms-fill-lower {
+  background: #B6B6B6;
+  border: 1px solid #8A8A8A;
+  border-radius: 50px;
+  box-shadow: 0px 0px 0px #000000;
+}
+
+input[type=range]::-ms-fill-upper {
+  background: #B6B6B6;
+  border: 1px solid #8A8A8A;
+  border-radius: 50px;
+  box-shadow: 0px 0px 0px #000000;
+}
+
+input[type=range]::-ms-thumb {
+  margin-top: 1px;
+  box-shadow: 1px 1px 1px #828282;
+  border: 1px solid #8A8A8A;
+  height: 24px;
+  width: 35px;
+  border-radius: 6px;
+  background: #DADADA;
+  cursor: pointer;
+}
+
+input[type=range]:focus::-ms-fill-lower {
+  background: #B6B6B6;
+}
+
+input[type=range]:focus::-ms-fill-upper {
+  background: #B6B6B6;
+}
+
+.control-legend {
+  display: inline-block;
+  width: 5em;
+  font-size: 0.7em;
+  color: blue;
+  text-align: center;
+}
+
+.control-show {
+  display: inline-block;
+  width: 1em;
+  color: blue;
+}
+
+</style>
+
+<title>Brython synth keyboard</title>
+
+</head>
+<body onload="brython(2)">
+
+<script type="text/python">
+import random
+import math
+
+from browser import document, window, html, console, bind, timer, alert, svg
+from browser.widgets import dialog
+
+import music
+
+scale = music.create_major_scale('C')
+
+audioContext = None
+playground = document['playground']
+playground.width = window.innerWidth
+playground.height = window.innerHeight - 100
+
+def plug(osc, node, widget):
+    for plugout in widget.select('.plugout'):
+        if plugout.connected:
+            plugin = plugout.destination.widget
+            destination_node = plugin.create_audio()
+            graph[osc].append([plugin, destination_node])
+            if destination_node is not None:
+                node.connect(destination_node)
+                plug(osc, destination_node, plugout.destination.widget)
+
+def search_gains(widget, t=None):
+    # return a list of the gain nodes connected to the widget
+    if t is None:
+        t = []
+    if widget not in t:
+        if widget.type == 'gain':
+            t.append(widget)
+        for plugout in widget.select('.plugout'):
+            if plugout.connected:
+                search_gains(plugout.destination.widget, t)
+    return t
+
+def create_oscillator(freq, detune=0):
+    osc = window.OscillatorNode.new(audioContext)
+    osc.frequency.value = freq
+    osc.detune.value = detune
+    return osc
+
+# list of GainNode instances associated with an oscillator
+gains = {}
+graph = {}
+
+def start_play_panel(panel, freq=None):
+    if freq is None:
+        freq = float(panel.select_one('INPUT').value)
+
+    width = float(panel.width_control.value)
+    freqs = [freq]
+
+    osc_list = [create_oscillator(freq)]
+    if width:
+        osc_list.append(create_oscillator(freq, width))
+        osc_list.append(create_oscillator(freq, -width))
+
+    for osc in osc_list:
+        osc.type = panel.wave_control.value
+        gains[osc] = []
+        graph[osc] = []
+        plug(osc, osc, panel)
+        t0 = audioContext.currentTime
+
+        for widget, node in graph[osc]:
+            if isinstance(widget, GainWidget):
+                attack = float(widget.attack_control.value)
+                v = float(widget.gain_control.value)
+                node.gain.setValueAtTime(0, t0)
+                node.gain.setTargetAtTime(v, t0, attack)
+
+        osc.start(t0)
+
+    return osc_list
+
+def stop_oscillator(osc):
+    t0 = audioContext.currentTime
+    release = 0.05
+    for (widget, node) in graph[osc]:
+        if isinstance(widget, GainWidget):
+            release = max(release, widget.stop(node))
+    osc.stop(audioContext.currentTime + release + 0.5)
+    del graph[osc]
+
+def start_play_note(freq):
+    playing[freq] = []
+    for panel in oscillators:
+        playing[freq].append(start_play_panel(panel, freq))
+
+def stop_play_note(freq):
+    for osc_list in playing[freq]:
+        for osc in osc_list:
+            stop_oscillator(osc)
+    del playing[freq]
+
+buttons = document["buttons"]
+scale = music.create_major_scale('C', 4)[:8]
+for (octave, name) in scale:
+    freq = music.note_freqs[octave][name]
+    mousedown = lambda ev, freq=freq: start_play_note(freq)
+    mouseup = lambda ev, freq=freq: stop_play_note(freq)
+    button = html.BUTTON(name, onmousedown=mousedown, onmouseup=mouseup)
+    buttons <= button
+
+playing = {}
+
+@bind(document, 'keydown')
+def keydown(ev):
+    if ev.key in '12345678':
+        octave, name = scale[int(ev.key) - 1]
+        freq = music.note_freqs[octave][name]
+        if freq not in playing:
+            start_play_note(freq)
+
+@bind(document, 'keyup')
+def keyup(ev):
+    if ev.key in '12345678':
+        octave, name = scale[int(ev.key) - 1]
+        freq = music.note_freqs[octave][name]
+        stop_play_note(freq)
+
+
+dx = 0
+dy = 50
+
+line = None
+
+def connect(plugout, plugin):
+    plugin.connected = True
+    plugin.origin = plugout
+    plugin.line = line
+    plugin.style.backgroundColor = '#000'
+    plugout.connected = True
+    plugout.destination = plugin
+    plugout.line = line
+    plugout.style.backgroundColor = '#000'
+
+
+def disconnect(plugout, plugin):
+    plugin.connected = False
+    del plugin.origin
+    plugin.line.remove()
+    plugin.style.backgroundColor = '#fff'
+    del plugin.line
+    plugout.connected = False
+    plugout.style.backgroundColor = '#fff'
+    del plugout.destination
+    del plugout.line
+
+class PlugOut(html.BUTTON):
+
+    def __init__(self, widget, *args, **kw):
+        html.BUTTON.__init__(self, *args, **kw)
+        self.widget = widget
+        self.connected = False
+        self.style.display = 'block'
+        self.bind('mousedown', self.click_plug)
+
+    def click_plug(self, ev):
+        if self.connected:
+            # disconnect
+            disconnect(self, self.destination)
+            return
+        global line
+        self.mouse_pos = [ev.x, ev.y]
+        line = svg.line(x1=ev.x + dx,
+                         y1=ev.y - dy,
+                         x2=ev.x + dx,
+                         y2=ev.y - dy,
+                         stroke='#000',
+                         stroke_width=2)
+        line.origin = self
+        playground <= line
+        document.bind('mousemove', self.draw_cable)
+        document.bind('mouseup', self.plug)
+
+    def draw_cable(self, ev):
+        line.attrs['x2'] = ev.x + dx
+        line.attrs['y2'] = ev.y - dy
+
+    def plug(self, ev):
+        global line
+        if not self.connected:
+            line.remove()
+        line = None
+        document.unbind('mousemove')
+        document.unbind('mouseup')
+
+class PlugIn(html.BUTTON):
+
+    def __init__(self, widget, *args, **kw):
+        html.BUTTON.__init__(self, *args, **kw)
+        self.widget = widget
+        self.connected = False
+        self.style.display = 'block'
+        self.bind('mouseup', self.mouseup)
+
+    def mouseup(self, ev):
+        if self.connected:
+            return
+        if line is not None:
+            connect(line.origin, self)
+
+
+@bind(document, 'dialog_down')
+def dialog_down(ev):
+    for plugin in ev.dialog.select('.plugin'):
+        if plugin.connected:
+            plugin.x2_start = int(plugin.line.attrs['x2'])
+            plugin.y2_start = int(plugin.line.attrs['y2'])
+    for plugout in ev.dialog.select('.plugout'):
+        if plugout.connected:
+            plugout.x1_start = int(plugout.line.attrs['x1'])
+            plugout.y1_start = int(plugout.line.attrs['y1'])
+
+@bind(document, 'dialog_move')
+def dialog_move(ev):
+    for plugin in ev.dialog.select('.plugin'):
+        if plugin.connected:
+            plugin.line.attrs['x2'] = plugin.x2_start + ev.dx
+            plugin.line.attrs['y2'] = plugin.y2_start + ev.dy
+    for plugout in ev.dialog.select('.plugout'):
+        if plugout.connected:
+            plugout.line.attrs['x1'] = plugout.x1_start + ev.dx
+            plugout.line.attrs['y1'] = plugout.y1_start + ev.dy
+
+@bind(document, 'dialog_close')
+def dialog_close(ev):
+    for plugin in ev.dialog.select('.plugin'):
+        if plugin.connected:
+            disconnect(plugin.origin, plugin)
+    for plugout in ev.dialog.select('.plugout'):
+        if plugout.connected:
+            disconnect(plugout, plugout.destination)
+
+class Control(html.DIV):
+
+    def __init__(self, legend, min_value, max_value, step, value, variable=None):
+        html.DIV.__init__(self)
+
+        self.control = html.INPUT(type='range', min=min_value, max=max_value,
+                                  step=step,
+                                  value=value)
+        control_show = html.SPAN(self.control.value, Class='controlValue')
+        if variable is not None:
+            setattr(variable, "value", self.control.value)
+
+        @bind(self.control, 'input')
+        def change(ev):
+            control_show.text = self.control.value
+            if variable is not None:
+                if hasattr(variable, 'setValueAtTime'):
+                    variable.setValueAtTime(self.control.value,
+                      audioContext.currentTime)
+                else:
+                    setattr(variable, "value", self.control.value)
+
+        self <= (html.SPAN(legend, Class='control-legend') +
+                 self.control +
+                 html.SPAN(control_show, Class='control-show'))
+
+    @property
+    def value(self):
+        return self.control.value
+
+
+oscillators = []
+shapes = "sine", "sawtooth", "triangle", "square"
+
+
+@bind('#oscillator', 'click')
+def add_oscillator(ev):
+    init_context()
+    widget = Widget('Oscillator', 'oscillator', left=100, top=100)
+    widget.add_plugins(4)
+    widget.add_plugouts(4)
+
+    widget.wave_control = html.SELECT(html.OPTION(w) for w in shapes)
+
+    widget.middle <= html.DIV('Waveform' + widget.wave_control)
+    widget.middle.style.verticalAlign = 'middle'
+
+    widget.width_control = Control('Width', 0, 50, 1, 0)
+    widget.middle <= widget.width_control
+
+    oscillators.append(widget)
+
+@bind('#gain', 'click')
+def add_gain(ev):
+    init_context()
+    widget = GainWidget('Gain', 'gain', left=400, top=100)
+    widget.add_plugins(4)
+    widget.add_plugouts(4)
+
+    widget.gain_control = Control('Volume', 0, 1, 0.01, 0.5)
+
+    @bind(widget.gain_control, 'input')
+    def change_gain(ev):
+        for node in widget.nodes:
+            node.gain.setValueAtTime(float(ev.target.value),
+                audioContext.currentTime)
+
+    widget.attack_control = Control('Attack', 0, 1, 0.01, 0.2)
+    widget.release_control = Control('Release', 0, 1, 0.01, 0.2)
+
+    widget.middle <= (widget.gain_control +
+                      widget.attack_control +
+                      widget.release_control)
+
+
+@bind('#filter', 'click')
+def add_filter(ev):
+    init_context()
+    widget = FilterWidget('Filter', 'filter')
+    widget.add_plugins(4)
+    widget.add_plugouts(4)
+
+    max_filter_freq = audioContext.sampleRate / 2
+    widget.frequency_control = Control('Frequency', 0, max_filter_freq, 1, 440)
+    widget.q_control = Control('Q', 0, 100, 1, 25)
+
+    @bind(widget.frequency_control, 'input')
+    def change_freq(ev):
+        value = float(ev.target.value)
+        for node in widget.nodes:
+            node.frequency.value = value
+
+    @bind(widget.q_control, 'input')
+    def change_freq(ev):
+        value = float(ev.target.value)
+        for node in widget.nodes:
+            node.Q.value = value
+
+    widget.middle <= widget.frequency_control + widget.q_control
+
+
+@bind('#echo', 'click')
+def add_echo(ev):
+    init_context()
+    widget = EchoWidget('Echo', 'echo')
+    widget.add_plugins(4)
+    widget.add_plugouts(4)
+
+    widget.delayTime_control = Control('Delay time', 0, 1, 0.01, 0.2)
+    widget.feedback_control = Control('Feedback', 0, 1, 0.01, 0.2)
+
+    @bind(widget.delayTime_control, 'input')
+    def change_delay_time(ev):
+        value = float(ev.target.value)
+        for delay, feedback in widget.nodes:
+            delay.delayTime.value = value
+
+    @bind(widget.feedback_control, 'input')
+    def change_delay_time(ev):
+        value = float(ev.target.value)
+        for delay, feedback in widget.nodes:
+            feedback.gain.value = value
+
+    widget.middle <= widget.delayTime_control + widget.feedback_control
+
+
+class Widget(dialog.Dialog):
+
+    def __init__(self, title, _type, **kw):
+        super().__init__(title, **kw)
+        self.panel.style.marginRight = '0px'
+        self.panel.style.paddingRight = '0px'
+        self.type = _type
+        self.plugins = html.TD(Class="plugins")
+        self.middle = html.TD()
+        self.plugouts = html.TD(Class="plugouts")
+        self.panel <= html.TABLE(html.TR(self.plugins + self.middle + self.plugouts),
+                                 cellpadding=0, cellspacing=0)
+        self.nodes = []
+
+    def __repr__(self):
+        return f'<{self.type} widget>'
+
+    __str__ = __repr__
+
+    def add_plugins(self, nb=4):
+        for i in range(4):
+            self.plugins <= PlugIn(self, '&nbsp;', Class='plugin')
+
+    def add_plugouts(self, nb=4):
+        for i in range(4):
+            self.plugouts <= PlugOut(self, '&nbsp;', Class='plugout')
+
+    def create_audio(self):
+        pass
+
+class GainWidget(Widget):
+
+    def create_audio(self):
+        node = window.GainNode.new(audioContext)
+        node.gain.value = 0
+        self.nodes.append(node)
+        return node
+
+    def stop(self, node):
+        release_time = float(self.release_control.value)
+        node.gain.setTargetAtTime(0, audioContext.currentTime, release_time)
+        self.nodes.remove(node)
+        return release_time
+
+class EchoWidget(Widget):
+
+    def create_audio(self):
+        delay = window.DelayNode.new(audioContext)
+        delay.delayTime.value = float(self.delayTime_control.value)
+        feedback = window.GainNode.new(audioContext)
+        feedback.gain.value = float(self.feedback_control.value)
+        delay.connect(feedback)
+        feedback.connect(delay)
+        self.nodes.append((delay, feedback))
+        return delay
+
+class FilterWidget(Widget):
+
+    def create_audio(self):
+        node = window.BiquadFilterNode.new(audioContext)
+        node.type = 'lowpass'
+        node.frequency.value = float(self.frequency_control.value)
+        node.Q.value = float(self.q_control.value)
+        self.nodes.append(node)
+        return node
+
+def init_context():
+    global audioContext
+    if audioContext is None:
+        audioContext = window.AudioContext.new()
+        w.audio_node = audioContext.destination
+
+
+class DestinationWidget(Widget):
+
+    def create_audio(self):
+        return audioContext.destination
+
+w = DestinationWidget('Speakers',
+           'destination',
+           can_close=False,
+           left=700,
+           top=100)
+w.add_plugins(4)
+
+
+</script>
+
+<div id="buttons">
+<button id="oscillator">add oscillator</button>
+<button id="gain">add gain</button>
+<button id="filter">add filter</button>
+<button id="echo">add echo</button>
+</div>
+
+<div id="zone">
+  <svg id="playground" width=800 height=600 style="position:absolute;left:10px;top:50px;background-color:#eee"></svg>
+</div>
+</body>
+</html>
+
+

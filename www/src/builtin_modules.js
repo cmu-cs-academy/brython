@@ -12,7 +12,7 @@
         $is_package: true,
         __initialized__: true,
         __package__: 'browser',
-        __file__: $B.brython_path.replace(/\/*$/g,'') +
+        __file__: $B.brython_path.replace(new RegExp("/*$", "g"),'') +
             '/Lib/browser/__init__.py',
 
         bind:function(){
@@ -21,9 +21,14 @@
                     ["elt", "evt", "options"], arguments,
                     {options: _b_.None}, null, null)
             var options = $.options
-            if(typeof options == "boolean"){}
-            else if(options.__class__ === _b_.dict){
-                options = options.$string_dict
+            if(typeof options == "boolean"){
+                // ignore
+            }else if(options.__class__ === _b_.dict){
+                var _options = {}
+                for(var key of _b_.dict.$keys_string(options)){
+                    _options[key] = _b_.dict.$getitem_string(options, key)
+                }
+                options = _options
             }else{
                 options == false
             }
@@ -171,15 +176,13 @@
                 // return the dictionary for the class associated with tagName
                 var dict = {
                     __class__: _b_.type,
-                    $infos:{
-                        __name__: tagName,
-                        __module__: "browser.html",
-                        __qualname__: tagName
-                    }
+                    __name__: tagName,
+                    __module__: "browser.html",
+                    __qualname__: tagName
                 }
 
                 dict.__init__ = function(){
-                    var $ns = $B.args('pow', 1, {self: null}, ['self'],
+                    var $ns = $B.args('__init__', 1, {self: null}, ['self'],
                         arguments, {}, 'args', 'kw'),
                         self = $ns['self'],
                         args = $ns['args']
@@ -216,17 +219,15 @@
                     }
 
                     // attributes
-                    var items = _b_.list.$factory(_b_.dict.items($ns['kw']))
-                    for(var i = 0, len = items.length; i < len; i++){
+                    for(var arg in $ns.kw.$jsobj){
                         // keyword arguments
-                        var arg = items[i][0],
-                            value = items[i][1]
+                        var value = $ns.kw.$jsobj[arg]
                         if(arg.toLowerCase().substr(0,2) == "on"){
                             // Event binding passed as argument "onclick", "onfocus"...
                             // Better use method bind of DOMNode objects
-                            var js = '$B.DOMNode.bind(self,"' +
-                                arg.toLowerCase().substr(2)
-                            eval(js + '",function(){' + value + '})')
+                            $B.DOMNode.bind(self,
+                                            arg.toLowerCase().substr(2),
+                                            value)
                         }else if(arg.toLowerCase() == "style"){
                             $B.DOMNode.set_style(self, value)
                         }else{
@@ -236,7 +237,7 @@
                                     // Call attribute mapper (cf. issue#1187)
                                     arg = $B.imported["browser.html"].
                                         attribute_mapper(arg)
-                                    self.setAttribute(arg, value)
+                                    self.setAttribute(arg, $B.pyobj2jsobj(value))
                                 }catch(err){
                                     throw _b_.ValueError.$factory(
                                         "can't set attribute " + arg)
@@ -258,6 +259,10 @@
                     return res
                 }
 
+                dict.__rmul__ = function(self, num){
+                    return $B.DOMNode.__mul__(self, num)
+                }
+
                 $B.set_func_names(dict, "browser.html")
                 return dict
             }
@@ -265,11 +270,11 @@
             function makeFactory(klass){
                 // Create the factory function for HTML tags.
                 var factory = function(){
-                    if(klass.$infos.__name__ == 'SVG'){
+                    if(klass.__name__ == 'SVG'){
                         var res = $B.DOMNode.$factory(
                             document.createElementNS("http://www.w3.org/2000/svg", "svg"), true)
                     }else{
-                        var res = document.createElement(klass.$infos.__name__)
+                        var res = document.createElement(klass.__name__)
                     }
                     // apply __init__
                     var init = $B.$getattr(klass, "__init__", null)
@@ -374,8 +379,20 @@
     var super_class = $B.make_class("JavascriptSuper",
         function(){
             // Use Brython's super() to get a reference to self
-            var b_super = _b_.super.$factory(),
-                b_self = b_super.__self_class__,
+            var res = _b_.super.$factory()
+            var js_constr = res.__thisclass__.__bases__[0]
+            return function(){
+                var obj = new js_constr.$js_func(...arguments)
+                console.log('obj from js constr', obj)
+                for(var attr in obj){
+                    console.log('attr', attr)
+                    res.__self_class__.__dict__[attr] = $B.jsobj2pyobj(obj[attr])
+                }
+                return obj
+            }
+            /*
+            console.log('b_super', b_super)
+            var b_self = b_super.__self_class__,
                 proto = Object.getPrototypeOf(b_self),
                 parent = proto.constructor.$parent
             var factory = function(){
@@ -386,7 +403,7 @@
                 }else{
                     res = p(...arguments)
                 }
-                for(key in res){
+                for(var key in res){
                     b_self[key] = res[key]
                 }
                 return res
@@ -396,6 +413,7 @@
                 __init__: factory,
                 __self_class__: b_self
             }
+            */
         }
     )
 
@@ -417,33 +435,17 @@
         },
         "Date": self.Date && $B.JSObj.$factory(self.Date),
         "extends": function(js_constr){
+            if((!js_constr.$js_func) ||
+                    ! js_constr.$js_func.toString().startsWith('class ')){
+                console.log(js_constr)
+                throw _b_.TypeError.$factory(
+                    'argument of extend must be a Javascript class')
+            }
+            js_constr.__class__ = _b_.type
             return function(obj){
-                if(obj.$is_class){
-                    var factory = function(){
-                        var init = $B.$getattr(obj, "__init__", _b_.None)
-                        if(init !== _b_.None){
-                            init.bind(this, this).apply(this, arguments)
-                        }
-                        return this
-                    }
-                    factory.prototype = Object.create(js_constr.prototype)
-                    factory.prototype.constructor = factory
-                    factory.$parent = js_constr.$js_func
-                    factory.$is_class = true // for $B.$call
-                    factory.$infos = obj.$infos
-                    for(var key in obj){
-                        if(typeof obj[key] == "function"){
-                            factory.prototype[key] = (function(x){
-                                return function(){
-                                    // Add "this" as first argument of method
-                                    return obj[x].bind(this, this).apply(this,
-                                        arguments)
-                                }
-                            })(key)
-                        }
-                    }
-                    return factory
-                }
+                obj.__bases__.splice(0, 0, js_constr)
+                obj.__mro__.splice(0, 0, js_constr)
+                return obj
             }
         },
         import_js: function(url, name){
@@ -487,10 +489,30 @@
                         alias.pop() // remove extension
                     }
                     alias = alias.join('.')
+                    result.__name__ = alias
                 }
                 $B.imported[alias] = result
                 var frame = $B.last($B.frames_stack)
                 frame[1][alias] = result
+            }
+        },
+        import_modules: function(refs, callback, loaded){
+            // loads the Javascript modules referenced by module_refs, then
+            // calls callback with arguments = the module objects
+            if(loaded === undefined){
+                loaded = []
+            }
+            if(refs.length > 1){
+                var ref = refs.shift()
+                import(ref).then(function(module){
+                    loaded.push(module)
+                    $B.imported.javascript.import_modules(refs, callback, loaded)
+                }).catch($B.show_error)
+            }else{
+                import(refs[0]).then(function(module){
+                    loaded.push(module)
+                    return $B.$call(callback).apply(null, loaded)
+                }).catch($B.show_error)
             }
         },
         JSObject: $B.JSObj,
@@ -535,8 +557,8 @@
         UndefinedType: $B.UndefinedType
     }
 
-    modules.javascript.NullType.$infos.__module__ = 'javascript'
-    modules.javascript.UndefinedType.$infos.__module__ = 'javascript'
+    modules.javascript.NullType.__module__ = 'javascript'
+    modules.javascript.UndefinedType.__module__ = 'javascript'
 
     var arraybuffers = ["Int8Array", "Uint8Array", "Uint8ClampedArray",
         "Int16Array", "Uint16Array", "Int32Array", "Uint32Array",
@@ -547,6 +569,37 @@
         }
     })
 
+    // Default standard output and error
+    // Can be reset by sys.stdout or sys.stderr
+    var $io = $B.$io = $B.make_class("io",
+        function(out){
+            return {
+                __class__: $io,
+                out,
+                encoding: 'utf-8'
+            }
+        }
+    )
+
+    $io.flush = function(self){
+        if(self.buf){
+            console[self.out](self.buf.join(''))
+            self.buf = []
+        }
+    }
+
+    $io.write = function(self, msg){
+        // Default to printing to browser console
+        if(self.buf === undefined){
+            self.buf = []
+        }
+        if(typeof msg != "string"){
+            throw _b_.TypeError.$factory("write() argument must be str, not " +
+                $B.class_name(msg))
+        }
+        self.buf.push(msg)
+        return _b_.None
+    }
     // _sys module is at the core of Brython since it is paramount for
     // the import machinery.
     // see https://github.com/brython-dev/brython/issues/189
@@ -662,22 +715,9 @@
             $B.tracefunc.$current_frame_id = $B.last($B.frames_stack)[0]
             return _b_.None
         },
-        stderr: _b_.property.$factory(
-            function(){
-                return $B.stderr
-            },
-            function(self, value){
-                $B.stderr = value
-            }
-        ),
-        stdout: _b_.property.$factory(
-            function(){
-                return $B.stdout
-            },
-            function(self, value){
-                $B.stdout = value
-            }
-        ),
+        stderr: console.error !== undefined ? $io.$factory("error") :
+                    $io.$factory("log"),
+        stdout: $io.$factory("log"),
         stdin: _b_.property.$factory(
             function(){
                 return $B.stdin
@@ -740,6 +780,17 @@
         ],
         warn: function(message){
             // Issue a warning, or maybe ignore it or raise an exception.
+            var $ = $B.args('warn', 4,
+                            {message: null, category: null, stacklevel: null, source: null},
+                            ['message', 'category', 'stacklevel', 'source'],
+                            arguments, {category: _b_.None, stacklevel: 1, source: _b_.None},
+                            null, null),
+                    message = $.message,
+                    category = $.category,
+                    stacklevel = $.stacklevel
+            if(_b_.isinstance(message, _b_.Warning)){
+                category = $B.get_class(message)
+            }
             var filters
             if($B.imported.warnings){
                 filters = $B.imported.warnings.filters
@@ -756,8 +807,7 @@
                 syntax_error.line = message.line
                 throw syntax_error
             }
-            var category = message.__class__ || $B.get_class(message),
-                warning_message
+            var warning_message
             if(category === _b_.SyntaxWarning){
                 var file = message.filename,
                     lineno = message.lineno,
@@ -774,7 +824,8 @@
                     _category_name: category.__name__
                 }
             }else{
-                var frame = $B.imported._sys.Getframe(),
+                var frame_rank = Math.max(0, $B.frames_stack.length - stacklevel),
+                    frame = $B.frames_stack[frame_rank],
                     file = frame.__file__,
                     f_code = $B._frame.f_code.__get__(frame),
                     lineno = frame.$lineno,
@@ -803,8 +854,9 @@
                 if(line){
                     trace += '\n    ' + line.trim()
                 }
-                $B.$getattr($B.stderr, 'write')(trace + '\n')
-                var flush = $B.$getattr($B.stderr, 'flush', _b_.None)
+                var stderr = $B.get_stderr()
+                $B.$getattr(stderr, 'write')(trace + '\n')
+                var flush = $B.$getattr(stderr, 'flush', _b_.None)
                 if(flush !== _b_.None){
                     flush()
                 }
@@ -858,20 +910,25 @@
         _b_[attr] = value
     }
 
-    $B.method_descriptor.__getattribute__ = $B.Function.__getattribute__
-    $B.wrapper_descriptor.__getattribute__ = $B.Function.__getattribute__
+    $B.method_descriptor.__getattribute__ = $B.function.__getattribute__
+    $B.wrapper_descriptor.__getattribute__ = $B.function.__getattribute__
 
     // Set type of methods of builtin classes
     for(var name in _b_){
+        var builtin = _b_[name]
         if(_b_[name].__class__ === _b_.type){
+            _b_[name].__qualname__ = name
+            _b_[name].__module__ = 'builtins'
+            _b_[name].__name__ = name
+            _b_[name].$is_builtin_class = true
             $B.builtin_classes.push(_b_[name]) // defined in brython_builtins.js
             for(var key in _b_[name]){
                 var value = _b_[name][key]
-                if(value === undefined){continue}
-                else if(value.__class__){continue}
-                else if(typeof value != "function"){continue}
-                else if(key == "__new__"){
-                    value.__class__ = $B.builtin_function
+                if(value === undefined || value.__class__ ||
+                        typeof value != 'function'){
+                    continue
+                }else if(key == "__new__"){
+                    value.__class__ = $B.builtin_function_or_method
                 }else if(key.startsWith("__")){
                     value.__class__ = $B.wrapper_descriptor
                 }else{
@@ -879,8 +936,14 @@
                 }
                 value.__objclass__ = _b_[name]
             }
+        }else if(typeof builtin == 'function'){
+            builtin.$infos = {
+                __name__: name,
+                __qualname__: name
+            }
         }
     }
+
     // Attributes of __BRYTHON__ are Python lists
     for(var attr in $B){
         if(Array.isArray($B[attr])){
@@ -935,14 +998,30 @@
 
     $B.set_func_names($B.cell, "builtins")
 
+    // Set __flags__ of internal classes, defined in py_flags.js
+    for(var flag in $B.builtin_class_flags.builtins){
+        for(var key of $B.builtin_class_flags.builtins[flag]){
+            if(_b_[key]){
+                _b_[key].__flags__ = parseInt(flag)
+            }else{
+                console.log('not in _b_', key)
+            }
+        }
+    }
+
+    for(var flag in $B.builtin_class_flags.types){
+        for(var key of $B.builtin_class_flags.types[flag]){
+            if($B[key]){
+                $B[key].__flags__ = parseInt(flag)
+            }
+        }
+    }
 
     $B.AST = {
         __class__: _b_.type,
         __mro__: [_b_.object],
-        $infos:{
-            __qualname__: 'AST',
-            __name__: 'AST'
-        },
+        __name__: 'AST',
+        __qualname__: 'AST',
         $is_class: true,
         $convert: function(js_node){
             if(js_node === undefined){
@@ -958,14 +1037,15 @@
                 // literal constant
                 switch(js_node.type){
                     case 'int':
-                        var res = parseInt(js_node.value[1], js_node.value[0])
-                        if(res < $B.min_int || res > $B.max_int){
-                            var res = $B.fast_long_int(BigInt(res))
-                            return res
+                        var value = js_node.value[1],
+                            base = js_node.value[0]
+                        var res = parseInt(value, base)
+                        if(! Number.isSafeInteger(res)){
+                            res = $B.long_int.$factory(value, base)
                         }
-                        return js_node.sign == '-' ? -res : res
+                        return res
                     case 'float':
-                        return new Number(js_node.value)
+                        return $B.fast_float(parseFloat(js_node.value))
                     case 'imaginary':
                         return $B.make_complex(0,
                             $B.AST.$convert(js_node.value))
@@ -998,5 +1078,19 @@
         }
     }
 
+
+$B.stdin = {
+    __class__: $io,
+    __original__: true,
+    closed: false,
+    len: 1,
+    pos: 0,
+    read: function (){
+        return ""
+    },
+    readline: function(){
+        return ""
+    }
+}
 
 })(__BRYTHON__)

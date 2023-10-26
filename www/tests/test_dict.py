@@ -242,4 +242,17 @@ else:
 assert set() | {}.keys() == set()
 assert set() | set() == set()
 
+# iteration while changing keys
+d = {True: 0}
+
+for (k, v) in d.items():
+  d[1] = 'y'
+
+assert d == {True: 'y'}
+
+# issue 2200
+d = {"Corriger les erreurs d'extraction" : 1}
+d[list(d.keys())[0]]
+
+
 print("passed all tests..")

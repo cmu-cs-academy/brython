@@ -449,15 +449,8 @@ function $EventsList(elt, evt, arg){
     }
 }
 
-var OpenFile = $B.OpenFile = {
-    __class__: _b_.type,  // metaclass type
-    __mro__: [object],
-    $infos: {
-        __module__: "<pydom>",
-        __name__: "OpenFile"
-    },
-    $is_class: true
-}
+var OpenFile = $B.OpenFile = $B.make_class('OpenFile')
+OpenFile.__module__ = "<pydom>"
 
 OpenFile.$factory = function(file, mode, encoding) {
     var res = {
@@ -620,9 +613,16 @@ DOMNode.__getattribute__ = function(self, attr){
             var computed = window.getComputedStyle(self).
                                   getPropertyValue(attr)
             if(computed !== undefined){
+                if(computed == ''){
+                    if(self.style[attr] !== undefined){
+                        return parseInt(self.style[attr])
+                    }else{
+                        return 0
+                    }
+                }
                 var prop = Math.floor(parseFloat(computed) + 0.5)
-                return isNaN(prop) ? computed : prop
-            } else if(self.style[attr]){
+                return isNaN(prop) ? 0 : prop
+            }else if(self.style[attr]){
                 return parseInt(self.style[attr])
             }else{
                 throw _b_.AttributeError.$factory("style." + attr +
@@ -701,32 +701,43 @@ DOMNode.__getattribute__ = function(self, attr){
         return res
     }
 
+    var klass = $B.get_class(self)
+
     var property = self[attr]
 
     if(property !== undefined && self.__class__ &&
-            self.__class__.__module__ != "browser.html" &&
-            self.__class__.__module__ != "browser.svg" &&
-            ! self.__class__.$webcomponent){
-        // cf. issue #1543 : if an element has the attribute "attr" set and
-        // its class has an attribute of the same name, show a warning that
-        // the class attribute is ignored
-        var bases = self.__class__.__bases__
-        var show_message = true
-        for(var base of bases){
-            if(base.__module__ == "browser.html"){
-                show_message = false
-                break
+            klass.__module__ != "browser.html" &&
+            klass.__module__ != "browser.svg" &&
+            ! klass.$webcomponent){
+        var from_class = $B.$getattr(klass, attr, null)
+        if(from_class !== null){
+            property = from_class
+            if(typeof from_class === 'function'){
+                return property.bind(self, self)
             }
-        }
-        if(show_message){
-            var from_class = $B.$getattr(self.__class__, attr, _b_.None)
-            if(from_class !== _b_.None){
-                var frame = $B.last($B.frames_stack),
-                    line = frame.$lineno
-                console.info("Warning: line " + line + ", " + self.tagName +
-                    " element has instance attribute '" + attr + "' set." +
-                    " Attribute of class " + $B.class_name(self) +
-                    " is ignored.")
+        }else{
+
+            // cf. issue #1543 : if an element has the attribute "attr" set and
+            // its class has an attribute of the same name, show a warning that
+            // the class attribute is ignored
+            var bases = self.__class__.__bases__
+            var show_message = true
+            for(var base of bases){
+                if(base.__module__ == "browser.html"){
+                    show_message = false
+                    break
+                }
+            }
+            if(show_message){
+                var from_class = $B.$getattr(self.__class__, attr, _b_.None)
+                if(from_class !== _b_.None){
+                    var frame = $B.last($B.frames_stack),
+                        line = frame.$lineno
+                    console.info("Warning: line " + line + ", " + self.tagName +
+                        " element has instance attribute '" + attr + "' set." +
+                        " Attribute of class " + $B.class_name(self) +
+                        " is ignored.")
+                }
             }
         }
     }
@@ -750,8 +761,9 @@ DOMNode.__getattribute__ = function(self, attr){
                     }
                 }
             }
+        }else{
+            return object.__getattribute__(self, attr)
         }
-        return object.__getattribute__(self, attr)
     }
 
     var res = property
@@ -761,6 +773,15 @@ DOMNode.__getattribute__ = function(self, attr){
             return _b_.None
         }
         if(typeof res === "function"){
+            if(self.__class__ && self.__class__.$webcomponent){
+                var method = $B.$getattr(self.__class__, attr, null)
+                if(method !== null){
+                    // element is a web component, function is a method of the
+                    // webcomp class: call it with Python arguments, bind to
+                    // self. Cf. issue #2190
+                    return res.bind(self)
+                }
+            }
             if(res.$is_func){
                 // If the attribute was set in __setattr__ (elt.foo = func),
                 // then getattr(elt, "foo") must be "func"
@@ -826,11 +847,13 @@ DOMNode.__getitem__ = function(self, key){
     if(self.nodeType == 9){ // Document
         if(typeof key.valueOf() == "string"){
             var res = self.getElementById(key)
-            if(res){return DOMNode.$factory(res)}
+            if(res){
+                return DOMNode.$factory(res)
+            }
             throw _b_.KeyError.$factory(key)
         }else{
             try{
-                var elts = self.getElementsByTagName(key.$infos.__name__),
+                var elts = self.getElementsByTagName(key.__name__),
                     res = []
                     for(var i = 0; i < elts.length; i++){
                         res.push(DOMNode.$factory(elts[i]))
@@ -844,15 +867,21 @@ DOMNode.__getitem__ = function(self, key){
         if((typeof key == "number" || typeof key == "boolean") &&
             typeof self.item == "function"){
                 var key_to_int = _b_.int.$factory(key)
-                if(key_to_int < 0){key_to_int += self.length}
+                if(key_to_int < 0){
+                    key_to_int += self.length
+                }
                 var res = DOMNode.$factory(self.item(key_to_int))
-                if(res === undefined){throw _b_.KeyError.$factory(key)}
+                if(res === undefined){
+                    throw _b_.KeyError.$factory(key)
+                }
                 return res
         }else if(typeof key == "string" &&
                  self.attributes &&
                  typeof self.attributes.getNamedItem == "function"){
              var attr = self.attributes.getNamedItem(key)
-             if(!!attr){return attr.value}
+             if(!!attr){
+                 return attr.value
+             }
              throw _b_.KeyError.$factory(key)
         }
     }
@@ -918,7 +947,7 @@ DOMNode.__mul__ = function(self,other){
         var res = TagSum.$factory()
         var pos = res.children.length
         for(var i = 0; i < other.valueOf(); i++){
-            res.children[pos++] = DOMNode.clone(self)()
+            res.children[pos++] = DOMNode.clone(self)
         }
         return res
     }
@@ -989,12 +1018,12 @@ DOMNode.__setattr__ = function(self, attr, value){
             case "top":
             case "width":
             case "height":
-                if(_b_.isinstance(value, _b_.int) && self.nodeType == 1){
+                if(_b_.isinstance(value, [_b_.int, _b_.float]) && self.nodeType == 1){
                     self.style[attr] = value + "px"
                     return _b_.None
                 }else{
                     throw _b_.ValueError.$factory(attr + " value should be" +
-                        " an integer, not " + $B.class_name(value))
+                        " an integer or float, not " + $B.class_name(value))
                 }
                 break
         }
@@ -1005,6 +1034,9 @@ DOMNode.__setattr__ = function(self, attr, value){
         function warn(msg){
             console.log(msg)
             var frame = $B.last($B.frames_stack)
+            if(! frame){
+                return
+            }
             if($B.debug > 0){
                 var file = frame.__file__,
                     lineno = frame.$lineno
@@ -1114,7 +1146,7 @@ DOMNode.bind = function(self, event){
                 if(err.__class__ !== undefined){
                     $B.handle_error(err)
                 }else{
-                    try{$B.$getattr($B.stderr, "write")(err)}
+                    try{$B.$getattr($B.get_stderr(), "write")(err)}
                     catch(err1){console.log(err)}
                 }
             }
@@ -1138,7 +1170,9 @@ DOMNode.bind = function(self, event){
 
 DOMNode.children = function(self){
     var res = []
-    if(self.nodeType == 9){self = self.body}
+    if(self.nodeType == 9){
+        self = self.body
+    }
     for(var child of self.children){
         res.push(DOMNode.$factory(child))
     }
@@ -1234,11 +1268,7 @@ DOMNode.get = function(self){
     var args = []
     for(var i = 1; i < arguments.length; i++){args.push(arguments[i])}
     var $ns = $B.args("get", 0, {}, [], args, {}, null, "kw"),
-        $dict = {},
-        items = _b_.list.$factory(_b_.dict.items($ns["kw"]))
-    items.forEach(function(item){
-        $dict[item[0]] = item[1]
-    })
+        $dict = $ns.kw.$jsobj
 
     if($dict["name"] !== undefined){
         if(self.getElementsByName === undefined){
@@ -1422,6 +1452,7 @@ DOMNode.set_html = function(self, value){
 DOMNode.set_style = function(self, style){ // style is a dict
     if(typeof style === 'string'){
         self.style = style
+        return
     }else if(!_b_.isinstance(style, _b_.dict)){
         throw _b_.TypeError.$factory("style must be str or dict, not " +
             $B.class_name(style))
@@ -1657,8 +1688,8 @@ TagSum.__add__ = function(self, other){
 
 TagSum.__radd__ = function(self, other){
     var res = TagSum.$factory()
-    res.children = self.children.concat(
-        DOMNode.$factory(document.createTextNode(other)))
+    res.children = self.children.slice()
+    res.children.splice(0, 0, DOMNode.$factory(document.createTextNode(other)))
     return res
 }
 

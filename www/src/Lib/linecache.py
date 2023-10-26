@@ -134,7 +134,7 @@ def updatecache(filename, module_globals=None):
     try:
         with open(fullname, 'r') as fp:
             lines = fp.readlines()
-    except OSError:
+    except (OSError, UnicodeDecodeError, SyntaxError):
         return []
     if lines and not lines[-1].endswith('\n'):
         lines[-1] += '\n'
@@ -153,7 +153,7 @@ def lazycache(filename, module_globals):
 
     :return: True if a lazy load is registered in the cache,
         otherwise False. To register such a load a module loader with a
-        get_source method must be found, the filename must be a cachable
+        get_source method must be found, the filename must be a cacheable
         filename, and the filename must not be already cached.
     """
     if filename in cache:

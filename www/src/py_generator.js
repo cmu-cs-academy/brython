@@ -131,6 +131,16 @@ $B.generator.send = function(self, value){
 }
 
 $B.generator.throw = function(self, type, value, traceback){
+    var $ = $B.args('throw', 4,
+                    {self: null, type: null, value: null, traceback: null},
+                    ['self', 'type', 'value', 'traceback'],
+                    arguments,
+                    {value: _b_.None, traceback: _b_.None},
+                    null, null),
+        self = $.self,
+        type = $.type,
+        value = $.value,
+        traceback = $.traceback
     var gen = self.js_gen,
         exc = type
 
@@ -138,19 +148,19 @@ $B.generator.throw = function(self, type, value, traceback){
         if(! _b_.issubclass(type, _b_.BaseException)){
             throw _b_.TypeError.$factory("exception value must be an " +
                 "instance of BaseException")
-        }else if(value === undefined){
+        }else if(value === undefined || value === _b_.None){
             exc = $B.$call(exc)()
         }else if(_b_.isinstance(value, type)){
             exc = value
         }
     }else{
-        if(value === undefined){
+        if(value === _b_.None){
             value = exc
         }else{
             exc = $B.$call(exc)(value)
         }
     }
-    if(traceback !== undefined){
+    if(traceback !== _b_.None){
         exc.$traceback = traceback
     }
     var save_stack = $B.frames_stack.slice()

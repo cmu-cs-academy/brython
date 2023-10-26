@@ -6,9 +6,8 @@ var _b_ = $B.builtins
 var object = {
     //__class__:$type, : not here, added in py_type.js after $type is defined
     // __bases__ : set to an empty tuple in py_list.js after tuple is defined
-    $infos:{
-        __name__: "object"
-    },
+    __name__: 'object',
+    __qualname__: 'object',
     $is_class: true,
     $native: true
 }
@@ -24,9 +23,9 @@ var opnames = ["add", "sub", "mul", "truediv", "floordiv", "mod", "pow",
 var opsigns = ["+", "-", "*", "/", "//", "%", "**", "<<", ">>", "&", "^", "|"]
 
 object.__delattr__ = function(self, attr){
-    if(self.__dict__ && self.__dict__.$string_dict &&
-            self.__dict__.$string_dict[attr] !== undefined){
-        delete self.__dict__.$string_dict[attr]
+    if(self.__dict__ && _b_.isinstance(self.__dict__, _b_.dict) &&
+            _b_.dict.$contains_string(self.__dict__, attr)){
+        _b_.dict.$delete_string(self.__dict__, attr)
         return _b_.None
     }else if(self.__dict__ === undefined && self[attr] !== undefined){
         delete self[attr]
@@ -78,8 +77,10 @@ object.__dir__ = function(self) {
 
     // add object's own attributes
     if(self.__dict__){
-        for(var attr in self.__dict__.$string_dict){
-            if(attr.charAt(0) != "$"){res.push(attr)}
+        for(var attr of $B.make_js_iterator(self.__dict__)){
+            if(attr.charAt(0) != "$"){
+                res.push(attr)
+            }
         }
     }
     res = _b_.list.$factory(_b_.set.$factory(res))
@@ -105,19 +106,30 @@ object.__format__ = function(){
 
 object.__ge__ = function(){return _b_.NotImplemented}
 
+$B.nb_from_dict = 0
+
 object.__getattribute__ = function(obj, attr){
 
     var klass = obj.__class__ || $B.get_class(obj),
         is_own_class_instance_method = false
 
-    var $test = false // attr == "f"
+    var $test = false // attr == 'method' // false // attr == "__args__"
     if($test){
         console.log("object.__getattribute__, attr", attr, "de", obj, "klass", klass)
     }
     if(attr === "__class__"){
         return klass
     }
+
+    if(obj.$is_class && attr == '__bases__'){
+        throw $B.attr_error(attr, obj)
+    }
+
     var res = obj[attr]
+
+    if($test){
+        console.log('obj[attr]', obj[attr])
+    }
     if(Array.isArray(obj) && Array.prototype[attr] !== undefined){
         // Special case for list subclasses. Cf. issue 1081
         res = undefined
@@ -128,11 +140,9 @@ object.__getattribute__ = function(obj, attr){
         if(dict.__class__ === $B.getset_descriptor){
             return dict.cls[attr]
         }
-        if(dict.$string_dict.hasOwnProperty(attr)){
-            if($test){
-                console.log("__dict__ hasOwnProperty", attr, dict.$string_dict[attr])
-            }
-            return dict.$string_dict[attr][0]
+        var in_dict = _b_.dict.$get_string(dict, attr)
+        if(in_dict !== _b_.dict.$missing){
+            return in_dict
         }
     }
 
@@ -159,6 +169,9 @@ object.__getattribute__ = function(obj, attr){
                 }
             }
         }else{
+            if($test){
+                console.log(attr, 'found in own class')
+            }
             if(res.__class__ !== $B.method && res.__get__ === undefined){
                 is_own_class_instance_method = true
             }
@@ -171,7 +184,9 @@ object.__getattribute__ = function(obj, attr){
             return res
         }
     }
-
+    if($test){
+        console.log('after search classes', res)
+    }
     if(res !== undefined){
         if($test){console.log(res)}
         if(res.__class__ && _b_.issubclass(res.__class__, _b_.property)){
@@ -202,15 +217,19 @@ object.__getattribute__ = function(obj, attr){
         if($test){console.log("__get__", __get__)}
         // For descriptors, attribute resolution is done by applying __get__
         if(__get__ !== null){
+            if($test){
+                console.log('apply __get__', [obj, klass])
+            }
             try{
                 return __get__.apply(null, [obj, klass])
-            }
-            catch(err){
-                /*
+            }catch(err){
+
                 console.log('error in get.apply', err)
                 console.log("get attr", attr, "of", obj)
+                console.log('res', res)
+                console.log('__get__', __get__)
                 console.log(__get__ + '')
-                */
+
                 throw err
             }
         }
@@ -231,7 +250,7 @@ object.__getattribute__ = function(obj, attr){
             // __new__ is a static method
             // ... and so are builtin functions (is this documented ?)
             if(attr == "__new__" ||
-                    res.__class__ === $B.builtin_function){
+                    res.__class__ === $B.builtin_function_or_method){
                 res.$type = "staticmethod"
             }
             var res1 = __get__.apply(null, [res, obj, klass])
@@ -297,22 +316,18 @@ object.__getattribute__ = function(obj, attr){
                             __self__: cls,
                             __func__: res,
                             __name__: res.$infos.__name__,
-                            __qualname__: cls.$infos.__name__ + "." +
+                            __qualname__: cls.__name__ + "." +
                                 res.$infos.__name__
                         }
                         return clmethod
                     }
                     method.__get__.__class__ = $B.method_wrapper
                     method.__get__.$infos = res.$infos
-                    if(klass.$infos===undefined){
-                        console.log("no $infos", klass)
-                        console.log($B.last($B.frames_stack))
-                    }
                     method.$infos = {
                         __self__: self,
                         __func__: res,
                         __name__: attr,
-                        __qualname__: klass.$infos.__name__ + "." + attr
+                        __qualname__: klass.__qualname__ + "." + attr
                     }
                     if($test){console.log("return method", method)}
                     if(is_own_class_instance_method){
@@ -335,7 +350,7 @@ object.__getattribute__ = function(obj, attr){
 
 object.__gt__ = function(){return _b_.NotImplemented}
 
-object.__hash__ = function (self) {
+object.__hash__ = function(self){
     var hash = self.__hashvalue__
     if(hash !== undefined){return hash}
     return self.__hashvalue__ = $B.$py_next_hash--
@@ -349,13 +364,6 @@ object.__init__ = function(){
     // object.__init__ does nothing else
     return _b_.None
 }
-
-object.__init_subclass__ = function(){
-    // only checks that no argument is passed
-    var $ = $B.args("__init_subclass__", 0, {}, [], arguments, {}, null, null)
-    return _b_.None
-}
-object.__init_subclass__.$type = "staticmethod"
 
 object.__le__ = function(){return _b_.NotImplemented}
 
@@ -376,7 +384,7 @@ object.__new__ = function(cls, ...args){
     var res = Object.create(null)
     $B.update_obj(res, {
         __class__ : cls,
-        __dict__: $B.empty_dict()
+        __dict__: $B.obj_dict({})
         })
     return res
 }
@@ -395,56 +403,116 @@ object.__ne__ = function(self, other){
 }
 
 object.__reduce__ = function(self){
-    function _reconstructor(cls){
-        return $B.$call(cls)()
+    if(! self.__dict__){
+        throw _b_.TypeError.$factory(`cannot pickle '${$B.class_name(self)}' object`)
     }
-    _reconstructor.$infos = {__qualname__: "_reconstructor"}
-    var res = [_reconstructor]
-    res.push(_b_.tuple.$factory([self.__class__].
-        concat(self.__class__.__mro__)))
+    if($B.imported.copyreg === undefined){
+        $B.$import('copyreg')
+    }
+    var res = [$B.imported.copyreg._reconstructor]
+    var D = $B.get_class(self),
+        B = object
+    for(var klass of D.__mro__){
+        if(klass.__module__ == 'builtins'){
+            B = klass
+            break
+        }
+    }
+    var args = [D, B]
+    if(B === object){
+        args.push(_b_.None)
+    }else{
+        args.push($B.$call(B)(self))
+    }
+
+    res.push($B.fast_tuple(args))
     var d = $B.empty_dict()
-    for(var attr in self.__dict__.$string_dict){
-        _b_.dict.$setitem(d.$string_dict, attr,
-            self.__dict__.$string_dict[attr][0])
+    for(var attr of _b_.dict.$keys_string(self.__dict__)){
+        _b_.dict.$setitem(d, attr,
+            _b_.dict.$getitem_string(self.__dict__, attr))
     }
-    console.log("object.__reduce__, d", d)
     res.push(d)
     return _b_.tuple.$factory(res)
 }
 
-function __newobj__(cls){
-    return $B.$getattr(cls, "__new__").apply(null, arguments)
-}
-__newobj__.$infos = {
-    __name__: "__newobj__",
-    __qualname__: "__newobj__"
-}
-_b_.__newobj__ = __newobj__
-
-object.__reduce_ex__ = function(self){
-    var res = [__newobj__]
-    var arg2 = _b_.tuple.$factory([self.__class__])
-    if(Array.isArray(self)){
-        self.forEach(function(item){arg2.push(item)})
+function getNewArguments(self, klass){
+    var newargs_ex = $B.$getattr(self, '__getnewargs_ex__', null)
+    if(newargs_ex !== null){
+        var newargs = newargs_ex()
+        if((! newargs) || newargs.__class__ !== _b_.tuple){
+            throw _b_.TypeError.$factory("__getnewargs_ex__ should " +
+                `return a tuple, not '${$B.class_name(newargs)}'`)
+        }
+        if(newargs.length != 2){
+            throw _b_.ValueError.$factory("__getnewargs_ex__ should " +
+                `return a tuple of length 2, not ${newargs.length}`)
+        }
+        var args = newargs[0],
+            kwargs = newargs[1]
+        if((! args) || args.__class__ !== _b_.tuple){
+            throw _b_.TypeError.$factory("first item of the tuple returned " +
+                `by __getnewargs_ex__ must be a tuple, not '${$B.class_name(args)}'`)
+        }
+        if((! kwargs) || kwargs.__class__ !== _b_.dict){
+            throw  _b_.TypeError.$factory("second item of the tuple returned " +
+                `by __getnewargs_ex__ must be a dict, not '${$B.class_name(kwargs)}'`)
+        }
+        return {args, kwargs}
     }
-    res.push(arg2)
+    var newargs = klass.$getnewargs,
+        args
+    if(! newargs){
+        newargs = $B.$getattr(klass, '__getnewargs__', null)
+    }
+    if(newargs){
+        args = newargs(self)
+        if((! args) || args.__class__ !== _b_.tuple){
+            throw _b_.TypeError.$factory("__getnewargs__ should " +
+                `return a tuple, not '${$B.class_name(args)}'`)
+        }
+        return {args}
+    }
+}
+
+
+object.__reduce_ex__ = function(self, protocol){
+    var klass = $B.get_class(self)
+    if($B.imported.copyreg === undefined){
+        $B.$import('copyreg')
+    }
+    if(protocol < 2){
+        return $B.$call($B.imported.copyreg._reduce_ex)(self, protocol)
+    }
+
+    var reduce = $B.$getattr(klass, '__reduce__')
+
+    if(reduce !== object.__reduce__){
+        return $B.$call(reduce)(self)
+    }
+    var res = [$B.imported.copyreg.__newobj__]
+    var arg2 = [klass]
+    var newargs = getNewArguments(self, klass)
+    if(newargs){
+        arg2 = arg2.concat(newargs.args)
+    }
+    res.push($B.fast_tuple(arg2))
     var d = $B.empty_dict(),
         nb = 0
-    if(self.__dict__ === undefined){
-        throw _b_.TypeError.$factory("cannot pickle '" +
-            $B.class_name(self) + "' object")
-    }
-    for(var attr in self.__dict__.$string_dict){
-        if(attr == "__class__" || attr.startsWith("$")){
-            continue
+    if(self.__dict__){
+        for(var item of _b_.dict.$iter_items_with_hash(self.__dict__)){
+            if(item.key == "__class__" || item.key.startsWith("$")){
+                continue
+            }
+            _b_.dict.$setitem(d, item.key, item.value)
+            nb++
         }
-        _b_.dict.$setitem(d, attr,
-            self.__dict__.$string_dict[attr][0])
-        nb++
     }
-    if(nb == 0){d = _b_.None}
+    if(nb == 0){
+        d = _b_.None
+    }
     res.push(d)
-    res.push(_b_.None)
+    res.push(_b_.None) // XXX fix me
+    res.push(_b_.None) // XXX fix me
     return _b_.tuple.$factory(res)
 }
 
@@ -453,10 +521,10 @@ object.__repr__ = function(self){
     if(self.__class__ === _b_.type) {
         return "<class '" + self.__name__ + "'>"
     }
-    var module = self.__class__.$infos.__module__
+    var module = self.__class__.__module__
     if(module !== undefined && !module.startsWith("$") &&
             module !== "builtins"){
-        return "<" + self.__class__.$infos.__module__ + "." +
+        return "<" + self.__class__.__module__ + "." +
             $B.class_name(self) + " object>"
     }else{
         return "<" + $B.class_name(self) + " object>"
@@ -494,66 +562,35 @@ object.__setattr__.__get__ = function(obj){
 object.__setattr__.__str__ = function(){return "method object.setattr"}
 
 object.__str__ = function(self){
-    // If a class doesn't specify __str__, use its __repr__
-    var len = arguments.length
-    if(len == 0){
+    if(self === undefined || self.$kw){
         throw _b_.TypeError.$factory("descriptor '__str__' of 'object' " +
             "object needs an argument")
-    }else if(len > 1){
-        throw _b_.TypeError.$factory("descriptor '__str__' of 'object' " +
-            "expects 1 argument, got " + len)
-    }else if(self.$nat == 'kw'){
-        throw _b_.TypeError.$factory("descriptor '__str__' of 'object' " +
-            "doesn't accept keyword arguments")
     }
-    // Search in the object metaclass
-    if(self.$is_class || self.$factory){
-        var class_str = $B.$getattr(self.__class__ || $B.get_class(self),
-            '__str__', null)
-        if(class_str !== null && class_str !== object.__str__){
-            return class_str(self)
-        }
-        var class_repr = $B.$getattr(self.__class__ || $B.get_class(self),
-            '__repr__', null)
-        if(class_repr !== null && class_repr !== object.__repr__){
-            return class_repr(self)
-        }
-    }else{
-        // Default to __repr__
-        var repr_func = $B.$getattr(self, "__repr__")
-        return $B.$call(repr_func)()
-    }
+    // Default to __repr__
+    var klass = self.__class__ || $B.get_class(self)
+    var repr_func = $B.$getattr(klass, "__repr__")
+    return $B.$call(repr_func).apply(null, arguments)
 }
 
 object.__subclasshook__ = function(){return _b_.NotImplemented}
 
 // constructor of the built-in class 'object'
 object.$factory = function(){
-    var res = {__class__:object},
-        args = [res].concat(Array.prototype.slice.call(arguments))
+    if(arguments.length > 0 ||
+            (arguments.length == 1 && arguments[0].$kw &&
+                Object.keys(arguments[0].$kw).length > 0)
+            ){
+        throw _b_.TypeError.$factory('object() takes no arguments')
+    }
+    var res = {__class__: object},
+        args = [res]
     object.__init__.apply(null, args)
     return res
 }
 
 $B.set_func_names(object, "builtins")
 
-$B.make_class = function(qualname, factory){
-    // Builds a basic class object
-
-    var A = {
-        __class__: _b_.type,
-        __mro__: [object],
-        $infos:{
-            __qualname__: qualname,
-            __name__: $B.last(qualname.split('.'))
-        },
-        $is_class: true
-    }
-
-    A.$factory = factory
-
-    return A
-}
 return object
 
 })(__BRYTHON__)
+

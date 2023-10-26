@@ -127,9 +127,9 @@ function test_num(num_type, char){
     }
 }
 
-$B.TokenReader = function(src){
+$B.TokenReader = function(src, filename){
     this.tokens = []
-    this.tokenizer = $B.tokenizer(src)
+    this.tokenizer = $B.tokenizer(src, filename)
     this.position = 0
 }
 
@@ -153,7 +153,7 @@ $B.TokenReader.prototype.seek = function(position){
     this.position = position
 }
 
-$B.tokenizer = function*(src){
+$B.tokenizer = function*(src, filename, mode){
     var unicode_tables = $B.unicode_tables,
         whitespace = ' \t\n',
         operators = '*+-/%&^~=<>',
@@ -163,6 +163,9 @@ $B.tokenizer = function*(src){
 
     src = src.replace(/\r\n/g, '\n').
               replace(/\r/g, '\n')
+    if(mode != 'eval' && ! src.endsWith('\n')){
+        src += '\n'
+    }
     var lines = src.split('\n'),
         linenum = 0,
         line_at = {}
@@ -175,7 +178,7 @@ $B.tokenizer = function*(src){
     }
 
     function get_line_at(pos){
-        return lines[line_at[pos]]
+        return lines[line_at[pos]] + '\n'
     }
 
     var state = "line_start",
@@ -199,8 +202,7 @@ $B.tokenizer = function*(src){
         indents = [],
         braces = [],
         line_num = 0,
-        line_start = 1,
-        line
+        line_start = 1
 
     yield Token('ENCODING', 'utf-8', [0, 0], [0, 0], '')
 
@@ -381,14 +383,23 @@ $B.tokenizer = function*(src){
                         }
                         break
                     case '\\':
+                        //console.log('found \\, rest', src.substr(pos), '\nsrc', `[${src}]`)
                         if(mo = /^\f?(\r\n|\r|\n)/.exec(src.substr(pos))){
                             if(pos == src.length - 1){
-                                throw SyntaxError('EOF in multi-line statement')
+                                yield Token('ERRORTOKEN', char,
+                                    [line_num, pos - line_start],
+                                    [line_num, pos - line_start + 1], line)
+                                var token_name = braces.length > 0 ? 'NL': 'NEWLINE'
+                                yield Token(token_name, mo[0],
+                                    [line_num, pos - line_start],
+                                    [line_num, pos - line_start + mo[0].length], line)
                             }
                             line_num++
                             pos += mo[0].length
                             line_start = pos + 1
                             line = get_line_at(pos)
+
+
                         }else{
                             yield Token('ERRORTOKEN', char,
                                 [line_num, pos - line_start],
@@ -634,43 +645,7 @@ $B.tokenizer = function*(src){
                         [line_num, pos - line_start + 1],
                         line)
                     state = null
-                }else if(false){ // ' \n\r\t\f;,:)]}*-+/%<>'.indexOf(char) == -1){
-                    if('0123456789'.indexOf(char) > -1){
-                        var msg = `invalid digit '${char}' in `
-                    }else{
-                        var msg = `invalid `
-                    }
-                    var base_name = {b: 'binary', o: 'octal', x: 'hexadecimal'}
-                    console.log('char', char, 'raises SE')
-                    var exc = SyntaxError(msg + base_name[num_type] + ' literal')
-                    exc.lineno = line_num
-                    exc.col_offset = pos - line_start
-                    exc.end_lineno = line_num
-                    exc.end_col_offset = exc.col_offset + 1
-                    exc.line = line
-                    throw exc
                 }else{
-                    var err_msg
-                    if('0123456789'.indexOf(char) > -1){
-                        err_msg = `invalid digit '${char}' in `
-                    }else if((char >= 'a' && char <= 'z') ||
-                             (char >= 'A' && char <= 'Z')){
-                        err_msg = `invalid `
-                    }
-                    if(err_msg){
-                        var base_name = {'': 'decimal',
-                                         b: 'binary',
-                                         o: 'octal',
-                                         x: 'hexadecimal'}
-                        err_msg += base_name[num_type] + ' literal'
-                        var exc = SyntaxError(err_msg)
-                        exc.lineno = line_num
-                        exc.col_offset = pos - line_start
-                        exc.end_lineno = line_num
-                        exc.end_col_offset = exc.col_offset + 1
-                        exc.line = line
-                        throw exc
-                    }
                     yield Token('NUMBER', number,
                         [line_num, pos - line_start - number.length],
                         [line_num, pos - line_start],

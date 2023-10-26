@@ -89,7 +89,12 @@ npm/unicode.txt
 setup/data/unicode.txt
 setup/data/changelog_*.txt
 setup/data/*.js
-setup/data/demo.html
+scripts/last_modifs.json
+scripts/python.gram.js_actions
+scripts/python*.gram
+www/src/brython_no_static.js
+www/src/full_grammar.js
+www/static_tutorial/
 www/static_doc
 www/static_tutorial/
 www/src/brython.js
