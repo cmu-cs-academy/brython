@@ -4968,6 +4968,9 @@ NotCtx.prototype.transition = function(token, value){
             return transition(expr, token, value)
           }
     }
+    if(this.tree.length == 0 || this.tree[0] instanceof AbstractExprCtx){
+        raise_syntax_error(context)
+    }
     return transition(context.parent, token)
 }
 
