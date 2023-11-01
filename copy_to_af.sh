@@ -8,7 +8,7 @@ LIB_DEST="$DEST/../../public/"
 rm -rf "$DEST"
 mkdir "$DEST"
 cp -r www/src/brython.js www/src/brython_stdlib.js setup "$DEST"
-cp -r www/src/builtins_docstrings.js www/src/libs www/src/Lib "$LIB_DEST"
+cp -r www/src/unicode.txt www/src/builtins_docstrings.js www/src/libs www/src/Lib "$LIB_DEST"
 
 git log -n 1 --pretty=format:"%H" > $DEST/git-sha.txt
 
