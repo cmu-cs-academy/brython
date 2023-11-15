@@ -99,17 +99,7 @@ $B.path = [$path + 'Lib', $path + 'libs', $script_dir,
     $path + 'Lib/site-packages']
 
 // Maps the name of imported modules to the module object
-$B.imported = new Proxy(
-    {}, 
-    { 
-        get: (target, name) => {
-            if (name in target || !name.startsWith('$python_to_js')) {
-                return target[name];
-            }
-            return {};
-        }
-    }
-)
+$B.imported = {}
 
 // Maps the name of modules to the matching Javascript code
 $B.precompiled = {}
@@ -336,11 +326,8 @@ $B.python_to_js = function(src, script_id){
         if(!$B.use_VFS){$B.meta_path.shift()}
     }
 
-    // fake names
+    // fake name
     var filename = '$python_to_js' + Math.floor(Math.random() * 1e10)
-    $B.url2name[filename] = filename
-    $B.imported[filename] = {}
-
     var root = __BRYTHON__.py2js({src, filename},
                                  script_id, script_id,
                                  __BRYTHON__.builtins_scope),

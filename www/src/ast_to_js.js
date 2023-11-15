@@ -2477,7 +2477,15 @@ $B.ast.Module.prototype.to_js = function(scopes){
         mod_name = module_name(scopes)
 
     var js = `// Javascript code generated from ast\n` +
-             `var $B = __BRYTHON__,\n_b_ = $B.builtins,\n`
+             `var $B = __BRYTHON__,\n_b_ = $B.builtins;\n`
+    if (!namespaces) {
+       js += `if ($B.imported["${mod_name}"] === undefined) {
+         $B.imported["${mod_name}"] = {};
+         $B.file_cache["${mod_name}"] = "";
+         $B.url2name["${mod_name}"] = "${mod_name}";
+       }\n`;
+     }
+     js += 'var ';
     if(! namespaces){
         js += `${global_name} = $B.imported["${mod_name}"],\n` +
               `locals = ${global_name},\n` +

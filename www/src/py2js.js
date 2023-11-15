@@ -1119,6 +1119,9 @@ AnnotationCtx.prototype.transition = function(token, value){
     }else if(token == "op"){
         raise_syntax_error(context, "operator as annotation")
     }
+    if(context.parent.type == 'expr'){
+        context.parent.with_commas = false
+    }
     return transition(context.parent, token)
 }
 
@@ -4967,6 +4970,9 @@ NotCtx.prototype.transition = function(token, value){
             var expr = new AbstractExprCtx(context, false)
             return transition(expr, token, value)
           }
+    }
+    if(this.tree.length == 0 || this.tree[0] instanceof AbstractExprCtx){
+        raise_syntax_error(context)
     }
     return transition(context.parent, token)
 }

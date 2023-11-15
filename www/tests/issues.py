@@ -3187,6 +3187,11 @@ assert_raises(SyntaxError, exec, "await x")
 # issue 2232
 assert_raises(SyntaxError, exec, 'if x is not in y: pass')
 
+# issue 2304
+assert_raises(SyntaxError, exec, "if True:\n not")
+# issue 2303
+assert_raises(SyntaxError, exec, "x:1,")
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================
