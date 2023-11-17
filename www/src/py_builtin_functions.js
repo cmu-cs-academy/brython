@@ -3036,8 +3036,17 @@ $B.set_func_names($TextIOWrapper, "builtins")
 $B.Reader = $Reader
 $B.TextIOWrapper = $TextIOWrapper
 $B.BufferedReader = $BufferedReader
+$B.EventTarget = new EventTarget()
 
 var $url_open = _b_.open = function(){
+    $B.EventTarget.dispatchEvent(new CustomEvent(
+      'function-call',
+      {
+        detail: {
+          function: '_b_.open'
+        },
+      }
+    ))
     // first argument is file : can be a string, or an instance of a DOM File object
     var $ = $B.args('open', 3, {file: null, mode: null, encoding: null},
         ['file', 'mode', 'encoding'], arguments,
