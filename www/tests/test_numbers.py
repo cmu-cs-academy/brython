@@ -769,4 +769,8 @@ assert int('9' + chr(int('17E4', 16)) + 'b', 16) == 2379
 assert int(3.9) == 3
 assert int(-3.9) == -3
 
+# issue 2361
+assert_raises(TypeError, float, lambda: None,
+    msg="float() argument must be a string or a real number, not 'function'")
+    
 print('passed all tests...')
