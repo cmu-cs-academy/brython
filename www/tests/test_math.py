@@ -328,4 +328,11 @@ assert_raises(ValueError, math.log, 10, 0, msg='math domain error')
 
 assert_raises(ZeroDivisionError, math.log, 10, 1)
 
+# issue 2361
+def f():
+    pass
+
+assert_raises(TypeError, math.sqrt, f,
+    msg = "must be real number, not function")
+    
 print("passed all tests..")
