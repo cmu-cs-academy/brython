@@ -1356,7 +1356,7 @@ float.$factory = function(value){
          }
     }
 
-    var klass = value.__class__,
+    let klass = $B.get_class(value),
         float_method = $B.$getattr(klass, '__float__', null)
 
     if(float_method === null){
