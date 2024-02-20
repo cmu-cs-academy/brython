@@ -1356,24 +1356,24 @@ float.$factory = function(value){
          }
     }
 
-    let klass = $B.get_class(value),
+    const klass = $B.get_class(value),
         float_method = $B.$getattr(klass, '__float__', null)
 
     if(float_method === null){
-        var index_method = $B.$getattr(klass, '__index__', null)
+        const index_method = $B.$getattr(klass, '__index__', null)
 
         if(index_method === null){
             throw _b_.TypeError.$factory("float() argument must be a string or a " +
                 "number, not '" + $B.class_name(value) + "'")
         }
-        var res = $B.$call(index_method)(value),
-            klass = $B.get_class(res)
+        const res = $B.$call(index_method)(value),
+            res_klass = $B.get_class(res)
 
-        if(klass === _b_.int){
+        if(res_klass === _b_.int){
             return fast_float(res)
-        }else if(klass === $B.long_int){
+        }else if(res_klass === $B.long_int){
             return $B.long_int.__float__(res)
-        }else if(klass.__mro__.indexOf(_b_.int) > -1){
+        }else if(res_klass.__mro__.indexOf(_b_.int) > -1){
             var msg =  `${$B.class_name(value)}.__index__ returned ` +
                 `non-int (type ${$B.class_name(res)}).  The ` +
                 'ability to return an instance of a strict subclass' +
@@ -1385,11 +1385,11 @@ float.$factory = function(value){
         throw _b_.TypeError.$factory('__index__ returned non-int' +
             ` (type ${$B.class_name(res)})`)
     }
-    var res = $B.$call(float_method)(value),
-        klass = $B.get_class(res)
+    const res = $B.$call(float_method)(value),
+      res_klass = $B.get_class(res)
 
-    if(klass !== _b_.float){
-        if(klass.__mro__.indexOf(_b_.float) > -1){
+    if(res_klass !== _b_.float){
+        if(res_klass.__mro__.indexOf(_b_.float) > -1){
             var msg =  `${$B.class_name(value)}.__float__ returned ` +
                 `non-float (type ${$B.class_name(res)}).  The ` +
                 'ability to return an instance of a strict subclass' +
