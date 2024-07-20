@@ -1,3 +1,5 @@
+from tester import assert_raises
+
 x = set(['a', 'r', 'bg', 'Z'])
 assert x == set(['bg', 'Z', 'a', 'r'])
 
@@ -303,4 +305,6 @@ set2 = {'a'}
 assert len(set1.union(set2)) == 2
 
 
+# issue 2477
+assert_raises(TypeError, {1}.pop, 1)
 print("passed all tests..")
