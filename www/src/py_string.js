@@ -1828,6 +1828,9 @@ str.isalnum = function(){
             arguments, {}, null, null),
         cp,
         _self = to_string($.self)
+    if (_self.length == 0) {
+        return false
+    }
     for(var char of _self){
         cp = _b_.ord(char)
         if(unicode_tables.Ll[cp] ||
@@ -1855,6 +1858,9 @@ str.isalpha = function(){
             arguments, {}, null, null),
         cp,
         _self = to_string($.self)
+    if (_self.length == 0) {
+        return false
+    }
     for(var char of _self){
         cp = _b_.ord(char)
         if(unicode_tables.Ll[cp] ||
