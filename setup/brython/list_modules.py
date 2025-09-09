@@ -310,8 +310,10 @@ class ModulesFinder:
         """Build brython_modules.js from the list of modules needed by the
         application.
         """
-        vfs = {"$timestamp": int(1000 * time.time())}
-        for module in self.modules:
+        # CS Academy doesn't use indexeddb, so use a constant timestamp
+        # to prevent unnecessary changes from one build to another
+        vfs = {"$timestamp": 0}
+        for module in sorted(list(self.modules)):
             dico = self.stdlib if module in self.stdlib else self.user_modules
             vfs[module] = dico[module]
             elts = module.split('.')
@@ -352,9 +354,11 @@ class ModulesFinder:
 
         with open(path, "w", encoding="utf-8") as out:
             # Add VFS_timestamp ; used to test if the indexedDB must be
-            # refreshed
-            out.write("__BRYTHON__.VFS_timestamp = {}".format(
-                int(1000 * time.time())))
+            # refreshed. CS Academy doesn't use this, so we commented it out
+            # to prevent unnecessary changes from one build to the next.
+            # out.write("__BRYTHON__.VFS_timestamp = {}".format(
+            #     int(1000 * time.time())))
+
             # if run outside a Web Worker, the script sets the attribute
             # __BRYTHON__.brython_modules to the path of brython_modules.js,
             # so that it is imported by libs/_webworker.js instead of
