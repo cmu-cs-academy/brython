@@ -1384,15 +1384,24 @@ $B.$hash = function(obj){
     //
     // throws an exception : unhashable type: 'A'
 
+    function check_int(v){
+        if((! Number.isInteger(v)) && ! $B.$isinstance(v, _b_.int)){
+            throw _b_.TypeError.$factory(
+                '__hash__ method should return an integer')
+        }
+        return v
+    }
+    var res
+
     if(hash_method.$infos.__func__ === _b_.object.__hash__){
         if(_b_.type.__getattribute__(klass, '__eq__') !== _b_.object.__eq__){
             throw _b_.TypeError.$factory("unhashable type: '" +
                 $B.class_name(obj) + "'", 'hash')
         }else{
-            return obj.__hashvalue__ = _b_.object.__hash__(obj)
+            return obj.__hashvalue__ = check_int(_b_.object.__hash__(obj))
         }
     }else{
-        return $B.$call(hash_method)(obj)
+        return check_int($B.$call(hash_method)(obj))
     }
 }
 
