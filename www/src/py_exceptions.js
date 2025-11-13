@@ -685,7 +685,7 @@ function substitution_cost(a, b){
     return MOVE_COST
 }
 
-function calculate_suggestions(dir, name){
+$B.calculate_suggestions = function(dir, name){
     if(dir.length >= MAX_CANDIDATE_ITEMS) {
         return null
     }
@@ -714,9 +714,7 @@ function calculate_suggestions(dir, name){
 $B.offer_suggestions_for_attribute_error = function(exc){
     var name = exc.name,
         obj = exc.obj
-    var dir = _b_.dir(obj),
-        suggestions = calculate_suggestions(dir, name)
-    return suggestions
+    return $B.calculate_suggestions(_b_.dir(obj), name)
 }
 
 $B.offer_suggestions_for_name_error = function(exc){
@@ -726,16 +724,24 @@ $B.offer_suggestions_for_name_error = function(exc){
         return null;
     }
     var locals = Object.keys(frame[1]).filter(x => ! (x.startsWith('$')))
-    var suggestion = calculate_suggestions(locals, name)
-    if(suggestion){
+    var suggestion = $B.calculate_suggestions(locals, name)
+    // Use $B.$bool here ane below so that calculate_suggestions 
+    // can be written in Python.
+    if($B.$bool(suggestion)){
         return suggestion
     }
     if(frame[2] != frame[0]){
         var globals = Object.keys(frame[3]).filter(x => ! (x.startsWith('$')))
-        var suggestion = calculate_suggestions(globals, name)
-        if(suggestion){
+        var suggestion = $B.calculate_suggestions(globals, name)
+        if($B.$bool(suggestion)){
             return suggestion
         }
+    }
+    // Check for builtins as well (e.g. "False", "bool"). For some reason
+    // mainline Brython doesn't need this section as of Nov 2025. 
+    var suggestion = $B.calculate_suggestions(_b_, name)
+    if($B.$bool(suggestion)){
+        return suggestion
     }
     return null;
 }
