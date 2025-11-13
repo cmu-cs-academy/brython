@@ -698,6 +698,10 @@ set.isdisjoint = function(){
 }
 
 set.pop = function(self){
+    if(arguments.length > 1){
+        throw _b_.TypeError.$factory(`set.pop() takes no arguments` +
+            ` (${arguments.length - 1} given)`)
+    }
     for(var hash in self.$store){
     }
     if(hash === undefined){
