@@ -488,4 +488,8 @@ assert 'abcdef'[3:1] == ''
 # issue 2155
 assert_raises(TypeError, ord, 'ab')
 
+# issue 2619
+assert_raises(TypeError, str, b'a', 5)
+assert_raises(TypeError, str, b'a', 'utf-8', 5)
+
 print("passed all tests...")
