@@ -174,6 +174,9 @@ float.__eq__ = function(self, other){
         return false
     }
     if($B.$isinstance(other, _b_.int)){
+        if(other.__class__ === $B.long_int){
+            return BigInt(self.value) == other.value
+        }
         return self.value == other
     }
     if($B.$isinstance(other, float)) {
