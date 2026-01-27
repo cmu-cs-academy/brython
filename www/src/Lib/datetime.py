@@ -1791,7 +1791,10 @@ class datetime(date):
         """
         _check_tzinfo_arg(tz)
 
-        return cls._fromtimestamp(t, tz is not None, tz)
+        # Work around a Brython bug. If this variable `utc` is inlined into the function 
+        # call, it crashes.
+        utc = tz is not None
+        return cls._fromtimestamp(t, utc, tz)
 
     @classmethod
     def utcfromtimestamp(cls, t):
