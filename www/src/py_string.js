@@ -100,7 +100,10 @@ var str = {
     __qualname__: 'str',
     $is_class: true,
     $is_sequence: true,
-    $native: true
+    $native: true,
+    $descriptors: {
+        __doc__: true
+    }
 }
 
 str.$to_string = to_string
@@ -188,6 +191,18 @@ str.__delitem__ = function(){
 // __dir__must be assigned explicitely because attribute resolution for
 // builtin classes doesn't use __mro__
 str.__dir__ = _b_.object.__dir__
+
+// issue 2659
+str.__doc__ = (self) => `str(object='') -> str
+str(bytes_or_buffer[, encoding[, errors]]) -> str
+
+Create a new string object from the given object. If encoding or
+errors is specified, then the object must expose a data buffer
+that will be decoded using the given encoding and error handler.
+Otherwise, returns the result of object.__str__() (if defined)
+or repr(object).
+encoding defaults to 'utf-8'.
+errors defaults to 'strict'.`
 
 str.__eq__ = function(_self, other){
     if($B.$isinstance(other, str)){
