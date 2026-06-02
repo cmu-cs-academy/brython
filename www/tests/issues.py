@@ -3192,6 +3192,12 @@ assert_raises(SyntaxError, exec, "if True:\n not")
 # issue 2303
 assert_raises(SyntaxError, exec, "x:1,")
 
+# CS Academy isinstance with object bug
+assert isinstance('a', object)
+assert isinstance('a', str)
+assert not isinstance('a', int)
+assert isinstance(5, object)
+
 # ==========================================
 # Finally, report that all tests have passed
 # ==========================================
