@@ -1591,7 +1591,7 @@ $B.$isinstance = function(obj, cls){
     if(klass == undefined){
         if(typeof obj == 'string'){
             if(cls == _b_.str){return true}
-            else if($B.builtin_classes.indexOf(cls) > -1){
+            else if(cls !== _b_.object && $B.builtin_classes.indexOf(cls) > -1){
                 return false
             }
         }else if(typeof obj == 'number' && Number.isFinite(obj)){
