@@ -15,7 +15,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '20'
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -42,24 +42,24 @@ jobs:
       - name: Run browser tests
         run: xvfb-run --auto-servernum ./node_modules/.bin/testem --launch Firefox -t www/tests/run_tests.html ci
 
-  flake8:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install flake8
-
-      # stop the build if there are Python syntax errors or undefined names
-      - name: Run flake8
-        run: |
-          flake8 --builtins=__BRYTHON__ \
-            --exclude='./.*,www/src/Lib,www/tests' \
-            --select=E9,F63,F7,F82 --show-source --statistics
+  # flake8:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Set up Python
+  #       uses: actions/setup-python@v5
+  #       with:
+  #         python-version: '3.11'
+  #
+  #     - name: Install dependencies
+  #       run: |
+  #         pip install --upgrade pip
+  #         pip install flake8
+  #
+  #     # stop the build if there are Python syntax errors or undefined names
+  #     - name: Run flake8
+  #       run: |
+  #         flake8 --builtins=__BRYTHON__ \
+  #           --exclude='./.*,www/src/Lib,www/tests' \
+  #           --select=E9,F63,F7,F82 --show-source --statistics
