@@ -1364,7 +1364,7 @@ float.$factory = function(value){
 
         if(index_method === null){
             throw _b_.TypeError.$factory("float() argument must be a string or a " +
-                "number, not '" + $B.class_name(value) + "'")
+                "real number, not '" + $B.class_name(value) + "'")
         }
         const res = $B.$call(index_method)(value),
             res_klass = $B.get_class(res)
