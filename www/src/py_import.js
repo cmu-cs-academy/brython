@@ -1357,7 +1357,14 @@ $B.$import = function(mod_name, fromlist, aliases, locals, inum){
                 try{
                     // [Import spec] Check if module has an attribute by that name
                     ns[alias] = $B.$getattr(modobj, name)
-                    if(ns[alias] && ns[alias].$js_func){ // issue 2395
+                    // issue 2395: if the attribute is a Javascript wrapper
+                    // around a Python function, import the function.
+                    // CS Academy: don't unwrap Javascript functions (eg the
+                    // functions of cmu-graphics.js exported by cmu_graphics):
+                    // the wrapper converts Python arguments to Javascript.
+                    if(ns[alias] && ns[alias].$js_func &&
+                            (ns[alias].$js_func.$function_infos ||
+                             ns[alias].$js_func.$infos)){
                         ns[alias] = ns[alias].$js_func
                     }
                 }catch($err1){

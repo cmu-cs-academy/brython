@@ -121,4 +121,14 @@ del __BRYTHON__.imported['cs_academy_test_module']
 ns = window.eval(js)
 assert ns.y == 5
 
+# a Javascript function exported by a Python module and imported with
+# "from module import *" still converts its arguments (upstream unwraps it,
+# cf. issue 2395)
+ns = {}
+exec('from cs_academy_reexport import *\nresult = js_add(1.5, 2.25)\npy = py_func()', ns)
+assert ns['result'] == 3.75, ns['result']
+assert ns['py'] == 'py'
+from cs_academy_reexport import js_add
+assert js_add(0.5, 0.25) == 0.75
+
 print('passed all tests...')

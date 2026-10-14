@@ -74,6 +74,14 @@ strings) immediately, before the class checks. This is only for speed.
   translated names. The callers accept `None`, `null` or `undefined` for "no
   suggestion". Suggestions for a `NameError` also search the builtins (e.g.
   `Flase` -> `False`), like CPython does.
+- **Importing Javascript functions from a Python module**
+  (`www/src/py_import.js`, `$B.$import_from`). For `from module import name`
+  and `from module import *` with `__all__`, upstream replaces a Javascript
+  function wrapper by the raw function (fix for issue 2395). Calling the raw
+  function from Python passes Brython objects (eg floats) unconverted, so
+  `getPointInDir`, `angleTo`, `distance` etc. imported from cmu_graphics
+  received `NaN`. The fork unwraps only wrappers around Python functions, which
+  is the case of issue 2395.
 - **Translated `repr()` of booleans** (`www/src/py_int.js`). `repr(True)` is
   `Verdadero` / `Wahr` when `$B.cmuGraphicsLanguage` is `es` / `de`.
 - **`brython_path` option** (`www/src/py2js.js`, `$B.parse_options`).
