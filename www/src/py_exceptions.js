@@ -1219,6 +1219,8 @@ function trace_from_stack(err){
                 if(lines[lineno - 1] === undefined){
                     console.log('no line, lines\n', lines, 'lineno', lineno)
                     console.log('filename', filename, 'src', src)
+                    // CS Academy: go to next frame, else infinite loop
+                    tb = tb.tb_next
                     continue
                 }
                 var head = lines[lineno - 1].substr(0, col_offset)
@@ -1250,6 +1252,8 @@ function trace_from_stack(err){
                 }
                 if(! (ast instanceof $B.ast.Module)){
                     console.log('not a module', ast)
+                    // CS Academy: go to next frame, else infinite loop
+                    tb = tb.tb_next
                     continue
                 }
                 var expr = ast.body[0]
