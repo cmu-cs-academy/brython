@@ -193,7 +193,8 @@ try:
         abce
     f()
 except NameError as exc:
-    check(exc, expected)
+    # CS Academy: the traceback module doesn't make suggestions
+    check_brython(exc, expected)
 
 # suggestion for AttributeError
 expected = "AttributeError: 'str' object has no attribute 'strio'. Did you mean: 'strip'?"
@@ -205,7 +206,8 @@ try:
 
     f()
 except AttributeError as exc:
-    check(exc, expected)
+    # CS Academy: the traceback module doesn't make suggestions
+    check_brython(exc, expected)
 
 # list assignement index out of range
 expected = """

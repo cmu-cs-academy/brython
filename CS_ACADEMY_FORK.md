@@ -192,6 +192,10 @@ imports of these modules small.
   - `_find_keyword_typos()` (suggestions for misspelled keywords in a
     `SyntaxError`, new in 3.14) is disabled: it imports `tokenize`, `difflib`
     and `codeop`.
+  - No "Did you mean" suggestions (`_compute_suggestion_error()` returns
+    `None`): cmu_graphics adds its own to error messages, filtering out the
+    translations of names in other languages; with both, messages had two
+    suggestions, e.g. `Did you mean: 'Falso'?. Did you mean: 'False'?`.
   - Line numbers: `_walk_tb_with_full_positions()` uses `tb_lineno` when the
     position given by `tb_lasti` is on another line. Brython doesn't update
     `tb_lasti` for every instruction, so frames above the one that raised the

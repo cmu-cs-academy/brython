@@ -1674,6 +1674,10 @@ def _substitution_cost(ch_a, ch_b):
 
 
 def _compute_suggestion_error(exc_value, tb, wrong_name):
+    # CS Academy: no "Did you mean" suggestions in tracebacks. cmu_graphics
+    # adds its own suggestions to error messages (they don't suggest the
+    # translations of names that are not in the language of the student).
+    return None
     if wrong_name is None or not isinstance(wrong_name, str):
         return None
     if isinstance(exc_value, AttributeError):
