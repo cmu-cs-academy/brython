@@ -760,6 +760,21 @@ $B.get_class = function(obj){
                 }
             case "object":
                 if(Array.isArray(obj)){
+                    // CS Academy: Javascript arrays are Python lists, as
+                    // they were before Brython 3.12 (upstream returns
+                    // javascript.Array, which is not a subclass of list).
+                    // cmu_graphics relies on this, for instance for the
+                    // values of dict(jsobj). See also jsobj2pyobj.
+                    if(Object.getPrototypeOf(obj) === Array.prototype){
+                        try{
+                            Object.defineProperty(obj, '__class__',
+                                {value: _b_.list, writable: true,
+                                 configurable: true})
+                            return _b_.list
+                        }catch(err){
+                            // frozen array
+                        }
+                    }
                     return $B.js_array
                 }else if(obj instanceof $B.str_dict){
                     return _b_.dict
