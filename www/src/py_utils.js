@@ -1185,6 +1185,11 @@ $B.$delitem = function(obj, item, inum){
         if(obj.$is_namespace){
             // Deleting a name from a namespace should trigger a NameError in
             // the next references to the name. Cf issue #2423.
+            // CS Academy: the property is made non-enumerable, so that
+            // iterating on the namespace (eg "for name in globals()") skips
+            // it; redefining an existing property keeps its "enumerable"
+            // attribute otherwise. When it is set again, the property is
+            // writable, enumerable and configurable, like other names.
             Object.defineProperty(obj.$jsobj, item,
                 {
                     get(){
@@ -1193,9 +1198,13 @@ $B.$delitem = function(obj, item, inum){
                     set(value){
                         // resetting a value in the namespace: redefine the
                         // property
-                        Object.defineProperty(obj.$jsobj, item, {value})
+                        Object.defineProperty(obj.$jsobj, item,
+                            {value, writable: true, enumerable: true,
+                             configurable: true})
                         return _b_.None
-                    }
+                    },
+                    enumerable: false,
+                    configurable: true
                 }
             )
         }else{

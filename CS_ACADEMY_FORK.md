@@ -127,6 +127,13 @@ worker.
   `$B.$isinstance`). Upstream returns `False`.
 - `str(b'a', 5)` and `str(b'a', 'utf-8', 5)` raise `TypeError`
   (`www/src/py_string.js`). Upstream accepts them.
+- `del globals()[name]` (`www/src/py_utils.js`, `$B.$delitem`, and
+  `dict.__contains__` in `www/src/py_dict.js`): upstream replaces the name by a
+  property that raises `NameError` when it is read (issue #2423), but the
+  property stayed enumerable, so `name in globals()` and iterating on
+  `globals()` raised `NameError`, and a name set again after being deleted could
+  not be changed. `setupMvc()` in cmu_graphics deletes names from the globals
+  of MVC programs, then `registerGlobals(globals())` iterates on them.
 - `trace_from_stack()` (`www/src/py_exceptions.js`): resetting `src` for each
   frame is backported from 3.14.3 (upstream 3.14.0 crashed with a Javascript
   error for `exec()` frames), and two error paths that looped forever now move

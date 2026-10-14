@@ -131,4 +131,28 @@ assert ns['py'] == 'py'
 from cs_academy_reexport import js_add
 assert js_add(0.5, 0.25) == 0.75
 
+# deleting a name from globals() (done by setupMvc in cmu_graphics)
+src = """
+x = 1
+y = 2
+def f():
+    return x
+del globals()['x']
+assert 'x' not in globals()
+assert 'y' in globals()
+assert [k for k in globals() if k in ('x', 'y')] == ['y']
+assert 'x' not in dict(globals().items())
+try:
+    f()
+    raise AssertionError('should have raised NameError')
+except NameError:
+    pass
+x = 2
+x = 3
+assert f() == 3
+assert 'x' in globals()
+"""
+exec(src, {})
+window.eval(__BRYTHON__.python_to_js(src, 'cs_academy_del_globals'))
+
 print('passed all tests...')

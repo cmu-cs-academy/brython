@@ -309,7 +309,15 @@ dict.$contains = function(self, key){
     }
 
     if(self.$jsobj){
-        return self.$jsobj[key] !== undefined
+        try{
+            return self.$jsobj[key] !== undefined
+        }catch(err){
+            // CS Academy: name deleted from a namespace (see $B.$delitem)
+            if($B.is_exc(err, [_b_.NameError])){
+                return false
+            }
+            throw err
+        }
     }
 
     return dict.$lookup_by_key(self, key).found
