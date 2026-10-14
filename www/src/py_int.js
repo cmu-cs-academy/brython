@@ -788,9 +788,8 @@ int.$factory = function(){
         sign = _value[0]
         _value = _value.substr(1)
         if(_value.length == 0 || '+-'.includes(_value[0])){
-            $B.RAISE(_b_.ValueError,
-                `invalid literal for int() with base 10: '${value}'`
-            )
+            throw _b_.ValueError.$factory(
+                `invalid literal for int() with base 10: '${value}'`)
         }
     }
 
