@@ -1198,7 +1198,10 @@ function trace_from_stack(err){
         count_repeats = 0
         trace.push(`  File "${filename}", line ${lineno}, in ` +
             (frame[0] == frame[2] ? '<module>' : frame[0]))
-        var src
+        // src must be reset for each frame, otherwise a frame for code
+        // without a source file (eg "<string>") uses the source of the
+        // previous frame (backported from Brython 3.14.3)
+        var src = false
         if(! filename.startsWith('<')){
             src = $B.file_cache[filename]
         }
