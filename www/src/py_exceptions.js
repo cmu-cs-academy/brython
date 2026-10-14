@@ -234,7 +234,12 @@ frame.__str__ = frame.__repr__ = function(_self){
 
 frame.f_builtins = {
     __get__: function(_self){
-        return $B.$getattr(_self[3].__builtins__, '__dict__')
+        // CS Academy: the globals of code run by exec() may have no
+        // __builtins__ (eg the globals of student programs in cmu_graphics);
+        // use the builtins module then. Without it, traceback.format_exc()
+        // failed for NameError (it reads f_builtins to make suggestions).
+        var builtins = _self[3].__builtins__ ?? $B.imported.builtins
+        return $B.$getattr(builtins, '__dict__')
     }
 }
 

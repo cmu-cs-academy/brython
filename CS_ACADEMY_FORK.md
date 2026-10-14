@@ -149,6 +149,11 @@ worker.
   `globals()` raised `NameError`, and a name set again after being deleted could
   not be changed. `setupMvc()` in cmu_graphics deletes names from the globals
   of MVC programs, then `registerGlobals(globals())` iterates on them.
+- `frame.f_builtins` (`www/src/py_exceptions.js`) falls back to the
+  builtins module when the globals have no `__builtins__` (the globals of
+  student programs in cmu_graphics). The traceback module of CPython 3.14
+  reads it to make suggestions, so `traceback.format_exc()` failed for every
+  `NameError` in student programs.
 - `trace_from_stack()` (`www/src/py_exceptions.js`): resetting `src` for each
   frame is backported from 3.14.3 (upstream 3.14.0 crashed with a Javascript
   error for `exec()` frames), and two error paths that looped forever now move

@@ -182,4 +182,24 @@ checker = window.cs_make_checker()
 assert checker(None) == 'None'
 assert checker(1.5) == 'object'  # a Brython float
 
+# traceback.format_exc() for a NameError in code run by exec() with globals
+# that have no __builtins__ (student programs in cmu_graphics)
+import traceback
+g = {}
+exec("""
+import traceback
+try:
+    undefined_name
+except NameError:
+    tb = traceback.format_exc()
+""", g)
+assert "NameError: name 'undefined_name' is not defined" in g['tb'], g['tb']
+ns = {'__name__': '__main__'}
+ns2 = dict(ns)
+exec("def f():\n    return undefined_name2\n", ns2)
+try:
+    ns2['f']()
+except NameError:
+    assert 'undefined_name2' in traceback.format_exc()
+
 print('passed all tests...')
