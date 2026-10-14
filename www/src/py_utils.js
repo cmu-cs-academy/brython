@@ -948,7 +948,7 @@ $B.unpacker = function(obj, nb_targets, has_starred){
             (has_starred && (right_length < nb_targets - 1))){
         $B.set_inum(inum)
         var exc = _b_.ValueError.$factory(`not enough values to unpack ` +
-            `(expected ${has_starred ? ' at least ' : ''} ` +
+            `(expected ${has_starred ? 'at least ' : ''}` +
             `${left_length}, got ${right_length})`)
         throw exc
     }

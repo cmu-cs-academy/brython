@@ -1299,7 +1299,7 @@ dict.pop = function(){
 dict.popitem = function(self){
     $B.check_nb_args_no_kw('popitem', 1, arguments)
     if(dict.__len__(self) == 0){
-        throw _b_.KeyError.$factory("'popitem(): dictionary is empty'")
+        throw _b_.KeyError.$factory('popitem(): dictionary is empty')
     }
     if(self.$all_str){
         for(var key in self.$strings){

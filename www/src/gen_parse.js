@@ -18993,7 +18993,7 @@ function invalid_fstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead(0, _tmp_239_rule, p)
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting '=', or '!', or ':', or '}'");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting '=', or '!', or ':', or '}'");
                 break;
             }
             p.mark = _mark;
@@ -19015,7 +19015,7 @@ function invalid_fstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead(0, _tmp_240_rule, p)
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting '!', or ':', or '}'");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting '!', or ':', or '}'");
                 break;
             }
             p.mark = _mark;
@@ -19066,7 +19066,7 @@ function invalid_fstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead(0, _tmp_242_rule, p)
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting ':' or '}'");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting ':' or '}'");
                 break;
             }
             p.mark = _mark;
@@ -19099,7 +19099,7 @@ function invalid_fstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead_with_int(0, $B._PyPegen.expect_token, p, 26)  // token='}'
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting '}', or format specs");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting '}', or format specs");
                 break;
             }
             p.mark = _mark;
@@ -19126,7 +19126,7 @@ function invalid_fstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead_with_int(0, $B._PyPegen.expect_token, p, 26)  // token='}'
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting '}'");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "f-string: expecting '}'");
                 break;
             }
             p.mark = _mark;
@@ -19302,7 +19302,7 @@ function invalid_tstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead(0, _tmp_247_rule, p)
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting '=', or '!', or ':', or '}'");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting '=', or '!', or ':', or '}'");
                 break;
             }
             p.mark = _mark;
@@ -19324,7 +19324,7 @@ function invalid_tstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead(0, _tmp_248_rule, p)
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting '!', or ':', or '}'");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting '!', or ':', or '}'");
                 break;
             }
             p.mark = _mark;
@@ -19375,7 +19375,7 @@ function invalid_tstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead(0, _tmp_250_rule, p)
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting ':' or '}'");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting ':' or '}'");
                 break;
             }
             p.mark = _mark;
@@ -19408,7 +19408,7 @@ function invalid_tstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead_with_int(0, $B._PyPegen.expect_token, p, 26)  // token='}'
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting '}', or format specs");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting '}', or format specs");
                 break;
             }
             p.mark = _mark;
@@ -19435,7 +19435,7 @@ function invalid_tstring_replacement_field_rule(p)
                 $B._PyPegen.lookahead_with_int(0, $B._PyPegen.expect_token, p, 26)  // token='}'
             )
             {
-                _res = $B.helper_functions.$B._PyPegen.PyErr_Occurred () ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting '}'");
+                _res = $B.helper_functions.PyErr_Occurred() ? $B.parser_constants.NULL : $B.helper_functions.RAISE_SYNTAX_ERROR_ON_NEXT_TOKEN(p,  "t-string: expecting '}'");
                 break;
             }
             p.mark = _mark;

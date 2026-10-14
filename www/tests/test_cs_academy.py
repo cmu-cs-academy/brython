@@ -228,4 +228,48 @@ try:
 except NameError:
     assert 'undefined_name2' in traceback.format_exc()
 
+# Syntax error messages students see (bugs in Brython 3.14.0)
+def syntax_error(src):
+    try:
+        exec(src, {})
+    except SyntaxError as exc:
+        return exc.args[0]
+    raise AssertionError(f'no SyntaxError for {src!r}')
+
+assert syntax_error("print 'hi'") == \
+    "Missing parentheses in call to 'print'. Did you mean print(...)?"
+assert syntax_error("x = 'abc\ny = 2") == \
+    'unterminated string literal (detected at line 1)'
+assert syntax_error('x = """abc\n\ny') == \
+    'unterminated triple-quoted string literal (detected at line 3)'
+assert syntax_error("print(f'{1+}')") == \
+    "f-string: expecting '=', or '!', or ':', or '}'"
+assert syntax_error("f'{x!z}'") == \
+    "f-string: invalid conversion character 'z': expected 's', 'r', or 'a'"
+
+# print() with None for end / sep uses the default values
+import io
+out = io.StringIO()
+print('a', 'b', sep=None, end=None, file=out)
+assert out.getvalue() == 'a b\n'
+
+# Error messages
+import math
+try:
+    math.foo
+except AttributeError as exc:
+    assert str(exc) == "module 'math' has no attribute 'foo'"
+try:
+    a, b, c = [1, 2]
+except ValueError as exc:
+    assert str(exc) == 'not enough values to unpack (expected 3, got 2)'
+try:
+    {}.popitem()
+except KeyError as exc:
+    assert str(exc) == "'popitem(): dictionary is empty'"
+
+# Names of built-in functions
+assert len.__name__ == 'len'
+assert math.sqrt.__name__ == 'sqrt'
+
 print('passed all tests...')

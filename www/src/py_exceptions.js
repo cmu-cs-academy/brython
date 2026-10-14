@@ -658,6 +658,8 @@ $B.attr_error = function(name, obj){
     var msg
     if(obj.$is_class){
         msg = `type object '${obj.__name__}'`
+    }else if(obj.__class__ === $B.module && typeof obj.__name__ == 'string'){
+        msg = `module '${obj.__name__}'`
     }else{
         msg = `'${$B.class_name(obj)}' object`
     }

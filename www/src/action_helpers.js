@@ -378,8 +378,9 @@ $B._PyPegen.formatted_value = function(p,
         var conversion_expr = conversion.result,
             first = conversion_expr.id
         if(first.length > 1 || ! 'sra'.includes(first)){
-            $B.helper_functions.RAISE_SYNTAX_ERROR_KNOWN_LOCATION(conversion_expr,
-                `f-string: invalid conversion character {first}: ` +
+            $B.helper_functions.RAISE_SYNTAX_ERROR_KNOWN_LOCATION(p,
+                conversion_expr,
+                `f-string: invalid conversion character '${first}': ` +
                 "expected 's', 'r', or 'a'")
         }
         var conversion_val = first.charCodeAt(0)
@@ -771,6 +772,10 @@ $B._PyPegen.get_patterns = function(p, seq){
 }
 
 $B._PyPegen.check_legacy_stmt = function(p, name){
+    // The grammar actions pass a Name node
+    if(name instanceof $B.ast.Name){
+        name = name.id
+    }
     return ["print", "exec"].includes(name)
 }
 

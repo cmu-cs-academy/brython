@@ -2309,9 +2309,13 @@ var $print = _b_.print = function(){
     var $ns = $B.args('print', 0, {}, [], arguments,
               {}, 'args', 'kw')
     var kw = $ns['kw'],
-        end = _b_.dict.get(kw, 'end', '\n'),
-        sep = _b_.dict.get(kw, 'sep', ' '),
-        file = _b_.dict.get(kw, 'file', $B.get_stdout())
+        end = _b_.dict.get(kw, 'end', None),
+        sep = _b_.dict.get(kw, 'sep', None),
+        file = _b_.dict.get(kw, 'file', None)
+    // As in CPython, None means the default value
+    end = end === None ? '\n' : end
+    sep = sep === None ? ' ' : sep
+    file = file === None ? $B.get_stdout() : file
     var args = $ns['args'],
         writer = $B.$getattr(file, 'write')
     for(var i = 0, len = args.length; i < len; i++){
@@ -3471,7 +3475,19 @@ var builtin_function = $B.builtin_function_or_method = $B.make_class(
         return f
     })
 
-builtin_function.__getattribute__ = $B.function.__getattribute__
+// $B.function has no __getattribute__ since 3.14 (its attributes are getset
+// descriptors in $B.function.__dict__): without this, len.__name__ is the
+// class attribute 'builtin_function_or_method'.
+builtin_function.__getattribute__ = function(self, attr){
+    if(attr == '__name__' || attr == '__qualname__' || attr == '__module__'){
+        var value = self.$function_infos?.[$B.func_attrs[attr]] ??
+            self.$infos?.[attr] // functions of Javascript modules
+        if(value !== undefined){
+            return value
+        }
+    }
+    return _b_.object.__getattribute__(self, attr)
+}
 builtin_function.__reduce_ex__ = builtin_function.__reduce__ = function(self){
     return self.$function_infos[$B.func_attrs.__name__]
 }

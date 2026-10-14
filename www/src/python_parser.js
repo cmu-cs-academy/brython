@@ -214,9 +214,11 @@ var helper_functions = {
     },
 
     RAISE_SYNTAX_ERROR_KNOWN_RANGE: function(p, a, b, msg){
-        var extra_args = arguments[4]
-        if(extra_args){
-            msg = _b_.str.__mod__(msg, extra_args)
+        var extra_args = Array.from(arguments).slice(4)
+        if(extra_args.length > 0){
+            // %U is a C format for strings
+            msg = _b_.str.__mod__(msg.replace(/%U/g, '%s'),
+                $B.fast_tuple(extra_args))
         }
         helper_functions.RAISE_ERROR_KNOWN_LOCATION(p, _b_.SyntaxError,
             a.lineno, a.col_offset,
@@ -347,6 +349,14 @@ Parser.prototype.read_token = function(){
                     $B.raise_error_known_location(...value)
                 }else if(value.$error_token_known_token){
                     throw make_error_known_token(...value)
+                }else if(value.message !== undefined &&
+                        value.num_type == $B.py_tokens.ERRORTOKEN){
+                    // Error detected by the tokenizer, e.g. "unterminated
+                    // string literal"
+                    $B.raise_error_known_location(value.err_type,
+                        value.filename, value.lineno, value.col_offset,
+                        value.end_lineno, value.end_col_offset, value.line,
+                        value.message)
                 }
                 this.tokens[this.tokens.length] = value
                 return value

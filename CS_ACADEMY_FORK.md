@@ -165,6 +165,36 @@ worker.
   frame is backported from 3.14.3 (upstream 3.14.0 crashed with a Javascript
   error for `exec()` frames), and two error paths that looped forever now move
   to the next frame (still a bug upstream).
+- Bugs of upstream 3.14.0 that changed the errors and output of student
+  programs compared to the previous version of the fork (tested in
+  `www/tests/test_cs_academy.py`):
+  - The parser never reported the errors found by the tokenizer, so
+    "unterminated string literal" and "unterminated triple-quoted string
+    literal" became "invalid syntax" (`Parser.prototype.read_token` in
+    `www/src/python_parser.js`; `ErrorToken` in `www/src/python_tokenizer.js`
+    now keeps the exception type). The line in "(detected at line N)" for
+    triple-quoted strings is the same as CPython's.
+  - `print 'hi'` gave "invalid syntax" instead of "Missing parentheses in
+    call to 'print'..." (`check_legacy_stmt` in `www/src/action_helpers.js`
+    and `RAISE_SYNTAX_ERROR_KNOWN_RANGE` in `www/src/python_parser.js`).
+  - Some f-string syntax errors, like `f'{1+}'`, raised a Javascript
+    `TypeError`: the generated parser called
+    `$B.helper_functions.$B._PyPegen.PyErr_Occurred()`
+    (`scripts/adapt_grammar_actions.py`, and `www/src/gen_parse.js` edited by
+    hand). `f'{x!z}'` gave the message "undefined" (`formatted_value` in
+    `www/src/action_helpers.js`).
+  - `print(x, end=None)` and `sep=None` raised `TypeError` with a stream that
+    only accepts strings; as in CPython, `None` now means the default value
+    (`www/src/py_builtin_functions.js`).
+  - `len.__name__` was `'builtin_function_or_method'` for every built-in
+    function except `print` (and `math.sqrt.__name__` too):
+    `builtin_function.__getattribute__` is now defined
+    (`www/src/py_builtin_functions.js`).
+  - Error messages: `module 'math' has no attribute 'foo'` instead of
+    `'module' object has no attribute 'foo'` (`$B.attr_error` in
+    `www/src/py_exceptions.js`), a double space in "not enough values to
+    unpack (expected  3, got 2)" (`www/src/py_utils.js`), and the message of
+    `{}.popitem()` was quoted twice (`www/src/py_dict.js`).
 
 ## 6. Standard library (`www/src/Lib`)
 

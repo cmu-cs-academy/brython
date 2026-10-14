@@ -172,6 +172,8 @@ function ErrorToken(err_type, filename, lineno, col_offset,
         end_lineno, end_col_offset, line, message){
     var token = Token('ERRORTOKEN', '', lineno, col_offset,
         end_lineno, end_col_offset, line)
+    token.err_type = err_type
+    token.filename = filename
     token.message = message
     return token
 }
@@ -1118,11 +1120,12 @@ $B.tokenizer = function(src, filename, mode, parser){
               line))
             break
         case 'STRING':
+            // src ends with a newline, so line_num is past the last line
+            var msg = `unterminated ${triple_quote ? 'triple-quoted ' : ''}` +
+                `string literal (detected at line ${Math.max(1, line_num - 1)})`
             line_num = string_start[0]
             line = lines[line_num - 1]
-            var msg = `unterminated ${triple_quote ? 'triple-quoted ' : ''}` +
-                `string literal (detected at line ${line_num})`,
-                col_offset = string_start[1]
+            var col_offset = string_start[1]
             t.push(ErrorToken(_b_.SyntaxError,
                 filename, line_num, col_offset,
                 line_num, col_offset,
