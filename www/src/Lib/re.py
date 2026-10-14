@@ -33,7 +33,9 @@ class RegexFlag:
 
 
 from python_re import *
-from browser import console
+# CS Academy: removed unused import, "import browser" is not allowed in
+# student programs (see $B.lockdown)
+# from browser import console
 
 
 import python_re
