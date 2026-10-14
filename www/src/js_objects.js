@@ -230,9 +230,12 @@ var jsobj2pyobj = $B.jsobj2pyobj = function(jsobj, _this){
             for(var i = 0, len = arguments.length; i < len; ++i){
                 var arg = arguments[i]
                 if(arg !== null && arg.constructor === Object && arg.$kw){
-                    throw _b_.TypeError.$factory(
-                        'keyword arguments are not supported for ' +
-                        'Javascript functions')
+                    // CS Academy: pass keyword arguments to the Javascript
+                    // function as the Brython object {$kw: [...]}, as Brython
+                    // did before 3.12 (upstream raises TypeError). Functions
+                    // of cmu-graphics.js such as drawRect() read them.
+                    args[i] = arg
+                    continue
                 }
                 args[i] = pyobj2jsobj(arg)
             }

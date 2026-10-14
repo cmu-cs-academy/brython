@@ -50,6 +50,11 @@ changed them since; the fork keeps the old ones.
   (marked `CS Academy`) in `www/tests/test_jsobjects.py` and
   `www/tests/issues.py`.
 
+Keyword arguments in a call to a Javascript function from Python are passed
+as the Brython object `{$kw: [{name: value, ...}]}` (the last argument), as
+before 3.12; upstream raises `TypeError`. `drawRect()` etc. in cmu-graphics.js
+(MVC programs) read them this way.
+
 `pyobj2jsobj` also returns Python ints and strs (Javascript numbers and
 strings) immediately, before the class checks. This is only for speed.
 

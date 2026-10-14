@@ -155,4 +155,20 @@ assert 'x' in globals()
 exec(src, {})
 window.eval(__BRYTHON__.python_to_js(src, 'cs_academy_del_globals'))
 
+# keyword arguments passed to a Javascript function are received as the
+# Brython object {$kw: [...]} (used by drawRect() etc. in cmu-graphics.js)
+window.eval("""window.cs_make_draw = function(){
+    return function(){
+        var args = Array.from(arguments), kw = {}
+        var last = args[args.length - 1]
+        if(last && last.$kw){
+            kw = args.pop().$kw[0]
+        }
+        return args.length + ':' + Object.keys(kw).join(',')
+    }
+}""")
+draw = window.cs_make_draw()
+assert draw(1, 2.5, fill='red', border=None) == '2:fill,border'
+assert draw(1) == '1:'
+
 print('passed all tests...')
