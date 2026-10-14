@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- Test page used by scripts/run_browser_tests.py (CS Academy fork) -->
+<script src="../src/brython.js"></script>
+<script src="../src/brython_stdlib.js"></script>
+<!-- Javascript code needed to run tests included in dom.py -->
+<script src="dom_js_tests.js"></script>
+<!-- Javascript code needed to run JSObject tests -->
+<script src="jsobj_tests.js"></script>
+</head>
+<body onload="brython({debug: 1, indexedDB: false})">
+<!-- HTML needed to run tests included in dom.py -->
+<div id="dom-test-element-id"></div>
+<div id="banner_row"></div>
+<div id="container"></div>
+
+<script>
+// Web worker test: python_to_js must work in a worker, without leaking
+// builtins into the global scope
+window.run_web_worker_test = function(){
+    return new Promise(function(resolve){
+        var w = new Worker('web_worker_tests.js')
+        var timer = setTimeout(() => resolve('timeout'), 20000)
+        w.onmessage = function(e){
+            clearTimeout(timer)
+            resolve(e.data === 'world' ? 'ok' : 'unexpected message ' + e.data)
+        }
+        w.onerror = function(e){
+            clearTimeout(timer)
+            resolve('error in web worker: ' + e.message)
+        }
+    })
+}
+</script>
+
+<script type="text/python">
+from browser import window
+import brython_test_utils as utils
+
+def list_tests():
+    res = []
+    for group, mods in utils.discover_brython_test_modules():
+        for fn, cap in mods:
+            res.append(fn)
+    return res
+
+def run_one(fn):
+    state, t0, t1, msg = utils.run_test_module(fn)
+    return [state, round((t1 - t0) * 1000), msg]
+
+window.list_tests = list_tests
+window.run_one = run_one
+window.harness_ready = True
+</script>
+</body>
+</html>
