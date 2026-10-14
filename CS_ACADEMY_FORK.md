@@ -122,10 +122,14 @@ Solutions are compiled to Javascript on the server (backend/compile_brython.js)
 or in another page (backend/scripts/py2js), then run in the cmu_graphics web
 worker.
 
-- `from_py()` (`www/src/brython_builtins.js`) uses a random file name
-  (`$python_to_js` + random number) instead of one based on the page URL or on
-  `$B.UUID()`, which could collide with names generated in the page that runs
-  the code.
+- `from_py()` (`www/src/brython_builtins.js`) uses a random name
+  (`$python_to_js` + random number) as file name **and module name**, as
+  Brython did before 3.12. Upstream uses a file name based on the page URL and
+  the `script_id` as module name. With the upstream names, all the solutions
+  run in the cmu_graphics worker (compiled with the same `script_id`,
+  `__main_soln__`) shared one namespace: names defined by one solution (e.g.
+  `onKeyPress`) were still defined when the next solution ran. A consequence:
+  `__name__` in the generated code is the random name, not the `script_id`.
 - The code generated for a module (`www/src/ast_to_js.js`,
   `Module.prototype.to_js`) registers the module in `$B.imported` and
   `$B.url2name` if it isn't there yet, i.e. if the code was compiled in

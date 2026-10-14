@@ -503,12 +503,18 @@ function from_py(src, script_id){
     // (backend/compile_brython.js) and run in the browser, so it must not
     // depend on the page URL or on a counter like $B.UUID() that could
     // collide with names generated in the browser.
+    // The random name is also the name of the module, as in Brython before
+    // 3.12: each compiled program has its own namespace, even when its code
+    // is run several times in the same Brython instance (cmu_graphics runs
+    // the solutions of exercises in the same web worker, with the same
+    // script_id; with a shared namespace, the names defined by a solution
+    // were still defined when the next one ran).
     var filename = '$python_to_js' + Math.floor(Math.random() * 1e10)
-    $B.url2name[filename] = script_id
-    $B.imported[script_id] = {}
+    $B.url2name[filename] = filename
+    $B.imported[filename] = {}
 
     var root = __BRYTHON__.py2js({src, filename},
-                                 script_id, script_id,
+                                 filename, filename,
                                  __BRYTHON__.builtins_scope)
     return root.to_js()
 }

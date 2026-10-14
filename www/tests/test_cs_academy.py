@@ -3,6 +3,7 @@
 See CS_ACADEMY_FORK.md at the root of the repository.
 """
 from browser import window
+import javascript
 from tester import assert_raises
 
 # Javascript objects that emulate Python objects with __js_getattribute__
@@ -117,9 +118,18 @@ assert_raises(Exception, time.sleep, 1)
 # python_to_js output can be run in another Brython instance, where the
 # module has not been registered
 js = __BRYTHON__.python_to_js('y = 2 + 3', 'cs_academy_test_module')
-del __BRYTHON__.imported['cs_academy_test_module']
+for key in list(window.Object.keys(__BRYTHON__.imported)):
+    if key.startswith('$python_to_js'):
+        __BRYTHON__.imported[key] = javascript.UNDEFINED
 ns = window.eval(js)
 assert ns.y == 5
+
+# each program compiled by python_to_js has its own namespace, even if the
+# script ids are the same
+js1 = __BRYTHON__.python_to_js('z1 = 1', 'cs_academy_same_id')
+js2 = __BRYTHON__.python_to_js("ok = 'z1' not in globals()", 'cs_academy_same_id')
+window.eval(js1)
+assert window.eval(js2).ok
 
 # a Javascript function exported by a Python module and imported with
 # "from module import *" still converts its arguments (upstream unwraps it,
