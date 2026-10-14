@@ -196,6 +196,10 @@ imports of these modules small.
     upstream.
 - **linecache.py**: same as upstream. (Earlier versions of the fork modified
   it; cmu_graphics.py now replaces `linecache.updatecache`.)
+- **_operator.py**: `index()` says `'float' object cannot be interpreted as an
+  integer` (like CPython) instead of `'<class 'float'>' object ...`. Students
+  see it when they pass a float to `randrange()`, which raises `TypeError`
+  since Python 3.12 (it only warned in 3.10 and 3.11).
 - **subprocess.py**: catches `ImportError` as well as `ModuleNotFoundError`
   when importing `msvcrt`.
 
