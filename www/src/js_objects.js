@@ -240,10 +240,22 @@ var jsobj2pyobj = $B.jsobj2pyobj = function(jsobj, _this){
                 args[i] = pyobj2jsobj(arg)
             }
             try{
-                return jsobj2pyobj(jsobj.apply(_this, args))
+                var result = jsobj.apply(_this, args)
             }catch(err){
                 throw $B.exception(err)
             }
+            if(typeof result == 'function' && result[PYOBJ] === undefined &&
+                    ! result.$infos && ! result.$function_infos){
+                // CS Academy: a Javascript function returned by a call to a
+                // Javascript function is returned as is, as Brython did before
+                // 3.12. When Python code calls it, it receives the Brython
+                // objects (eg None, not null) and the keyword arguments as
+                // {$kw: [...]}. cmu-graphics.js relies on this (functions such
+                // as jsSetWithTypeCheckBry() or jsDrawRect() return the
+                // functions that cmu_graphics calls).
+                return result
+            }
+            return jsobj2pyobj(result)
         }
 
         if(_this === null){

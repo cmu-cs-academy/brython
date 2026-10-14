@@ -50,6 +50,16 @@ changed them since; the fork keeps the old ones.
   (marked `CS Academy`) in `www/tests/test_jsobjects.py` and
   `www/tests/issues.py`.
 
+Javascript functions reached by attribute access (e.g. `window.f` or
+`_cg.angleTo`) are wrapped so that their arguments are converted to Javascript
+(as upstream). But a Javascript function **returned by a call** to a
+Javascript function is returned as is, as before 3.12 (upstream wraps it too):
+Python then calls it with Brython objects (`None`, Brython floats, lists...)
+and keyword arguments as `{$kw: ...}`. cmu-graphics.js relies on this: the
+`...Bry()` functions (`jsSetWithTypeCheckBry()`, `jsInitShapeBry()`...) and
+`jsDrawRect()` etc. return functions that expect Brython values, for instance
+`brythonColorToJsColor()` compares the value with `_b_.None`.
+
 Keyword arguments in a call to a Javascript function from Python are passed
 as the Brython object `{$kw: [{name: value, ...}]}` (the last argument), as
 before 3.12; upstream raises `TypeError`. `drawRect()` etc. in cmu-graphics.js

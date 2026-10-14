@@ -171,4 +171,15 @@ draw = window.cs_make_draw()
 assert draw(1, 2.5, fill='red', border=None) == '2:fill,border'
 assert draw(1) == '1:'
 
+# a Javascript function returned by a Javascript function call receives the
+# Brython objects, not converted (cmu-graphics.js: jsSetWithTypeCheckBry()...)
+window.eval("""window.cs_make_checker = function(){
+    return function(value){
+        return value === __BRYTHON__.builtins.None ? 'None' : typeof value
+    }
+}""")
+checker = window.cs_make_checker()
+assert checker(None) == 'None'
+assert checker(1.5) == 'object'  # a Brython float
+
 print('passed all tests...')
