@@ -1,6 +1,7 @@
 from tester import assertRaises, assert_raises
 
 parser_to_ast = hasattr(__BRYTHON__, 'parser_to_ast')
+gen_parser = hasattr(__BRYTHON__, 'py_tokens')
 
 # issue 5
 assert(isinstance(__debug__, bool))
@@ -341,15 +342,6 @@ except AttributeError:
 except:
     raise
 
-# issue 274
-import base64
-b = bytearray(b'<Z\x00N')
-b64 = base64.b64encode( b )
-assert b64 == b'PFoATg=='
-
-buf = bytearray(b'EZ\x86\xdd\xabN\x86\xdd\xabNE[\x86\xdd\xabN\x86\xdd\xabN')
-b64 = base64.b64encode( buf )
-assert b64 == b'RVqG3atOht2rTkVbht2rTobdq04='
 
 # issue 279
 x = 0
@@ -649,18 +641,6 @@ assert [c for c in range(10) if eval.b[c] == 0] == [3]
 
 # restore original "eval"
 eval = __builtins__.eval
-
-# issue 394
-import base64
-b = b"\x7F\x7B\xED\x96"
-b64 = base64.b64encode(b)
-assert b64 == b"f3vtlg=="
-newb = base64.b64decode(b64)
-assert newb == b
-
-e = base64.b64encode(b'data to encode')
-assert e == b"ZGF0YSB0byBlbmNvZGU="
-assert base64.b64decode(e, validate=True) == b'data to encode'
 
 # issue 412
 assert not True and not False or True
@@ -1392,7 +1372,7 @@ class C:
 assert '{}'.format(C) == "<class '__main__.C'>"
 
 import javascript
-assert javascript.jsobj2pyobj(javascript.NULL) is None
+assert javascript.jsobj2pyobj(javascript.NULL) is javascript.NULL
 undef = javascript.jsobj2pyobj(javascript.UNDEFINED)
 assert not undef
 
@@ -2042,7 +2022,12 @@ b2 = B()
 assert b2.show() == 8
 
 # issue 1059
-z_txt_path = "z.txt"
+import os
+try:
+    issues_py_dir = os.path.dirname(__file__)
+    z_txt_path = os.path.join(issues_py_dir, "z.txt")
+except NameError:
+    z_txt_path = "z.txt"
 
 with open(z_txt_path, encoding="utf-8") as f:
     t = [line for line in f]
@@ -2641,7 +2626,7 @@ try:
     exec("not x = 1")
     raise Exception("should have raised SyntaxError")
 except SyntaxError as exc:
-    if parser_to_ast:
+    if parser_to_ast or gen_parser:
         assert exc.args[0] == "cannot assign to expression"
     else:
         assert exc.args[0] == "cannot assign to operator"
@@ -3079,13 +3064,13 @@ assert_raises(SyntaxError,
 try:
     exec('x =')
 except SyntaxError as e:
-    assert e.args == ('invalid syntax', ('<string>', 1, 4, 'x =\n', 1, 4))
+    assert e.args == ('invalid syntax', ('<string>', 1, 4, 'x =\n', 1, 5))
 
 # issue 1980
 try:
     exec("x= ")
 except SyntaxError as exc:
-    assert exc.args == ('invalid syntax', ('<string>', 1, 4, 'x= \n', 1, 4))
+    assert exc.args == ('invalid syntax', ('<string>', 1, 4, 'x= \n', 1, 5))
 
 # issue 2015
 assert_raises(SyntaxError, exec, "f(x=not)")
@@ -3139,23 +3124,12 @@ def foo():
 
 foo()
 
-src = """class Foo:
-    bar: Bar = 42"""
-assert_raises(NameError, exec, src)
-
-assert_raises(NameError, exec, 'bar: Bar = 42')
-
 # issue 2077
 assert_raises(SyntaxError, exec, "f(🠞)",
     msg="invalid character '🠞' (U+1F81E)")
 
 # issue 2093
 assert_raises(SyntaxError, exec, "x ~= 1")
-
-# CS Academy set bug Jira CSA-728
-x = {1}
-x.pop()
-assert 1 not in x
 
 # issue 2106
 import enum
@@ -3184,13 +3158,173 @@ assert x[0] == -1
 assert_raises(SyntaxError, exec, "def f():\n  await x")
 assert_raises(SyntaxError, exec, "await x")
 
+# issue 2217
+assert_raises(SyntaxError, exec, 'type(lambda))')
+
 # issue 2232
 assert_raises(SyntaxError, exec, 'if x is not in y: pass')
 
-# issue 2304
-assert_raises(SyntaxError, exec, "if True:\n not")
+# issue 2258
+import pathlib
+import os
+
+module_path = "/py/elephas/test_mdl.py"
+path = pathlib.Path(module_path)
+
+assert os.fspath(path) == r'/py/elephas/test_mdl.py'
+
+path = path.with_suffix('')
+stem = path.stem
+assert stem == 'test_mdl'
+
+assert str(pathlib.Path('.')) == '.'
+
+pathlib.Path.cwd()
+
 # issue 2303
 assert_raises(SyntaxError, exec, "x:1,")
+
+# issue 2304
+assert_raises(SyntaxError, exec, "if True:\n not")
+
+# Dictionary containing just a dictionary unpacking
+assert {**{1:2}} == {1:2}
+
+# Tuple containing just a tuple unpacking
+assert (*(1,2),) == (1,2)
+
+# Lambda function in a with statement
+assert_raises(TypeError, exec, '''
+with (lambda: None):
+    pass
+''')
+
+# issue 2356
+postponed = """
+from __future__ import annotations
+
+if False:
+  Fraction = True
+
+def isNum(x: Fraction) -> Fraction:
+   pass
+
+annotations = isNum.__annotations__
+"""
+
+ns = {}
+exec(postponed, ns)
+ann = ns['annotations']
+assert ann == {'x': 'Fraction', 'return': 'Fraction'}, ann
+
+not_postponed = """
+if False:
+  Fraction = True
+
+def isNum(x: Fraction) -> Fraction:
+   pass
+
+print(isNum.__annotations__)
+"""
+assert_raises(NameError, exec, not_postponed, {},
+    msg="name 'Fraction' is not defined")
+
+# issue 2374
+a = 0
+b = [0, 1]
+c = [0, 1]
+
+assert a in b == c # same as (a in b) and (b == c)
+
+# issue 2386
+import html
+
+# issue 2406
+class A:
+  __name__ = 'coucou'
+
+class B:
+  pass
+
+class C(A):
+  pass
+
+assert A.__name__ == 'A'
+assert A.__dict__['__name__'] == 'coucou'
+assert A().__name__ == 'coucou'
+
+assert B.__name__ == 'B'
+assert not '__name__' in B.__dict__
+assert not '__name__' in B().__dict__
+
+assert A.__name__ == 'A'
+assert A.__dict__['__name__'] == 'coucou'
+assert A().__name__ == 'coucou'
+
+assert C.__name__ == 'C'
+assert not '__name__' in C.__dict__
+assert not '__name__' in C().__dict__
+
+assert not hasattr(range(3), '__name__')
+
+# issue 2493
+import http
+
+# issue 2494
+def f():
+  record = "A"
+  def g():
+    record_list = ["B"]
+    response = [ record for record in record_list ]
+    return response
+  return g()
+
+assert f() == ['B']
+
+# issue 2534
+def f(name, module):
+    source = sys.modules[module].__dict__
+    members = [
+            (name, value)
+            for name, value in source.items()
+            ]
+    assert name == 'abc'
+
+f('abc', __name__)
+
+# issue 2539
+assert_raises(NotImplementedError, os.open)
+
+# issue 2551
+import configparser
+p = configparser.ConfigParser()
+p.read("test_config.ini")
+
+# issue 2590
+t = []
+
+class Test:
+
+  def __getattr__(self, methodName):
+    t.append(f"'{methodName}' called !")
+    return lambda: True
+
+if Test():
+    pass
+
+assert not t
+
+# issue 2594
+assert_raises(OSError, os.stat, 'coucou')
+assert not os.path.exists('coucou')
+
+# ==========================================
+# Finally, report that all tests have passed
+# ==========================================
+# CS Academy set bug Jira CSA-728
+x = {1}
+x.pop()
+assert 1 not in x
 
 # CS Academy isinstance with object bug
 assert isinstance('a', object)
@@ -3198,7 +3332,4 @@ assert isinstance('a', str)
 assert not isinstance('a', int)
 assert isinstance(5, object)
 
-# ==========================================
-# Finally, report that all tests have passed
-# ==========================================
 print('passed all tests')

@@ -19,9 +19,11 @@ Un exemple simple :
 ```xml
 <html>
 <head>
-<script src="/brython.js"></script>
+<script src="/src/brython.js"></script>
+<script src="/src/brython_stdlib.js"></script>
 </head>
-<body onload="brython()">
+
+<body>
 <script type="text/python">
 from browser import document
 from browser.widgets.dialog import InfoDialog
@@ -35,6 +37,7 @@ document["echo"].bind("click", click)
 <input id="zone">
 <button id="echo">click !</button>
 </body>
+
 </html>
 ```
 
@@ -59,10 +62,9 @@ document["echo"].bind("click", click)
 </table>
 
 Pour faire fonctionner les scripts Python, il suffit d'importer le script
-_brython.js_, et d'exécuter la fonction `brython()` quand la page est chargée
-(attribut _onload_ de la balise `<BODY>`). En phase de développement, on peut
-passer un argument à cette fonction : 1 pour avoir les messages d'erreur dans
-la console du navigateur, 2 pour avoir en plus le code Javascript généré.
+_**brython.js**_ (le noyau Brython) et _**brython_stdlib**_ (la librairie
+standard). Le chemin (ici _/src/brython.js_) doit être adapté en fonction de
+l'emplacement du script.
 
 Si le programme Python est volumineux, une autre possibilité est de l'écrire
 dans un fichier séparé, et de le charger dans la page en utilisant l'attribut
@@ -75,10 +77,14 @@ _src_ de la balise `<script>` :
 <head>
 <script src="/brython.js"></script>
 </head>
-<body onload="brython()">
-<script type="text/python" src="test.py"></script>
-<input id="zone"><button onclick="echo()">clic !</button>
+
+<body>
+<script type="text/python" src="test.py">
+</script>
+<input id="zone">
+<button id="echo">clic !</button>
 </body>
+
 </html>
 ```
 
@@ -96,7 +102,7 @@ par exemple la remplacer par __`.bry`__ comme dans le code suivant:
 <script type="text/python" src="test.bry"></script>
 ```
 
-Quand on clique sur le bouton, la fonction `echo()` définie dans le script
+Quand on clique sur le bouton, la fonction `click()` définie dans le script
 Python est exécutée. Cette fonction récupère la valeur de l'élément INPUT
 par son id _zone_, en utilisant la syntaxe `document["zone"]` : `document`
 est un attribut du module intégré **browser**, il se comporte comme un

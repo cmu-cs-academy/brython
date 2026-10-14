@@ -1,10 +1,19 @@
-from browser import ajax, window
+from browser import ajax, window, console
+from tester import async_tester
+
+def check_status(req):
+    if req.status == 200:
+        return True
+    print(f'warning - status {req.status} for '
+        f'request to {req.url}, no check')
+    return False
 
 def show(req, *expects):
+    if not check_status(req):
+        return
     text = req.text
     for expected in expects:
-      if expected not in text:
-        raise AssertionError(f'{expected} not in {text}')
+        async_tester.assertIn(expected, text, f'{expected} not in {text}')
 
 # ajax.get to read text files
 ajax.get("files/text-utf8.txt", encoding='utf-8',
@@ -14,10 +23,10 @@ ajax.get("files/text-utf8.txt", encoding='utf-8',
     oncomplete=lambda req: show(req, 'bébé'),
     blocking=True)
 
-ajax.get("../static_doc/en/cookbook/file.txt", encoding='utf-8',
+ajax.get("files/text_cyrillic.txt", encoding='utf-8',
     oncomplete=lambda req: show(req, 'Шея'))
 
-ajax.get("../static_doc/en/cookbook/file.txt", encoding='utf-8',
+ajax.get("files/text_cyrillic.txt", encoding='utf-8',
     oncomplete=lambda req: show(req, 'Шея'),
     blocking=True)
 
@@ -43,24 +52,18 @@ ajax.get("files/text-latin1.txt", mode='binary',
     oncomplete=lambda req: show(req, 0xe9),
     blocking=True)
 
+# no attribute "text" for JSON requests (cf. PR #2589)
+ajax.get("https://jsonplaceholder.typicode.com/posts/1", mode="json",
+    oncomplete=lambda req: async_tester.assertFalse(hasattr(req, 'text')))
+
+
 def read_image(req):
     print('image', len(req.read()))
 
 ajax.get('../brython.png', mode="binary", oncomplete=read_image)
 ajax.get('../brython.png', mode="binary", oncomplete=read_image, blocking=True)
 
-# ajax.post
-# comment to see if it is the cause of Travis failure...
-"""
-ajax.post("/cgi-bin/post_test.py",
-    oncomplete=lambda req: show(req, "bar:38"),
-    data={'bar': 38})
 
-ajax.post("/cgi-bin/post_test.py",
-    headers={'Content-Type': "application/x-www-form-urlencoded"},
-    oncomplete=lambda req: show(req, "bar:38"),
-    data={'bar': 38})
-"""
 # DOM style
 req = ajax.Ajax()
 req.open("GET", "files/text-latin1.txt")
@@ -84,33 +87,11 @@ req.open("GET", "files/text-utf8.txt")
 req.bind("complete", lambda req: show(req, "bébé"))
 req.send()
 
-"""
-req = ajax.Ajax()
-req.open("GET", "/cgi-bin/get_test.py?bar=35", False)
-req.set_header('Content-Type', 'application/x-www-form-urlencoded')
-req.bind("complete", lambda req: show(req, "bar 35"))
-req.send()
-
-req = ajax.Ajax()
-req.open("POST", "/cgi-bin/post_test.py", False)
-req.bind("complete", lambda req: show(req, "bar:36"))
-req.send({'bar': 36})
-
-req = ajax.Ajax()
-req.open("POST", "/cgi-bin/post_test.py", False)
-req.set_header('content-type','application/x-www-form-urlencoded')
-req.bind("complete", lambda req: show(req, "bar:37"))
-req.send({'bar': 37})
-
-req = ajax.Ajax()
-req.open("POST", "/cgi-bin/post_test.py", False)
-req.setRequestHeader('content-type','application/x-www-form-urlencoded')
-req.bind("complete", lambda req: show(req, "bar:38"))
-req.send({'bar': 38})
-"""
 def assert_type(f, _type):
+    if not check_status(req):
+        return
     data = f.read()
-    assert isinstance(data, _type)
+    async_tester.assertTrue(isinstance(data, _type))
 
 x = ajax.get("test.html", mode="binary",
     oncomplete=lambda req: assert_type(req, bytes))
@@ -128,18 +109,22 @@ ajax.get("catalog.xml", mode="document",
     oncomplete=read_xml)
 
 def read_json(req):
-    assert req.json == req.read()
-    assert isinstance(req.read(), dict)
+    async_tester.assertEqual(req.json, req.read())
+    async_tester.assertTrue(isinstance(req.read(), dict))
 
 ajax.get("files/glossary.json", mode="json",
     oncomplete=read_json)
 
 # issue 2051
 # use httpbin.org for testing
+
 def check(num, req, expected):
+    if not check_status(req):
+        return
     data = req.json
     for key in expected:
-        assert data[key] == expected[key], (key, data[key], expected[key])
+        async_tester.assertEqual(data[key], expected[key],
+            (key, data[key], expected[key]))
 
 content = 'test file'
 file = window.File.new([content], 'test_file.txt')
@@ -164,5 +149,32 @@ ajax.file_upload('https://httpbin.org/anything',
                  data=data,
                  oncomplete=lambda req: check(2, req, expected2))
 
+expected3 = {
+                'files': {'filetosave': content},
+                'form': {'name': 'coucou3'}
+            }
+data = {'name': 'coucou3'}
+ajax.file_upload('https://httpbin.org/anything',
+                 file,
+                 data=data,
+                 oncomplete=lambda req: check(2, req, expected3))
+
+# issue 2346
+import json
+
+form_data = {"ident": "a + b"}
+
+def oncomplete(req):
+    if not check_status(req):
+        return
+    data = json.loads(req.read())
+    async_tester.assertEqual(data['form'], form_data)
+
+protocol = window.location.href.split('://')[0]
+url = f"{protocol}://httpbin.org/post"
+
+ajax.post(url,
+          data=form_data,
+          oncomplete=oncomplete)
 
 print('passed all tests...')

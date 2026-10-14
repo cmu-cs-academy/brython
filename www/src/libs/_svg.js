@@ -1,5 +1,5 @@
-// creation of an HTML element
-var $module = (function($B){
+// creation of a SVG element
+(function($B){
 
 var _b_ = $B.builtins
 var TagSum = $B.TagSum // defined in py_dom.js
@@ -18,7 +18,7 @@ function makeTagDict(tagName){
             args = $ns['args']
         if(args.length == 1){
             var first = args[0]
-            if(_b_.isinstance(first, [_b_.str, _b_.int, _b_.float])){
+            if($B.$isinstance(first, [_b_.str, _b_.int, _b_.float])){
                 self.appendChild(document.createTextNode(_b_.str.$factory(first)))
             }else if(first.__class__ === TagSum){
                 for(var i = 0, len = first.children.length; i < len; i++){
@@ -32,9 +32,10 @@ function makeTagDict(tagName){
 
         // attributes
         var items = _b_.list.$factory(_b_.dict.items($ns['kw']))
-        for(var arg in $ns.kw.$jsobj){
+        for(var item of _b_.dict.$iter_items($ns.kw)){
             // keyword arguments
-            var value = $B.py_immutable_to_js($ns.kw.$jsobj[arg])
+            var arg = item.key,
+                value = $B.py_immutable_to_js(item.value)
             if(arg.toLowerCase().substr(0,2) == "on"){
                 // Event binding passed as argument "onclick", "onfocus"...
                 // Better use method bind of DOMNode objects
@@ -129,5 +130,5 @@ for(var i = 0, len = $svg_tags.length; i < len; i++){
     obj[tag] = makeTagDict(tag)
 }
 
-return obj
+$B.imported._svg = obj
 })(__BRYTHON__)

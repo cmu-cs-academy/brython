@@ -5,6 +5,8 @@ browser context
 import abc
 import sys
 
+GenericAlias = type(list[int])
+
 error = OSError
 name = 'posix'
 linesep = '\n'
@@ -16,7 +18,8 @@ sys.modules['os.path'] = path
 from os.path import (curdir, pardir, sep, pathsep, defpath, extsep, altsep,
     devnull)
 
-environ = {'HOME': __BRYTHON__.curdir,
+environ = {
+    'HOME': __BRYTHON__.curdir,
     'PYTHONPATH': __BRYTHON__.brython_path
 }
 
@@ -82,7 +85,9 @@ def fsdecode(filename):
         raise TypeError("expect bytes or str, not %s" % type(filename).__name__)
 
 def fspath(path):
-    return path
+    if isinstance(path, [str, bytes]):
+        return path
+    return path.__fspath__()
 
 def getcwd():
     return __BRYTHON__.curdir
@@ -99,6 +104,8 @@ class PathLike(abc.ABC):
     @classmethod
     def __subclasshook__(cls, subclass):
         return hasattr(subclass, '__fspath__')
+
+    __class_getitem__ = classmethod(GenericAlias)
 
 
 if name == 'nt':

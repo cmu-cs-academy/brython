@@ -4,6 +4,11 @@ import urllib.request
 import version
 vnum = '.'.join(str(num) for num in version.version[:2])
 
+from directories import scripts_dir
+
+save_dir = os.getcwd()
+os.chdir(scripts_dir)
+
 print('Python.asdl and python.gram from CPython Github repository')
 
 ast_url = f"https://raw.githubusercontent.com/python/cpython/{vnum}/Parser/Python.asdl"
@@ -27,6 +32,21 @@ with urllib.request.urlopen(ast_url, timeout=4) as f:
     with open(grammar_file, 'w', encoding='utf-8') as out:
         out.write(src)
 
+# same for Tokens file
+tokens_file = 'Tokens'
+
+tokens_url = f"https://raw.githubusercontent.com/python/cpython/{vnum}/Grammar/Tokens"
+print('request', tokens_url)
+print('might take a few seconds, please wait...')
+
+with urllib.request.urlopen(tokens_url, timeout=4) as f:
+    print('connection open, reading...')
+    src = f.read().decode('utf-8')
+    print('read', len(src))
+
+    with open(tokens_file, 'w', encoding='utf-8') as out:
+        out.write(src)
+
 print('Unicode database from unicode.org')
 unicode_url = "https://www.unicode.org/Public/UCD/latest/ucd/"
 
@@ -46,3 +66,5 @@ for path in ["UnicodeData.txt",
         if not buf:
             break
         out.write(buf)
+
+os.chdir(save_dir)

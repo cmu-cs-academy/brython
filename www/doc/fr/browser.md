@@ -14,7 +14,7 @@ Le paquetage **browser** définit les noms et les modules intégrés spécifique
 > réponse (ok/annuler). Retourne `True` si ok, `False` sinon.
 
 **browser**.`console`
-> un objet avec des méthods pour interagir avec la console du navigateur. Son
+> un objet avec des méthodes pour interagir avec la console du navigateur. Son
 > interface est propre à chaque navigateur. Il expose au moins la méthode
 > `log(msg)`, qui imprime le message _msg_ dans la console.
 
@@ -28,6 +28,9 @@ Le paquetage **browser** définit les noms et les modules intégrés spécifique
 
 **browser**.`DOMNode`
 > la classe des noeuds DOM
+
+**browser**.`is_webworker`
+> booléen qui indique si le script courant est exécuté dans un Web Worker
 
 **browser**.`load(`_script\_url_`)`
 > Fonction pour charger la librairie Javascript à l'adresse _script\_url_.
@@ -51,6 +54,16 @@ Le paquetage **browser** définit les noms et les modules intégrés spécifique
 > l'avantage de bénéficier du cache indexedDB pour l'import de modules de la
 > bibliothèque standard.
 
+**browser**.`scope`
+> référence à l'espace de noms disponible dans le navigateur, indépendamment
+> du contexte d'exécution (script ou web worker). Equivalent à 
+> [`globalThis`](https://developer.mozilla.org/fr/docs/Web/JavaScript/Reference/Global_Objects/globalThis)
+> en Javascript
+
 **browser**.`window`
 > un objet représentant la fenêtre du navigateur (voir la
 > [documentation MDN](https://developer.mozilla.org/fr/docs/Web/API/Window))
+
+En outre, l'objet `__BRYTHON__` qui référence toutes les propriétés et les
+fonctions qui permettent à Brython de fonctionner est disponible par
+**browser**.`__BRYTHON__`

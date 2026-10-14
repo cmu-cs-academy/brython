@@ -1,12 +1,23 @@
-var $module=(function($B){
+(function($B){
 
 var _b_ = $B.builtins
+
+var block_size = {
+    md5: 64,
+    sha1: 64,
+    sha224: 64,
+    sha256: 64,
+    sha384: 128,
+    sha512: 128
+}
 
 var $mod = {
 
     __getattr__ : function(attr){
-        if(attr == 'new'){return hash.$factory}
-        return this[attr]
+        if(attr == 'new'){
+            return hash.$factory
+        }
+        throw $B.attr_error(attr, $mod)
     },
     md5: function(obj){return hash.$factory('md5', obj)},
     sha1: function(obj){return hash.$factory('sha1', obj)},
@@ -51,7 +62,7 @@ function $get_CryptoJS_lib(alg){
 function bytes2WordArray(obj){
     // Transform a bytes object into an instance of class WordArray
     // defined in CryptoJS
-    if(!_b_.isinstance(obj, _b_.bytes)){
+    if(!$B.$isinstance(obj, _b_.bytes)){
         throw _b_.TypeError("expected bytes, got " + $B.class_name(obj))
     }
 
@@ -117,10 +128,11 @@ hash.$factory = function(alg, obj) {
       default:
         throw $B.builtins.AttributeError.$factory('Invalid hash algorithm: ' + alg)
     }
-
+    res.digest_size = res.hash._hash.sigBytes
+    res.block_size = block_size[alg]
     return res
 }
 
-return $mod
+$B.addToImported('hashlib', $mod)
 
 })(__BRYTHON__)

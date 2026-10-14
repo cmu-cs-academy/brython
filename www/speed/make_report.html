@@ -7,9 +7,6 @@
 
 <link rel="stylesheet" href="console.css">
 
-<script src="../tests/ace/ace.js" type="text/javascript" charset="utf-8"></script>
-<script src="../tests/ace/ext-language_tools.js" type="text/javascript" charset="utf-8"></script>
-
 <script type="text/javascript" src="/src/brython_builtins.js"></script>
 
 <script type="text/javascript" src="/src/py_ast_classes.js"></script>
@@ -17,6 +14,8 @@
 <script type="text/javascript" src="/src/unicode_data.js"></script>
 <script type="text/javascript" src="/src/version_info.js"></script>
 
+
+<script type="text/javascript" src="/src/py_tokens.js"></script>
 <script type="text/javascript" src="/src/python_tokenizer.js"></script>
 <script type="text/javascript" src="/src/py_ast.js"></script>
 <script type="text/javascript" src="/src/py2js.js"></script>
@@ -24,6 +23,7 @@
 <script type="text/javascript" src="/src/py_utils.js"></script>
 <script type="text/javascript" src="/src/py_object.js"></script>
 <script type="text/javascript" src="/src/py_type.js"></script>
+<script type="text/javascript" src="/src/py_functions.js"></script>
 <script type="text/javascript" src="/src/py_builtin_functions.js"></script>
 <script type="text/javascript" src="/src/py_sort.js"></script>
 <script type="text/javascript" src="/src/py_exceptions.js"></script>
@@ -38,8 +38,8 @@
 <script type="text/javascript" src="/src/py_complex.js"></script>
 <script type="text/javascript" src="/src/py_dict.js"></script>
 <script type="text/javascript" src="/src/py_list.js"></script>
-<script type="text/javascript" src="/src/py_generator.js"></script>
 <script type="text/javascript" src="/src/js_objects.js"></script>
+<script type="text/javascript" src="/src/py_generator.js"></script>
 <script type="text/javascript" src="/src/py_dom.js"></script>
 <script type="text/javascript" src="/src/py_pattern_matching.js"></script>
 <script type="text/javascript" src="/src/async.js"></script>
@@ -48,9 +48,20 @@
 <script type="text/javascript" src="/src/ast_to_js.js"></script>
 <script type="text/javascript" src="/src/symtable.js"></script>
 
+<!-- scripts for PEG parser -->
+<script type="text/javascript" src="/src/action_helpers.js"></script>
+<script type="text/javascript" src="/src/string_parser.js"></script>
+<script type="text/javascript" src="/src/number_parser.js"></script>
+<script type="text/javascript" src="/src/python_parser.js"></script>
+<script type="text/javascript" src="/src/pegen.js"></script>
+<script type="text/javascript" src="/src/gen_parse.js"></script>
+
+<script type="text/javascript" src="/src/brython_ready.js"></script>
+
+
 <!-- script type="text/javascript" src="../src/brython_stdlib.js"></script -->
 
-<script type="text/python3" src="make_report.py">
+<script type="text/python3" src="make_report_no_cgi.py">
 </script>
 
 </head>
@@ -98,4 +109,5 @@
 </div>
 </body>
 </html>
+
 

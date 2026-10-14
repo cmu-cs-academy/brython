@@ -1,13 +1,53 @@
 // module for Web Components
-var $module = (function($B){
+(function($B){
 
 var _b_ = $B.builtins
 
-function define(tag_name, cls){
-    var $ = $B.args("define", 2, {tag_name: null, cls: null},
-            ["tag_name", "cls"], arguments, {}, null, null),
+function define(tag_name, cls, options){
+    var $ = $B.args("define", 3, {tag_name: null, cls: null, options: null},
+            ["tag_name", "cls", "options"], arguments, {options: _b_.None},
+            null, null),
         tag_name = $.tag_name,
-        cls = $.cls
+        cls = $.cls,
+        options = $.options,
+        _extends,
+        extend_dom_name = 'HTMLElement'
+    if(options !== _b_.None){
+        if(! $B.$isinstance(options, _b_.dict)){
+            throw _b_.TypeError.$factory('options can only be None or a ' +
+                `dict, not '${$B.class_name(options)}'`)
+        }
+        try{
+            _extends = _b_.dict.$getitem(options, 'extends')
+        }catch(err){
+            // ignore
+        }
+    }else{
+        let stack = [...cls.__bases__];
+        while(stack.length) {
+            base = stack.pop();
+        if(base.__module__ === 'browser.html'){
+                _extends = base.__name__.toLowerCase()
+                break
+        }
+
+        stack.push(...base.__bases__);
+    }
+    }
+
+    if(_extends){
+        if(typeof _extends != 'string'){
+            throw _b_.TypeError.$factory('value for extends must be a ' +
+                `string, not '${$B.class_name(_extends)}'`)
+        }
+        var elt = document.createElement(_extends)
+        if(elt instanceof HTMLUnknownElement){
+            throw _b_.ValueError.$factory(`'${_extends}' is not a valid ` +
+                'tag name')
+        }
+        var extend_tag = _extends.toLowerCase()
+        extend_dom_name = Object.getPrototypeOf(elt).constructor.name
+    }
     if(typeof tag_name != "string"){
         throw _b_.TypeError.$factory("first argument of define() " +
             "must be a string, not '" + $B.class_name(tag_name) + "'")
@@ -15,7 +55,7 @@ function define(tag_name, cls){
         throw _b_.ValueError.$factory("custom tag name must " +
             "contain a hyphen (-)")
     }
-    if(!_b_.isinstance(cls, _b_.type)){
+    if(!$B.$isinstance(cls, _b_.type)){
         throw _b_.TypeError.$factory("second argument of define() " +
             "must be a class, not '" + $B.class_name(tag_name) + "'")
     }
@@ -27,6 +67,11 @@ function define(tag_name, cls){
       constructor(){
         // Always call super first in constructor
         super()
+        var html = $B.imported['browser.html']
+        // Create tag in module html
+        if(html['tag_name'] === undefined){
+            html.maketag('tag_name', WebComponent)
+        }
         var init = $B.$getattr(cls, "__init__", _b_.None)
         if(init !== _b_.None){
             try{
@@ -36,6 +81,7 @@ function define(tag_name, cls){
                     attrs_before_init.push(_self.attributes.item(i))
                 }
                 _self.__class__ = cls
+                _self.__dict__ = $B.empty_dict()
                 $B.$call(init)(_self)
                 if(WebComponent.initialized){
                     // Check that init() did not introduce new attributes,
@@ -59,6 +105,12 @@ function define(tag_name, cls){
             var obs_attr = $B.$getattr(cls, "observedAttributes", null)
             if(obs_attr === null){
                 return []
+            }
+            if($B.$isinstance(obs_attr, _b_.property)){ // issue 2454
+                obs_attr = obs_attr.fget(cls)
+            }
+            if(obs_attr === null){
+                return []
             }else if(typeof obs_attr == "function"){
                 var warning = _b_.DeprecationWarning.$factory(
                     "Setting observedAttributes as a method " +
@@ -76,8 +128,11 @@ function define(tag_name, cls){
         }
     }
     `
-    var name = cls.__name__
-    eval(src.replace(/WebComponent/g, name))
+    var name = cls.__name__,
+        code = src.replace(/WebComponent/g, name).
+                   replace(/tag_name/g, tag_name).
+                   replace(/HTMLElement/, extend_dom_name)
+    var src = eval(code)
     var webcomp = eval(name) // JS class for component
     webcomp.$cls = cls
 
@@ -127,7 +182,11 @@ function define(tag_name, cls){
     }
 
     // define WebComp as the class to use for the specified tag name
-    customElements.define(tag_name, webcomp)
+    if(_extends){
+        customElements.define(tag_name, webcomp, {extends: extend_tag})
+    }else{
+        customElements.define(tag_name, webcomp)
+    }
     webcomp.initialized = true
 }
 
@@ -137,9 +196,11 @@ function get(name){
     return _b_.None
 }
 
-return {
+var module = {
     define: define,
     get: get
 }
+
+$B.addToImported('_webcomponent', module)
 
 })(__BRYTHON__)

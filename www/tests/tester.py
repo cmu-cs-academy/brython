@@ -154,9 +154,9 @@ class Tester:
         if a is b:
             raise AssertionError('%s is %s should be false' %(a, b))
 
-    def assertIn(self, item, container):
+    def assertIn(self, item, container, msg=None):
         if not item in container:
-            raise AssertionError('%s should be in %s' %(item, container))
+            raise AssertionError(msg or '%s should be in %s' %(item, container))
 
     def assertIsNaN(self, obj, msg=None):
         import math
@@ -379,6 +379,27 @@ class Support:
 
 support = Support()
 
+# tester for async functions: stops execution with input() in case of error
+class AsyncTester(Tester):
+    pass
+
+def async_wrapper(method):
+    def f(*args):
+        try:
+            method(*args)
+        except AssertionError as exc:
+            input(str(exc))
+            raise
+    return f
+
+for method_name in dir(Tester):
+    if method_name.startswith('assert'):
+        setattr(AsyncTester, method_name,
+                async_wrapper(getattr(Tester, method_name)))
+
+async_tester = AsyncTester()
+
+
 def assert_raises(exc_type, func, *args, msg=None, nb_args=None, **kw):
     try:
         func(*args, **kw)
@@ -392,7 +413,10 @@ def assert_raises(exc_type, func, *args, msg=None, nb_args=None, **kw):
                         f'    Expected: {msg}\n' +
                         f'    Got     : {exc.args[0]}')
             elif isinstance(msg, re.Pattern):
-                assert msg.match(exc.args[0])
+                if not msg.match(exc.args[0]):
+                    raise AssertionError('correct exception type, but message\n' +
+                        f'    {exc.args[0]}' +
+                        f'\ndoes not match pattern {msg}')
     else:
         raise AssertionError(f'should have raised {exc_type.__name__}')
 

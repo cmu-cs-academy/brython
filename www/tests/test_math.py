@@ -1,6 +1,6 @@
 import math
 
-from tester import assertRaises, assert_raises
+from tester import assertRaises, assert_raises, self
 
 def almost_equal(actual, expected):
     return abs(actual - expected) < 0.00001
@@ -292,7 +292,90 @@ assert_raises(ValueError, math.log, 0, msg="math domain error")
 assert_raises(ValueError, math.log10, 0, msg="math domain error")
 assert_raises(ValueError, math.log2, 0, msg="math domain error")
 
-# negative args and illegal bases
+# rewriting of math.comb
+math.comb(1200, 575)
+
+# issue2053
+assert math.hypot(1, 1) == 1.4142135623730951
+assert math.hypot(1.0, 1) == 1.4142135623730951
+assert math.hypot(1, 1.0) == 1.4142135623730951
+
+# issue 2168
+assert_raises(ValueError, math.log2, -10, msg='math domain error')
+assert_raises(ValueError, math.log, 10, -1, msg='math domain error')
+assert_raises(ValueError, math.log, 10, 0, msg='math domain error')
+
+assert_raises(ZeroDivisionError, math.log, 10, 1)
+
+# issue 2259 (sumprod, new in Python 3.12)
+# Core functionality
+sumprod = math.sumprod
+
+self.assertEqual(sumprod(iter([10, 20, 30]), (1, 2, 3)), 140)
+self.assertEqual(sumprod([1.5, 2.5], [3.5, 4.5]), 16.5)
+self.assertEqual(sumprod([], []), 0)
+
+from fractions import Fraction
+from decimal import Decimal
+# Type preservation and coercion
+for v in [
+    (10, 20, 30),
+    (1.5, -2.5),
+    (Fraction(3, 5), Fraction(4, 5)),
+    (Decimal(3.5), Decimal(4.5)),
+    (2.5, 10),             # float/int
+    (2.5, Fraction(3, 5)), # float/fraction
+    (25, Fraction(3, 5)),  # int/fraction
+    (25, Decimal(4.5)),    # int/decimal
+]:
+    for p, q in [(v, v), (v, v[::-1])]:
+        expected = sum(p_i * q_i for p_i, q_i in zip(p, q, strict=True))
+        actual = sumprod(p, q)
+        self.assertEqual(expected, actual)
+        self.assertEqual(type(expected), type(actual))
+
+# issue 2264
+nextafter = math.nextafter
+
+assert nextafter(4, 5) == 4.000000000000001
+assert nextafter(4.5, 5) == 4.500000000000001
+assert nextafter(4.5, 4) == 4.499999999999999
+assert nextafter(4, 4.0) == 4.0
+
+assert nextafter(4.5, 4.6, steps=5) == 4.500000000000004
+assert nextafter(4.5, 4.8, steps=10) == 4.500000000000009
+
+assert nextafter(4.5, 4.1, steps=10) == 4.499999999999991
+
+assert nextafter(23.53, 30, steps=10) == 23.530000000000037
+assert nextafter(23.53, 30, steps=50000) == 23.530000000177637
+
+assert nextafter(23.53, 30, steps=4000000000) == 23.530014210854716
+assert nextafter(23.53, 30, steps=5000000000) == 23.530017763568395
+
+assert nextafter(23.53, 20, steps=4000000000) == 23.529985789145286
+assert nextafter(23.53, 20, steps=5000000000) == 23.529982236431607
+
+assert nextafter(4, 3.999999, steps=5000000000000) == 3.999999
+
+# issue 2277
+nan, inf = float('nan'), float('inf')
+assert math.isnan(nextafter(nan, 0))
+assert math.isnan(nextafter(0, nan))
+assert math.isnan(nextafter(inf, nan))
+assert math.isnan(nextafter(nan, inf))
+assert nextafter(inf, 0) == 1.7976931348623157e+308
+
+assert nextafter(0, inf) == 5e-324
+
+# issue 2361
+def f():
+    pass
+
+assert_raises(TypeError, math.sqrt, f,
+    msg = "must be real number, not function")
+    
+# CS Academy: negative args and illegal bases
 assert_raises(ValueError, math.log, -1, msg="math domain error")
 assert_raises(ZeroDivisionError, math.log, 2, 1, msg="float division by zero")
 assert_raises(ZeroDivisionError, math.log, 1, 1, msg="float division by zero")
@@ -312,27 +395,4 @@ assert_raises(ValueError, math.log10, -long_int, msg="math domain error")
 assert_raises(ValueError, math.log2, -long_int, msg="math domain error")
 assert_raises(ValueError, math.log1p, -long_int, msg="math domain error")
 
-
-# rewriting of math.comb
-math.comb(1200, 575)
-
-# issue2053
-assert math.hypot(1, 1) == 1.4142135623730951
-assert math.hypot(1.0, 1) == 1.4142135623730951
-assert math.hypot(1, 1.0) == 1.4142135623730951
-
-# issue 2168
-assert_raises(ValueError, math.log2, -10, msg='math domain error')
-assert_raises(ValueError, math.log, 10, -1, msg='math domain error')
-assert_raises(ValueError, math.log, 10, 0, msg='math domain error')
-
-assert_raises(ZeroDivisionError, math.log, 10, 1)
-
-# issue 2361
-def f():
-    pass
-
-assert_raises(TypeError, math.sqrt, f,
-    msg = "must be real number, not function")
-    
 print("passed all tests..")

@@ -1,75 +1,87 @@
 // Web Worker implementation
 
-var $module = (function($B){
+(function($B){
 
 var _b_ = $B.builtins
 
 var VFS = $B.brython_modules ? 'brython_modules' :
             $B.use_VFS ? 'brython_stdlib' : null
 
-if($B.debug > 2){
-    var brython_scripts = [
-        'brython_builtins',
+function scripts_to_load(debug_level){
+    if(debug_level > 2){
+        var brython_scripts = [
+            'brython_builtins',
 
-        'py_ast_classes',
-        'unicode_data',
-        'stdlib_paths',
-        'version_info',
+            'py_ast_classes',
+            'stdlib_paths',
+            'unicode_data',
+            'version_info',
 
-        'python_tokenizer',
-        'py_ast',
-        'py2js',
-        'loaders',
-        'py_utils',
-        'py_object',
-        'py_type',
-        'py_builtin_functions',
-        'py_sort',
-        'py_exceptions',
-        'py_range_slice',
-        'py_bytes',
-        'py_set',
-        'js_objects',
-        'py_import',
-        'py_string',
-        'py_int',
-        'py_long_int',
-        'py_float',
-        'py_complex',
-        'py_dict',
-        'py_list',
-        'py_generator',
-        'py_dom',
-        'py_pattern_matching',
-        'async',
-        'py_flags',
-        'builtin_modules',
-        'ast_to_js',
-        'symtable',
-        'builtins_docstrings'
+            'py_tokens',
+            'python_tokenizer',
+            'py_ast',
+            'py2js',
+            'loaders',
+            'py_utils',
+            'py_object',
+            'py_type',
+            'py_builtin_functions',
+            'py_sort',
+            'py_exceptions',
+            'py_range_slice',
+            'py_bytes',
+            'py_set',
+            'py_import',
+            'py_string',
+            'py_int',
+            'py_long_int',
+            'py_float',
+            'py_complex',
+            'py_dict',
+            'py_list',
+            'js_objects',
+            'py_generator',
+            'py_dom',
+            'py_pattern_matching',
+            'async',
+            'py_flags',
+            'builtin_modules',
+            'ast_to_js',
+            'symtable',
+
+            'action_helpers_generated_version',
+            'string_parser',
+            'number_parser',
+            'python_parser_peg_version',
+            'pegen',
+            'gen_parse',
+            'brython_ready'
         ]
+    }else{
+        var brython_scripts = ['brython']
+    }
 
-}else{
-    var brython_scripts = ['brython']
-}
-
-if(VFS !== null){
-    brython_scripts.push(VFS)
+    if(VFS !== null){
+        brython_scripts.push(VFS)
+    }
+    return brython_scripts
 }
 
 var wclass = $B.make_class("Worker",
     function(worker){
-        var res = worker
-        res.send = function(){
-            var args = []
-            for(var arg of arguments){
-                args.push($B.pyobj2structuredclone(arg))
-            }
-            return res.postMessage.apply(this, args)
+        return {
+            __class__: wclass,
+            worker
         }
-        return res
     }
 )
+
+wclass.send = function(){
+    var $ = $B.args('send', 2, {self: null, message: null}, ['self', 'message'],
+            arguments, {}, 'args', null)
+    var message = $B.pyobj2structuredclone($.message)
+    return $.self.worker.postMessage(message, ...$.args)
+}
 
 wclass.__mro__ = [$B.JSObj, _b_.object]
 
@@ -77,6 +89,9 @@ $B.set_func_names(wclass, "browser.worker")
 
 
 var _Worker = $B.make_class("Worker", function(id, onmessage, onerror){
+    $B.warn(_b_.DeprecationWarning,
+        "worker.Worker is deprecated in version 3.12. " +
+        "Use worker.create_worker instead")
     var $ = $B.args("__init__", 3, {id: null, onmessage: null, onerror: null},
             ['id', 'onmessage', 'onerror'], arguments,
             {onmessage: _b_.None, onerror: _b_.None}, null, null),
@@ -86,16 +101,20 @@ var _Worker = $B.make_class("Worker", function(id, onmessage, onerror){
     if(worker_script === undefined){
         throw _b_.KeyError.$factory(id)
     }
-    var src = worker_script.source
+    var filepath = worker_script.src ? worker_script.src : $B.script_path + "#" + id,
+        filename = $B.strip_host(filepath),
+        src = $B.file_cache[filename]
+
     var indexedDB = worker_script.attributes &&
             worker_script.attributes.getNamedItem('indexedDB')
     var script_id = "worker" + $B.UUID(),
         filename = $B.script_path + "#" + id
     $B.url2name[filename] = script_id
 
-
     var js = $B.py2js({src, filename}, script_id).to_js(),
         header = '';
+    var brython_scripts = scripts_to_load(
+        $B.get_option_from_filename('debug', filename))
     brython_scripts.forEach(function(script){
         if(script != VFS || VFS == "brython_stdlib"){
             var url = $B.brython_path + script + ".js"
@@ -104,7 +123,7 @@ var _Worker = $B.make_class("Worker", function(id, onmessage, onerror){
             // brython_modules.js by the script itself
             var url = $B.brython_modules
         }
-        if(! $B.$options.cache){ // cf. issue 1954
+        if(! $B.get_option('cache')){ // cf. issue 1954
             url += '?' + (new Date()).getTime()
         }
         header += 'importScripts("' + url + '")\n'
@@ -118,14 +137,14 @@ var _Worker = $B.make_class("Worker", function(id, onmessage, onerror){
     module.__doc__ = _b_.None
     $B.imported["${script_id}"] = module\n`
     // restore brython_path
-    header += '__BRYTHON__.brython_path = "' + $B.brython_path +
-        '"\n'
+    header += `$B.brython_path = "${$B.brython_path}"\n`
     // restore path for imports (cf. issue #1305)
-    header += '__BRYTHON__.path = "' + $B.path +'".split(",")\n'
+    header += `$B.make_import_paths("${filename}")\n`
     // Call brython() to initialize internal Brython values
     header += `brython(${JSON.stringify($B.$options)})\n`
     js = header + js
     js = `try{${js}}catch(err){$B.handle_error(err)}`
+
     var blob = new Blob([js], {type: "application/js"}),
         url = URL.createObjectURL(blob),
         w = new Worker(url),
@@ -148,11 +167,14 @@ function create_worker(){
     if(worker_script === undefined){
         throw _b_.RuntimeError.$factory(`No webworker with id '${id}'`)
     }
-    var src = worker_script.source
     var script_id = "worker" + $B.UUID(),
-        filename = $B.script_path + "#" + id
+        filepath = worker_script.src ? worker_script.src : $B.script_path + "#" + id,
+        filename = $B.strip_host(filepath),
+        src = $B.file_cache[filename]
     $B.url2name[filename] = script_id
-    $B.file_cache[filename] = src
+
+    var brython_scripts = scripts_to_load(
+            $B.get_option_from_filename('debug', filename))
 
     var js = $B.py2js({src, filename}, script_id).to_js(),
         header = '';
@@ -164,7 +186,7 @@ function create_worker(){
             // brython_modules.js by the script itself
             var url = $B.brython_modules
         }
-        if(! $B.$options.cache){ // cf. issue 1954
+        if(! $B.get_option('cache')){ // cf. issue 1954
             url += '?' + (new Date()).getTime()
         }
         header += 'importScripts("' + url + '")\n'
@@ -176,16 +198,34 @@ function create_worker(){
     var module = $B.module.$factory("${script_id}")
     module.__file__ = "${filename}"
     module.__doc__ = _b_.None
+    $B.script_domain = "${$B.script_domain}"
     $B.imported["${script_id}"] = module\n`
 
     header += '$B.file_cache[module.__file__] = `' + src + '`\n'
     // restore brython_path
-    header += '__BRYTHON__.brython_path = "' + $B.brython_path +
-        '"\n'
+    header += `$B.brython_path = "${$B.brython_path}"\n`
+    // inject script attributes to get options
+    header += `var script = $B.scripts["${filename}"] = new $B.fakeScript()\n`
+    for(var key in $B.brython_options){
+        var value = $B.brython_options[key]
+        if(Array.isArray(value)){
+            value = `[${value.map(x => '"' + x + '"')}]`
+        }else{
+            value = `"${value}"`
+        }
+        header += `script.options["${key}"] = ${value}\n`
+    }
+
+    for(var attr of worker_script.attributes){
+        header += `script.options["${attr.name}"] = "${attr.value}"\n`
+    }
+
     // restore path for imports (cf. issue #1305)
-    header += '__BRYTHON__.path = "' + $B.path +'".split(",")\n'
+    header += `$B.make_import_paths("${filename}")\n`
+
     // Call brython() to initialize internal Brython values
-    header += `brython(${JSON.stringify($B.$options)})\n`
+    var save_option = JSON.stringify($B.brython_options)
+    header += `brython(${save_option})\n`
 
     // send dummy message to trigger resolution of Promise
     var ok_token = Math.random().toString(36).substr(2, 8),
@@ -197,7 +237,8 @@ function create_worker(){
              `${js}\n` +
              `self.postMessage('${ok_token}')\n` +
          `}catch(err){\n` +
-             `self.postMessage("${error_token}Error in worker ${id}\\n" + $B.error_trace(err))\n` +
+             `self.postMessage('${error_token}Error in worker "${id}"\\n'` +
+             ` + $B.error_trace(err))\n` +
          `}\n})`
     js = header + js
 
@@ -216,19 +257,23 @@ function create_worker(){
                 resolve(res)
             }else if(typeof ev.data == 'string' &&
                     ev.data.startsWith(error_token)){
-                reject(ev.data.substr(error_token.length))
+                reject(_b_.Exception.$factory(ev.data.substr(error_token.length)))
             }else{
                 if(onmessage !== _b_.None){
                     onmessage(ev)
                 }
-                resolve(res)
+                try{
+                    resolve(res)
+                }catch(err){
+                    reject(err)
+                }
             }
         }
 
         return res
     })
 
-    var error_func = onerror === _b_.None ? console.debug : onerror
+    var error_func = onerror === _b_.None ? $B.handle_error : onerror
 
     if(onready !== _b_.None){
         p.then(onready).catch(error_func)
@@ -238,9 +283,11 @@ function create_worker(){
     return _b_.None
 }
 
-return {
+var module = {
     Worker: _Worker,
     create_worker
 }
+
+$B.addToImported('_webworker', module)
 
 })(__BRYTHON__)

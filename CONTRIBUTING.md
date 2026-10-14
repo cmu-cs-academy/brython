@@ -23,7 +23,7 @@ financially, consider donating to the
 [Python Software Foundation](https://www.python.org/psf/donations/).
 
 The documentation included in the project and on brython.info is provided in
-English, French and Spanish. Translations in other languages are very much
+English and French. Translations in other languages are very much
 appreciated, but because it is important that the official documentation
 remains up-to-date, they should be developed in a fork of the project.
 
@@ -61,6 +61,7 @@ remains up-to-date, they should be developed in a fork of the project.
     $ git checkout -b fix/master/my_contribution master
 ```
 * Make commits of logical units.
+* Only commit files you directly edited, NOT auto-generated files produced by `make_dist.py`, such as `www/src/brython.js`.
 * For Javascript code, there is a
   [Javascript coding style](https://github.com/brython-dev/brython/wiki/Javascript-coding-style-for-Brython-scripts).
   It is not mandatory and pull requests won't be rejected for this reason, but
@@ -76,7 +77,7 @@ remains up-to-date, they should be developed in a fork of the project.
 ### Creating distribution
 
 Run `make_dist.py` script with a CPython interpreter of the same version as
-Brython (eg CPython 3.8 for Brython 3.8) to generate these files after 
+Brython (eg CPython 3.8 for Brython 3.8) to generate these files after
 changing the source:
 
 - `www/src/brython.js`
@@ -180,6 +181,7 @@ All tests currently use plain assert statements (no unittest/setup/teardown).
 ## Additional Resources
 
 * [Brython Internals](https://github.com/brython-dev/brython/wiki/How-Brython-works)
+* [Brython development](https://github.com/brython-dev/brython/wiki/Brython-development)
 * [Brython Documentation](http://www.brython.info/static_doc/en/intro.html?lang=en)
 * [Mailing List](https://groups.google.com/forum/#!forum/brython)
 * [General GitHub documentation](https://help.github.com/)

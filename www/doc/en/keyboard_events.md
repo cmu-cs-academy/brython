@@ -1,6 +1,8 @@
 Keyboard events
 ===============
 
+_Full documentation on the [MDN site](https://developer.mozilla.org/en-US/docs/Web/API/KeyboardEvent)_
+
 <script type="text/python">
 from browser import document, alert
 </script>
@@ -8,13 +10,6 @@ from browser import document, alert
 Keyboard events are
 
 <table cellpadding=3 border=1>
-<tr>
-<td>*input*</td>
-<td>triggered when the value of an &lt;input&gt; or &lt;textarea&gt;
-element is modified, or the content of a `contenteditable` element is
-modified
-</td>
-</tr>
 
 <tr>
 <td>*keydown*</td><td>fired when any key on the keyboard is pressed down</td>
@@ -40,8 +35,6 @@ For keyboard events, the `DOMEvent` instance has the following attributes
 <td>
 `altKey`
 > `True` if the Alt (or Option, on Mac) key was active when the key event was generated
-
-> This attribute is not set for the *input* event
 
 > It is usually used with *keypress*, to be able to test if Alt+&lt;key&gt; was entered, or just &lt;key&gt;
 </td>
@@ -117,8 +110,6 @@ document["key_keyup"].bind("keyup", keyevent)
 `ctrlKey`
 > `True` if the Control key was active when the key event was generated
 
-> This attribute is not set for the *input* event
-
 > It is usually used with *keypress*, to be able to test if Ctrl+&lt;key&gt;
 > was entered, or just &lt;key&gt;</td>
 <td>
@@ -190,8 +181,6 @@ document["codeKeyup"].bind("keyup", keyCode)
 <td>
 `shiftKey`
 > `True` if the Shift key was active when the key event was generated
-
-> This attribute is not set for the *input* event
 
 > It is usually used with *keypress*, to be able to test if Shift+&lt;key&gt;
 > was entered, or just &lt;key&gt;</td>

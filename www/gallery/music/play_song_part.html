@@ -1,0 +1,287 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body,td,th{
+    font-family:sans-serif;
+    font-size:12px;
+}
+</style>
+
+<script type="text/javascript" src="/src/brython.js"></script>
+
+<script type="text/javascript" src="/src/brython_stdlib.js"></script>
+
+<style>
+#rule{
+  position: absolute;
+  background-color: #789;
+}
+
+.mute{
+  position: absolute;
+  background-color: #789;
+}
+
+#selection{
+  position: absolute;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.playing {
+  background-color: #b0c4de;
+}
+
+.not_playing {
+  background-color: green;
+}
+
+.loading {
+  background-color: red;
+}
+
+.slide{
+  heigth: 50px;
+  position: absolute;
+  font-size: 3em;
+}
+
+#play{
+  font-size: 3em;
+}
+
+#controls {
+  position: absolute;
+  height: 100px;
+  width: 100%;
+  padding-top: 20px;
+  text-align: center;
+  font-size: 2em;
+}
+
+#cursor{
+  background-color: #000;
+}
+
+#song{
+  font-size: 2em;
+}
+</style>
+
+</head>
+<body>
+
+<div id="controls">
+<input id="song" type="file">
+</div>
+
+<div id="rule">
+<span id="before" class="mute"></span>
+<span id="selection" class="not_playing"></span>
+<span id="after" class="mute"></span>
+</div>
+<div class="slide" id="start">&#x25e2;</div>
+
+<div class="slide" id="end">&#x25e3;</div>
+
+<div class="slide" id="cursor"></div>
+
+<script type="text/python" debug="2">
+import random
+from browser import window, document, bind, timer, html
+
+play_char = chr(0x23f5)
+stop_char = chr(0x23f9)
+
+class ElementMove:
+
+    def __init__(self, moving):
+        """Make "moving" element movable with the mouse"""
+        self.moving = moving
+        self.is_moving = False
+        self.moving.bind("mousedown", self.start)
+        self.moving.bind("touchstart", self.start)
+        document.bind("mouseup", self.stop)
+        document.bind("touchend", self.stop)
+        moving.style.cursor = "move"
+
+    def start(self, event):
+        """When user clicks on the moving element, set boolean is_moving
+        to True and store mouse and moving element positions"""
+        self.is_moving = True
+        self.mouse_pos = [event.x, event.y]
+        self.elt_pos = [self.moving.left, self.moving.top]
+        document.bind("mousemove", self.move)
+        document.bind("touchmove", self.move)
+        # prevent default behaviour to avoid selecting the moving element
+        event.preventDefault()
+
+    def move(self, event):
+        """User moves the mouse"""
+        if not self.is_moving:
+            return
+
+        # set new moving element coordinates
+        new_pos = self.elt_pos[0] + event.x - self.mouse_pos[0]
+        if self.moving is start:
+            self.moving.left = max(new_pos, min_start_pos)
+            dx = self.moving.left - cursor.left + start.width
+            before.width -= dx
+            selection.left += dx
+            selection.width -= dx
+        else:
+            self.moving.left = min(new_pos, max_end_pos)
+            dx = self.moving.left - after.left - after.width
+            after.left += dx
+            selection.width += dx
+        cursor.left = selection.left + left_margin + start.width
+        event.preventDefault()
+        event.stopPropagation()
+
+    def stop(self, event):
+        """When user releases the mouse button, stop moving the element"""
+        self.is_moving = False
+        document.unbind("mousemove")
+        document.unbind("touchmove")
+
+
+class Config:
+    pass
+
+def set_controls_position():
+    controls.left = (left_margin + selection.left + start.width +
+                     int(selection.width / 2) - int(controls.width / 2))
+
+load_btn = document["song"]
+controls = document["controls"]
+before = document["before"]
+selection = document["selection"]
+after = document["after"]
+start = document["start"]
+cursor = document["cursor"]
+end = document["end"]
+
+w = window.innerWidth
+left_margin = int(0.05 * w)
+
+rule = document["rule"]
+rule.top = controls.top + controls.height + 10
+rule.height = int(0.3 * window.innerHeight)
+rule.left = left_margin + start.width
+rule.width = int(0.8 * w)
+
+before.left = 0
+selection.left = 0
+selection.width = rule.width
+selection.height = rule.height
+after.left = rule.left + rule.width
+
+start.top = rule.top + rule.height + 5
+start.left = left_margin
+min_start_pos = start.left
+
+cursor.left = rule.left
+cursor.top = rule.y
+cursor.height = rule.height
+cursor.width = 3
+
+end.left = rule.left + rule.width
+end.top = rule.top + rule.height + 5
+max_end_pos = end.left
+
+ElementMove(end)
+ElementMove(start)
+
+def set_cursor():
+    d = Config.context.currentTime - Config.startTime
+    if d > Config.length:
+        Config.startTime = Config.context.currentTime - (d - Config.length)
+    cursor.left = start.left + start.width + int(d * Config.dxPerSecond)
+
+def format_time(secs):
+    minutes, seconds = divmod(secs, 60)
+    return f'{int(minutes)}:{int(seconds)}'
+
+def createSoundWithBuffer(blob):
+
+    def play(buffer):
+        d = buffer.duration
+        Config.dxPerSecond = rule.width / d
+        Config.audioSource.buffer = buffer
+        offset = d * (start.left - rule.left + start.width) / rule.width
+        offset = max(0, offset)
+        length = d * (end.x - start.x - start.width) / rule.width
+        print('song length', format_time(d), 'selection length', format_time(length))
+        Config.audioSource.loop = True
+        Config.length = length
+        Config.audioSource.loopEnd = offset + length
+        Config.audioSource.loopStart = offset
+        print('loopStart', format_time(offset), 'loopEnd', format_time(Config.audioSource.loopEnd))
+        Config.startTime = Config.context.currentTime
+        Config.t = offset
+        Config.timer = timer.set_interval(set_cursor, 50)
+        Config.audioSource.start(Config.startTime, offset)
+        set_play()
+
+    def onload(ev):
+        Config.buffer = ev.target.result
+        Config.context = window.AudioContext.new()
+        Config.audioSource = Config.context.createBufferSource()
+        Config.audioSource.connect(Config.context.destination)
+        Config.context.decodeAudioData(Config.buffer, play)
+
+    reader = window.FileReader.new()
+    reader.bind('load', onload)
+    reader.readAsArrayBuffer(Config.blob)
+
+
+@bind(selection, 'click')
+def play(ev):
+    if not getattr(Config, 'play', False):
+        Config.play = True
+        set_load()
+        createSoundWithBuffer(Config.blob)
+    else:
+        Config.audioSource.stop()
+        timer.clear_interval(Config.timer)
+        Config.play = False
+        set_stop()
+
+def set_load():
+    selection.className = "loading"
+
+def set_play():
+    selection.className = "playing"
+
+def set_stop():
+    selection.className = "not_playing"
+
+
+@bind(load_btn, "input")
+def file_read(ev):
+
+    def onload(event):
+        Config.blob = window.Blob.new([event.target.result])
+
+    # Get the selected file as a DOM File object
+    file = load_btn.files[0]
+    # Create a new DOM FileReader instance
+    reader = window.FileReader.new()
+    # Read the file content as text
+    reader.readAsArrayBuffer(file)
+    reader.bind("load", onload)
+
+
+</script>
+
+<script>
+window.callback = function(x, arg){
+  console.log('callback', arg)
+}
+</script>
+
+<!-- script src="module1.js"></script -->
+</body>
+</html>

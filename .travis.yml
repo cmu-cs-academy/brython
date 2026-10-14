@@ -1,7 +1,7 @@
 os: linux
 dist: jammy
 language: node_js
-node_js: 16
+node_js: node
 
 jobs:
   include:
@@ -9,17 +9,20 @@ jobs:
         chrome: "stable"
         firefox: "latest"
         apt:
+          sources:
+            - sourceline: 'ppa:deadsnakes/ppa'
           packages:
             - libnss3
-            - python3.11
+            - python3.14
       services:
         - xvfb
       before_install:
         - npm install testem
         - ./node_modules/.bin/testem launchers
+
       before_script:
-        - (cd scripts && python3.11 make_doc.py)
-        - (cd scripts && python3.11 make_dist.py)
+        - (cd scripts && python3.14 make_doc.py)
+        - (cd scripts && python3.14 make_dist.py)
 
       script:
         # Some day, put back Chrome or "Headless Chrome" as well. For some reason
@@ -29,7 +32,7 @@ jobs:
         - ./node_modules/.bin/testem --launch Firefox -t www/tests/run_tests.html ci
 
     - language: python
-      python: '3.11'
+      python: '3.14'
       before_install: pip install --upgrade pip
       before_script: pip install flake8
       script:

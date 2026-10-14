@@ -723,9 +723,6 @@ assert x == 338288524927261089654018896841347694592
 
 # issue 2058
 hash(0.1)
-# issue 2228
-assert int(0.00005) == 0
-
 
 # issue 2087
 import sys
@@ -766,6 +763,8 @@ assert gAnswer == 0xAAF3C2EF5D598ACC, gAnswer
 # digits in non-latin alphabets
 assert int('9' + chr(int('17E4', 16)) + 'b', 16) == 2379
 
+# issue 2228
+assert int(0.00005) == 0
 assert int(3.9) == 3
 assert int(-3.9) == -3
 
@@ -776,11 +775,94 @@ assert_raises(TypeError, float, lambda: None,
 # issue 2363
 assert_raises(ValueError, int, '')
 
+# issue
+ints = [1, 10, 20, 30, 40, 50, 60]
+
+expected = ["-8000000000000000",
+            "-040000000000000",
+            "-000100000000000",
+            "-000000400000000",
+            "-000000001000000",
+            "-000000000004000",
+            "-000000000000010"]
+
+for imm6, exp in zip(ints, expected):
+    assert f"{(~((1 << (64 - imm6)) - 1)):016X}" == exp
+
+# issue 2396
+x = (-1.1 - 1j)
+x + 1
+x += 1
+x + 2j
+x += 2j
+x + 1.5 + 2j
+x += 1.5 + 2j
+
+x - 1
+x -=1
+x - 2j
+x -= 2j
+x - 1.5 - 2j
+x -= 1.5 + 2j
+
+x * 1
+x *= 1
+x * 2j
+x *= 2j
+x * (1.5 + 2j)
+x *= (1.5 + 2j)
+
+# issue 2407
+p = 800275543
+q = 33679599593
+e = 65537
+n = p * q
+d = pow(e, -1, (p-1) * (q-1))
+
+assert d == 21203499539617337777
+
+# issue 2465
+assert type(2 ** 53) == int
+
+# issue 2506
+assert 1.0 // 0.1 == 9, 1.0 // 0.1
+assert divmod(1.0, 0.1) == (9.0, 0.09999999999999995)
+assert float.__divmod__(2.5, 7) == (0.0, 2.5)
+assert float.__divmod__(6.3, 2 ** 64) == (0.0, 6.3)
+
+# use __index__ for sequence multiplication
+class X:
+
+  def __index__(self):
+      return 2
+
+assert [2] * X() == [2, 2]
+assert X() * [3] == [3, 3]
+
+# issue 2527
+False.as_integer_ratio()
+False.bit_count
+False.bit_length
+False.to_bytes()
 
 # issue 2543
 x = 10
 x /= 2
 assert isinstance(x, float)
 
+# issue 2544
+2 + 1j
+x = (2+1j) / 3.2
+assert x == (0.625+0.3125j)
+
+z = 2 + 3j
+z /= 2 ** 64
+assert z == (1.0842021724855044e-19+1.6263032587282567e-19j)
+
+assert complex.__truediv__(2+3j, 'a') is NotImplemented
+assert complex.__mul__(2+3j, 'a') is NotImplemented
+
+assert_raises(TypeError, eval, "2 + 3j / 'a'",
+  msg="unsupported operand type(s) for /: 'complex' and 'str'")
 
 print('passed all tests...')

@@ -81,7 +81,8 @@ fonction on peut utiliser les attributs et méthodes suivants de cet objet:
 `text`
 
 > le contenu de la réponse : instance de `str` si le mode de la requête est
-> "text", "json" ou "xml", instance de `bytes` si le mode est "binary"
+> "text" ou "xml", instance de `bytes` si le mode est "binary". Déclenche un
+> `AttributeError` si le mode est "json"
 
 `json`
 
@@ -203,6 +204,9 @@ Quand la requête est ouverte, on peut spécifier certaines de ses propriétés:
 
 `responseType`
 > le type de réponse attendu (cf. [documentation](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/responseType))
+
+`withCredentials`
+> indique si les requêtes Access-Control doivent utitiler des credentials tels que les cookies, les entêtes d'autorization ou les certificats client TLS  (cf. [documentation](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/withCredentials))
 
 `set_header(`_nom,valeur_`)`
 > affecte la _valeur_ à l'entête _nom_.

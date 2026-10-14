@@ -1,4 +1,4 @@
-var $module=(function($B){
+(function($B){
 
 var _b_ = $B.builtins
 
@@ -11,7 +11,7 @@ function simple(obj){
     }
     if(obj instanceof Number ||
             Array.isArray(obj) ||
-            _b_.isinstance(obj, [_b_.list, _b_.tuple, _b_.dict])){
+            $B.$isinstance(obj, [_b_.list, _b_.tuple, _b_.dict])){
         return true
     }
     return false
@@ -25,14 +25,12 @@ function to_json(obj, level){
         $ = $B.args("to_json", 2, {obj: null, level: null}, ['obj', 'level'],
                     arguments, {level: 1}, null, "kw")
 
+    var kw = _b_.dict.$to_obj($.kw)
     for(var key in $defaults){
-        if(! $.kw.$jsobj.hasOwnProperty(key)){
-            $.kw.$jsobj[key] = $defaults[key]
+        if(! kw.hasOwnProperty(key)){
+            kw[key] = $defaults[key]
         }
     }
-
-    // Transform Python dict into Javascript object
-    var kw = $.kw.$jsobj
 
     var indent = kw.indent,
         ensure_ascii = kw.ensure_ascii,
@@ -44,6 +42,7 @@ function to_json(obj, level){
         sort_keys = kw.sort_keys,
         allow_nan = kw.allow_nan,
         check_circular = kw.check_circular
+
     var item_separator = separators[0],
         key_separator = separators[1]
     if(indent !== _b_.None){
@@ -95,6 +94,9 @@ function to_json(obj, level){
             return obj.toString()
     }
     if(obj instanceof String){
+        if(! ensure_ascii){
+            return $B.String(obj)
+        }
         // string with surrogate pairs. cf. issue #1903.
         var res = ''
         if(obj.surrogates){
@@ -126,7 +128,7 @@ function to_json(obj, level){
         return '"' + res.replace(new RegExp('"', "g"), '\\"') + '"'
     }
 
-    if(_b_.isinstance(obj, _b_.list)){
+    if($B.$isinstance(obj, [_b_.list, _b_.tuple])){
         var res = []
         var sep = item_separator,
             first = '[',
@@ -141,13 +143,13 @@ function to_json(obj, level){
             res.push(to_json(obj[i], level, kwarg))
         }
         return first + res.join(sep) + last
-    }else if(_b_.isinstance(obj, _b_.float)){
+    }else if($B.$isinstance(obj, _b_.float)){
         return obj.value
     }else if(obj.__class__ === $B.long_int){
         return obj.value.toString()
     }else if(obj === _b_.None){
         return "null"
-    }else if(_b_.isinstance(obj, _b_.dict)){
+    }else if($B.$isinstance(obj, _b_.dict)){
         var res = [],
             items = Array.from($B.make_js_iterator(_b_.dict.items(obj)))
         if(sort_keys){
@@ -210,7 +212,7 @@ function to_py(obj, kw){
     // kw are the keyword arguments to loads()
     var res
     if(obj instanceof List){
-        return obj.items.map(x => to_py(x, kw))
+        return $B.$list(obj.items.map(x => to_py(x, kw)))
     }else if(obj instanceof Dict){
         if(kw.object_pairs_hook !== _b_.None){
             var pairs = []
@@ -235,7 +237,7 @@ function to_py(obj, kw){
             if(kw.parse_float !== _b_.None){
                 return $B.$call(kw.parse_float)(obj.value)
             }
-            return $B.fast_float(obj.value)
+            return $B.fast_float(parseFloat(obj.value))
         }else{
             // integer
             if(kw.parse_int !== _b_.None){
@@ -340,6 +342,8 @@ function num_at(s, i){
       }else if('eE'.indexOf(s[j]) > -1 && ! exp){
         exp = ! exp
         j++
+      }else if(s[j] == '-' && 'eE'.includes(s[j-1])){
+        j++
       }else{
         return [{type: 'num', value: s.substring(i, j)}, j]
       }
@@ -347,14 +351,23 @@ function num_at(s, i){
   return [{type: 'num', value: s.substring(i, j)}, j]
 }
 
+var JSONError = $B.make_class('json.decoder.JSONError')
+JSONError.__bases__ = [_b_.Exception]
+JSONError.__mro__ = _b_.type.mro(JSONError)
+
+
 function* tokenize(s){
   var i = 0,
       len = s.length,
+      line_num = 1,
+      column_start = 0,
       value,
       end
   while(i < len){
     if(s[i] == " " || s[i] == '\r' || s[i] == '\n' || s[i] == '\t'){
       i++
+      line_num++
+      column_start = i
     }else if('[]{}:,'.indexOf(s[i]) > -1){
       yield [s[i], i]
       i++
@@ -385,7 +398,8 @@ function* tokenize(s){
       yield value
       i = value[1]
     }else{
-      throw Error('unexpected: ' + s[i] + s.charCodeAt(i))
+      throw $B.$call(JSONError)('Extra data: ' +
+          `line ${line_num} column ${1 + i - column_start}`)
     }
   }
 }
@@ -402,8 +416,8 @@ function Node(parent){
 }
 
 Node.prototype.transition = function(token){
-    if([true, false, _b_.None].indexOf(token) > -1 ||
-            ['str', 'num'].indexOf(token.type) > -1){
+    if([true, false, _b_.None].includes(token) ||
+            ['str', 'num'].includes(token.type)){
         if(this.parent === undefined &&
                 (this.list.length > 0 || this.content)){
             throw Error('Extra data')
@@ -549,7 +563,7 @@ var JSONDecoder = $B.make_class("JSONDecoder",
                 parse_float: _b_.None, parse_int: _b_.None,
                 parse_constant: _b_.None, object_pairs_hook: _b_.None},
             $ = $B.args("decode", 0, {}, [], arguments, {}, null, "kw")
-        var kw = $.kw.$jsobj
+        var kw = _b_.dict.$to_obj($.kw)
         for(var key in $defaults){
             if(kw[key] === undefined){
                 kw[key] = $defaults[key]
@@ -571,7 +585,7 @@ JSONDecoder.decode = function(self, s){
     return to_py(parse(s), self)
 }
 
-return {
+$B.imported._json = {
     dumps: function(){
         return _b_.str.$factory(to_json.apply(null, arguments))
     },

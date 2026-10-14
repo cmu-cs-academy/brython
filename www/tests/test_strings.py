@@ -380,7 +380,8 @@ try:
     ''.x = 0
     raise AssertionError('should have raised AttributeError')
 except AttributeError as exc:
-    assert exc.args[0] == "'str' object has no attribute 'x'"
+    assert exc.args[0] == ("'str' object has no attribute 'x' " + 
+        "and no __dict__ for setting new attributes")
 
 try:
     ''.x
@@ -462,12 +463,6 @@ class A:
 assert_raises(TypeError, str, A(),
     msg="__str__ returned non-string (type int)")
 
-# issue 2155
-assert_raises(TypeError, ord, 'ab')
-
-# issue 2154
-assert 'abcdef'[3:1] == ''
-
 # issue 2132
 text = codecs.encode("Beautiful is better than ugly.", "rot13")
 assert text == "Ornhgvshy vf orggre guna htyl."
@@ -487,6 +482,33 @@ assert 'abcdef'[3:1] == ''
 
 # issue 2155
 assert_raises(TypeError, ord, 'ab')
+
+# issue 2403
+assert '%.*E' % (1, 0.9999) == '1.0E+00'
+assert '%.*E' % (1, 9.9999) == '1.0E+01'
+
+assert float('%.3g' % 9.99999e-06) == 1e-05
+
+# issue 2438
+b = "a🐑 :".encode("utf_16_le")
+assert list(b) == [97, 0, 61, 216, 17, 220, 32, 0, 58, 0]
+assert b.decode('utf_16_le') == "a🐑 :"
+
+b = "a🐑 :".encode("utf_16_be")
+assert list(b) == [0, 97, 216, 61, 220, 17, 0, 32, 0, 58]
+assert b.decode('utf_16_be') == "a🐑 :"
+
+b = "a🐑 :".encode("utf_32_be")
+assert list(b) == [0, 0, 0, 97, 0, 1, 244, 17, 0, 0, 0, 32, 0, 0, 0, 58]
+assert b.decode('utf_32_be') == "a🐑 :"
+
+b = "a🐑 :".encode("utf_32_le")
+assert list(b) == [97, 0, 0, 0, 17, 244, 1, 0, 32, 0, 0, 0, 58, 0, 0, 0]
+assert b.decode('utf_32_le') == "a🐑 :"
+
+b = "a🐑 :".encode("utf_16")
+assert list(b) == [254, 255, 97, 0, 61, 216, 17, 220, 32, 0, 58, 0]
+assert b.decode('utf_16') == "a🐑 :"
 
 # issue 2619
 assert_raises(TypeError, str, b'a', 5)

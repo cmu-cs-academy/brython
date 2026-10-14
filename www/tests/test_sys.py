@@ -108,7 +108,7 @@ def traceFn(frame, event, arg):
 
 sys.settrace(traceFn)
 f()
-assert argcounts == [0, 1]
+assert argcounts == [0]
 
 # same for gen expr
 def f1():
@@ -117,7 +117,7 @@ def f1():
 
 argcounts = []
 f1()
-assert argcounts == [0, 1], argcounts
+assert argcounts == [0], argcounts
 
 def f2():
     assert argcounts == [0] # for f()
@@ -152,7 +152,66 @@ def traceFn(frame, event, arg):
 sys.settrace(traceFn)
 [x for x in ()]
 
-assert t == ['call', 'line', 'return']
+assert t == []
+
+# issue 2286
+for attr in ['name', 'cache_tag', 'version', 'hexversion']:
+    assert hasattr(sys.implementation, attr)
+
+assert hasattr(sys, 'pycache_prefix')
 
 # remove trace for next tests
 sys.settrace(None)
+
+# issue 2360
+import io
+
+save_stderr = sys.stderr
+
+out = io.StringIO()
+sys.stderr = out
+
+flag = False
+try:
+  0/0
+except:
+  sys.excepthook(*sys.exc_info())
+  flag = True
+
+assert flag is True
+assert 'ZeroDivisionError' in out.getvalue()
+sys.stderr = save_stderr
+
+# issue 2398
+sys.version_info[:2]
+
+# issue 2468
+import inspect
+
+def test():
+    print(inspect.getframeinfo(sys._getframe(1)))
+
+test()
+
+# PEP 667
+class C:
+    x = 1
+    sys._getframe().f_locals['x'] = 2
+    sys._getframe().f_globals['z'] = 22
+    assert z == 22
+    assert x == 2
+
+def f():
+    x = 1
+    sys._getframe().f_locals['x'] = 3
+    sys._getframe().f_globals['z'] = 10
+    assert z == 10
+    assert x == 3
+f()
+
+y = 4
+sys._getframe().f_locals['y'] = 5
+assert y == 5
+assert z == 10
+
+print('all tests ok...')

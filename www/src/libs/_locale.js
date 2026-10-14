@@ -813,7 +813,8 @@ var x_format = {
 }
 
 
-var $module=(function($B){
+
+__BRYTHON__.imported._locale = (function($B){
     var _b_ = $B.builtins
     return {
         CHAR_MAX: 127,
@@ -855,12 +856,12 @@ var $module=(function($B){
         },
 
         localeconv: function(){
-            var conv = {'grouping': [127],
+            var conv = {'grouping': $B.$list([127]),
                     'currency_symbol': '',
                     'n_sign_posn': 127,
                     'p_cs_precedes': 127,
                     'n_cs_precedes': 127,
-                    'mon_grouping': [],
+                    'mon_grouping': $B.$list([]),
                     'n_sep_by_space': 127,
                     'decimal_point': '.',
                     'negative_sign': '',
@@ -878,7 +879,7 @@ var $module=(function($B){
              for(var key in conv){
                  _b_.dict.$setitem(res, key, conv[key])
              }
-             
+
              return res
          },
 

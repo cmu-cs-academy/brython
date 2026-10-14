@@ -1,4 +1,4 @@
-var $module = (function($B){
+(function($B){
 
     var _b_ = $B.builtins
 
@@ -41,7 +41,7 @@ var $module = (function($B){
 
     $B.set_func_names(MatchObject, '_jsre')
 
-    var obj = {__class__: $module,
+    var obj = {
         __str__: function(){return "<module 're'>"}
     }
     obj.A = obj.ASCII = 256
@@ -56,7 +56,7 @@ var $module = (function($B){
         if ($B.$options.re == 'jsre'){return true}   //force use of brythons re module
         // FIXME: Improve
 
-        if(! _b_.isinstance(pattern, _b_.str)){
+        if(! $B.$isinstance(pattern, _b_.str)){
            // this is probably a SRE_PATTERN, so return false, and let
            // python's re module handle this.
            return false
@@ -279,6 +279,6 @@ var $module = (function($B){
         }
     })(obj.search)
 
-    return obj
+    $B.addToImported('_jsre', obj)
 }
 )(__BRYTHON__)

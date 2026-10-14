@@ -111,7 +111,7 @@ assert A(a=1) == {'a': 1}
 # issue 2128
 from typing import ForwardRef
 
-assert str(ForwardRef("test", is_class=True)) == "ForwardRef('test')"
+assert str(ForwardRef("test", is_class=True)) == "ForwardRef('test', is_class=True)"
 
 # issue 2142
 ga = int | set[int]
@@ -119,5 +119,11 @@ assert ga.__args__ == (int, set[int])
 
 assert isinstance(4, ga)
 assert_raises(TypeError, isinstance, {4}, ga)
+
+# issue 2593
+Number = int | float
+x: Number | str = "succes"
+y: str | Number = "fail"
+
 
 print("Passed all tests...")

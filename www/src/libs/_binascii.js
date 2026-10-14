@@ -1,4 +1,4 @@
-var $module=(function($B){
+(function($B){
 
 var _b_ = $B.builtins,
     _keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/="
@@ -24,11 +24,13 @@ function decode(bytes, altchars, validate){
         var car = String.fromCharCode(input[i])
         var char_num = alphabet.indexOf(car)
         if(char_num == -1){
-            if(validate){throw error.$factory("Non-base64 digit found: " +
-                car)}
+            if(validate){
+                throw error.$factory("Non-base64 digit found: " + car)
+            }
         }else if(char_num == 64 && i < input.length - 2){
-            if(validate){throw error.$factory("Non-base64 digit found: " +
-                car)}
+            if(validate){
+                throw error.$factory("Non-base64 digit found: " + car)
+            }
         }else if(char_num == 64 && i >= input.length - 2){
             padding++
             _input += car
@@ -37,8 +39,12 @@ function decode(bytes, altchars, validate){
         }
     }
     input = _input
-    if(_input.length == padding){return _b_.bytes.$factory([])}
-    if( _input.length % 4 > 0){throw error.$factory("Incorrect padding")}
+    if(_input.length == padding){
+        return _b_.bytes.$factory([])
+    }
+    if( _input.length % 4 > 0){
+        throw error.$factory("Incorrect padding")
+    }
 
     var i = 0
     while(i < input.length){
@@ -83,13 +89,13 @@ function make_alphabet(altchars){
 
 var module = {
     a2b_base64: function(){
-        var $ = $B.args("a2b_base64", 2, {s: null, strict_mode: null}, 
+        var $ = $B.args("a2b_base64", 2, {s: null, strict_mode: null},
                 ['s', 'strict_mode'],
                 arguments, {strict_mode: false}, null, null)
         var bytes
-        if(_b_.isinstance($.s, _b_.str)){
+        if($B.$isinstance($.s, _b_.str)){
             bytes = _b_.str.encode($.s, 'ascii')
-        }else if(_b_.isinstance($.s, [_b_.bytes, _b_.bytearray])){
+        }else if($B.$isinstance($.s, [_b_.bytes, _b_.bytearray])){
             bytes = $.s
         }else{
             throw _b_.TypeError.$factory('wrong type: ' + $B.class_name($.s))
@@ -100,7 +106,7 @@ var module = {
         var $ = $B.args("a2b_hex", 1, {s: null}, ['s'],
                 arguments, {}, null, null),
             s = $.s
-        if(_b_.isinstance(s, _b_.bytes)){
+        if($B.$isinstance(s, _b_.bytes)){
             s = _b_.bytes.decode(s, 'ascii')
         }
         if(typeof s !== "string"){
@@ -122,14 +128,22 @@ var module = {
     b2a_base64: function(){
         var $ = $B.args("b2a_base64", 1, {data: null}, ['data'],
                 arguments, {}, null, "kw")
-        var newline = false
-        if($.kw && $.kw.$jsobj.hasOwnProperty('newline')){
-            newline = $.kw.$jsobj.newline
+        var newline = _b_.dict.$get_string($.kw, 'newline', false)
+
+        var bytes_list = $B.to_bytes($.data)
+        var i = 0
+        var size = 100000
+        var s = ''
+        while(i < bytes_list.length){
+            s += String.fromCharCode.apply(null, bytes_list.slice(i, i + size))
+            i += size
         }
 
-        var string = $B.to_bytes($.data),
-            res = btoa(String.fromCharCode.apply(null, string))
-        if(newline){res += "\n"}
+        var res = btoa(s)
+
+        if(newline){
+            res += "\n"
+        }
         return _b_.bytes.$factory(res, "ascii")
     },
     b2a_hex: function(obj){
@@ -174,6 +188,6 @@ var module = {
 module.hexlify = module.b2a_hex
 module.unhexlify = module.a2b_hex
 
-return module
+$B.imported._binascii = module
 }
 )(__BRYTHON__)
