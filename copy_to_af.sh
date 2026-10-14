@@ -9,6 +9,9 @@ mkdir -p setup/brython/data
 
 rm -rf "$DEST"
 mkdir "$DEST"
+# Lib and libs are replaced, so that modules removed from Brython are removed
+# from CS Academy too
+rm -rf "$LIB_DEST/Lib" "$LIB_DEST/libs"
 cp -r www/src/brython.js www/src/brython_stdlib.js setup "$DEST"
 cp -r www/src/unicode.txt www/src/builtins_docstrings.js www/src/libs www/src/Lib "$LIB_DEST"
 
