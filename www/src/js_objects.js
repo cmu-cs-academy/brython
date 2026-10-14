@@ -119,12 +119,40 @@ const PYOBJ = $B.PYOBJ = Symbol('PYOBJ')
 const PYOBJFCT = Symbol('PYOBJFCT')
 const PYOBJFCTS = Symbol('PYOBJFCTS')
 
+function js_array_to_list(js_array, memo){
+    // CS Academy: used by jsobj2pyobj() to convert a Javascript array to a
+    // Python list. memo maps the arrays already converted, to handle arrays
+    // that contain themselves.
+    let pyobj = js_array[PYOBJ]
+    if(pyobj !== undefined){
+        // array created by pyobj2jsobj() from a Python list or tuple
+        return pyobj
+    }
+    memo = memo ?? new Map()
+    let res = memo.get(js_array)
+    if(res !== undefined){
+        return res
+    }
+    res = $B.$list(new Array(js_array.length))
+    memo.set(js_array, res)
+    for(let i = 0, len = js_array.length; i < len; i++){
+        let item = js_array[i]
+        res[i] = Array.isArray(item) && item.__class__ === undefined ?
+                     js_array_to_list(item, memo) :
+                     jsobj2pyobj(item)
+    }
+    return res
+}
+
 var jsobj2pyobj = $B.jsobj2pyobj = function(jsobj, _this){
     // If _this is passed and jsobj is a function, the function is called
     // with built-in value `this` set to _this
 
     if(jsobj === null){
-        return null
+        // CS Academy: convert Javascript null to None, as Brython did before
+        // version 3.12 (upstream returns null, ie javascript.NULL). The code
+        // of cmu_graphics, and student programs through it, rely on this.
+        return _b_.None
     }
 
     // Immutable types
@@ -151,13 +179,14 @@ var jsobj2pyobj = $B.jsobj2pyobj = function(jsobj, _this){
     }
 
     if(Array.isArray(jsobj)){
-        // set it as non-enumerable, prevents issues when looping on it in JS.
-        try{
-            Object.defineProperty(jsobj, "$is_js_array", {value: true});
-        }catch(err){
-            // ignore; cf. issue #2379
+        // CS Academy: convert Javascript arrays to Python lists, as Brython
+        // did before version 3.12 (upstream returns the array itself, an
+        // instance of javascript.Array, which is not a subclass of list).
+        if(jsobj.__class__ !== undefined){
+            // already a Python list or tuple
+            return jsobj
         }
-        return jsobj
+        return js_array_to_list(jsobj)
     }
 
     let pyobj = jsobj[PYOBJ]
@@ -274,6 +303,10 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
         case true:
         case false:
             return pyobj
+        case _b_.None:
+            // CS Academy: convert None to null, as Brython did before
+            // version 3.12 (see jsobj2pyobj)
+            return null
         case $B.Undefined:
             return undefined
         case null:

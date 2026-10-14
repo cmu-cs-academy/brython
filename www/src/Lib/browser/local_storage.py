@@ -27,7 +27,8 @@ class LocalStorage():
         if not isinstance(key, str):
             raise TypeError("key must be string")
         res = self.store.getItem(key)
-        if res is not javascript.NULL:
+        # CS Academy: Javascript null is converted to None (see jsobj2pyobj)
+        if res is not javascript.NULL and res is not None:
             return res
         raise KeyError(key)
 
@@ -43,7 +44,8 @@ class LocalStorage():
         if not isinstance(key, str):
             raise TypeError("key must be string")
         res = self.store.getItem(key)
-        if res is javascript.NULL:
+        # CS Academy: Javascript null is converted to None (see jsobj2pyobj)
+        if res is javascript.NULL or res is None:
             return False
         return True
 

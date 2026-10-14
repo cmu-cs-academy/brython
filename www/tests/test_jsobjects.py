@@ -12,14 +12,15 @@ for i in range(10):
     a[i] = i
     assert a[i] == i
 
-assert window.test_jsobj.null_value is javascript.NULL
+# CS Academy: Javascript null is converted to None (see jsobj2pyobj)
+assert window.test_jsobj.null_value is None
 assert window.test_jsobj.undef_value is javascript.UNDEFINED
 
 # Test dict initialization from native js objects
 # JS objects are in script jsobj_tests.js
 pyobj = window.test_jsobj.to_dict()
 print(pyobj)
-assert pyobj["null_value"] is javascript.NULL
+assert pyobj["null_value"] is None  # CS Academy: null is converted to None
 assert pyobj["undef_value"] is javascript.UNDEFINED
 assert pyobj["test_num"] == 10
 assert len(list(pyobj.items())) == 3
@@ -64,10 +65,10 @@ assert test == {"foo": "bar"}
 t = window.a_table
 assert len(t.headers) == 1
 
+# CS Academy: Javascript arrays are converted to Python lists (copies, see
+# jsobj2pyobj), so adding items to the list doesn't change the Javascript array
 t["headers"].append({})
-assert len(t["headers"]) == 2
-t["headers"].pop()
-assert len(t.headers) == 1
+assert len(t["headers"]) == 1
 t["headers"][0]["value"] = 9
 assert t.headers[0].value == 9
 
@@ -202,53 +203,56 @@ js = __BRYTHON__.python_to_js("x = 1 + 2")
 ns = window.eval(js)
 assert ns.x == 3
 
-# method .sort of JS lists return the sorted list
-assert window.js_list.sort() == ['a', 'b', 'c']
+# CS Academy: Javascript arrays are converted to Python lists (copies, see
+# jsobj2pyobj), so the tests below, for upstream's javascript.Array type, are
+# disabled.
+# # method .sort of JS lists return the sorted list
+# assert window.js_list.sort() == ['a', 'b', 'c']
 
-# issue 2059
-jslist = window.make_js_list() # [0.5, 0.5]
-jslist[0] = 1.7
-assert jslist == [1.7, 0.5]
-window.test(jslist, 0, 1.7)
+# # issue 2059
+# jslist = window.make_js_list() # [0.5, 0.5]
+# jslist[0] = 1.7
+# assert jslist == [1.7, 0.5]
+# window.test(jslist, 0, 1.7)
 
-jslist.append(3.5)
-assert jslist == [1.7, 0.5, 3.5]
-assert jslist[2] == 3.5
-window.test(jslist, 2, 3.5)
+# jslist.append(3.5)
+# assert jslist == [1.7, 0.5, 3.5]
+# assert jslist[2] == 3.5
+# window.test(jslist, 2, 3.5)
 
-jslist.sort()
-assert jslist == [0.5, 1.7, 3.5]
+# jslist.sort()
+# assert jslist == [0.5, 1.7, 3.5]
 
-assert jslist + ['a'] == [0.5, 1.7, 3.5, 'a']
-assert jslist * 2 == [0.5, 1.7, 3.5, 0.5, 1.7, 3.5]
+# assert jslist + ['a'] == [0.5, 1.7, 3.5, 'a']
+# assert jslist * 2 == [0.5, 1.7, 3.5, 0.5, 1.7, 3.5]
 
-del jslist[2]
-assert jslist == [0.5, 1.7]
+# del jslist[2]
+# assert jslist == [0.5, 1.7]
 
-assert not jslist > [1, 2]
-assert jslist < [1, 2]
+# assert not jslist > [1, 2]
+# assert jslist < [1, 2]
 
-jslist += ['a']
-assert jslist == [0.5, 1.7, 'a']
+# jslist += ['a']
+# assert jslist == [0.5, 1.7, 'a']
 
-assert 0.5 in jslist
-assert 'a' in jslist
+# assert 0.5 in jslist
+# assert 'a' in jslist
 
-assert [item for item in jslist] == jslist
+# assert [item for item in jslist] == jslist
 
-jslist.reverse()
-assert jslist == ['a', 1.7, 0.5]
+# jslist.reverse()
+# assert jslist == ['a', 1.7, 0.5]
 
-jslist[0] += 'b'
-assert jslist == ['ab', 1.7, 0.5]
-window.test(jslist, 0, 'ab')
+# jslist[0] += 'b'
+# assert jslist == ['ab', 1.7, 0.5]
+# window.test(jslist, 0, 'ab')
 
-# issue 2105
-window.set_array_proto() # sets Array.prototype.test
-assert jslist.test() == 'Array test'
+# # issue 2105
+# window.set_array_proto() # sets Array.prototype.test
+# assert jslist.test() == 'Array test'
 
-window.del_array_proto() # deletes Array.prototype.test
-assert_raises(AttributeError, getattr, jslist, 'test')
+# window.del_array_proto() # deletes Array.prototype.test
+# assert_raises(AttributeError, getattr, jslist, 'test')
 
 # issue 2165
 def send(*args, **kwargs):
@@ -257,9 +261,11 @@ def send(*args, **kwargs):
 
 send(1, 2, a="b", c="d")
 
-# issue 2172
-window.demo_array.test2172()
-window.demo_array.demo_array2.test2172()
+# CS Academy: Javascript arrays are converted to Python lists (see
+# jsobj2pyobj), so this test for javascript.Array is disabled.
+# # issue 2172
+# window.demo_array.test2172()
+# window.demo_array.demo_array2.test2172()
 
 # issue in Google group
 # https://groups.google.com/g/brython/c/y3eAGcl1hfY
@@ -273,18 +279,17 @@ assert type(javascript.NULL) is javascript.NullType
 assert type(javascript.UNDEFINED) is javascript.UndefinedType
 
 value = getattr(window, 'opener', None)
-assert value is javascript.NULL
-assert type(value) is javascript.NullType
+assert value is None  # CS Academy: null is converted to None
 assert isinstance(javascript.NULL, javascript.NullType)
 
 assert bool(javascript.NULL) is False
 assert bool(javascript.UNDEFINED) is False
 
-assert window.func_returns_null() is javascript.NULL
+assert window.func_returns_null() is None  # CS Academy: null is converted to None
 assert window.func_returns_undefined() is javascript.UNDEFINED
 assert window.func_returns_nothing() is javascript.UNDEFINED
 
-assert window.obj_with_getters._null is javascript.NULL
+assert window.obj_with_getters._null is None  # CS Academy: null is converted to None
 assert window.obj_with_getters._undefined is javascript.UNDEFINED
 
 def py_returns_undefined():
@@ -316,17 +321,18 @@ assert javascript.UNDEFINED is javascript.UNDEFINED
 assert javascript.UNDEFINED == javascript.UNDEFINED
 assert bool(javascript.UNDEFINED) is False
 
-# issue 2261
-a = window.array_with_subitem
-assert a is window.array_with_subitem
-a0 = window.array_with_subitem[0]
-assert a0 is window.array_with_subitem[0]
+# CS Academy: Javascript arrays are converted to Python lists (see
+# jsobj2pyobj), so this test for javascript.Array is disabled.
+# # issue 2261
+# a = window.array_with_subitem
+# assert a is window.array_with_subitem
+# a0 = window.array_with_subitem[0]
+# assert a0 is window.array_with_subitem[0]
 
-window.set_subitem_value()
+# window.set_subitem_value()
 
-assert (a[0][0], a0[0], a[1]) == (True, True, True)
-assert window.array_with_subitem[0] is a0
-
+# assert (a[0][0], a0[0], a[1]) == (True, True, True)
+# assert window.array_with_subitem[0] is a0
 
 # issue 2262
 window.xv = 5.6
@@ -436,39 +442,42 @@ def is_bomb(point):
 
 window.setTimeout(is_bomb, 100, (1, 2))
 
-# issue 2474
-window['my_dict2474'] = {}
-window['my_dict2474']['my_array_d'] = [7, 8]
+# CS Academy: Javascript arrays are converted to Python lists (see
+# jsobj2pyobj), so changes to the list are not reflected in the Javascript
+# array. This test is disabled.
+# # issue 2474
+# window['my_dict2474'] = {}
+# window['my_dict2474']['my_array_d'] = [7, 8]
 
-def func_py2474():
-    d = window['my_dict2474']['my_array_d']
-    d.append(77)
+# def func_py2474():
+#     d = window['my_dict2474']['my_array_d']
+#     d.append(77)
 
-func_py2474()
-window.func_js2474()
-func_py2474()
-window.func_js2474()
-window.test_2474()
+# func_py2474()
+# window.func_js2474()
+# func_py2474()
+# window.func_js2474()
+# window.test_2474()
 
-window['dict_2474'] = {}
+# window['dict_2474'] = {}
 
-window['dict_2474']['arr3'] = [{ "C": "String C" }]
-window['dict_2474']['arr4'] = []
-window['dict_2474']['arr4'].append({ "D": "String D" })
+# window['dict_2474']['arr3'] = [{ "C": "String C" }]
+# window['dict_2474']['arr4'] = []
+# window['dict_2474']['arr4'].append({ "D": "String D" })
 
-window.func_js2474_2()
+# window.func_js2474_2()
 
-window['dictA'] = {}
-window['dictA']['arrA'] = [1.25]
-assert type(window['dictA']['arrA'][0]) is float
-window['dictA']['arrA'].append('A')
+# window['dictA'] = {}
+# window['dictA']['arrA'] = [1.25]
+# assert type(window['dictA']['arrA'][0]) is float
+# window['dictA']['arrA'].append('A')
 
-window['dictB'] = { "arrB": [2.35] }
-window['dictB']['arrB'].append('B')
+# window['dictB'] = { "arrB": [2.35] }
+# window['dictB']['arrB'].append('B')
 
-assert window['dictA']['arrA'] == [1.25, "A"]
-assert window['dictB']['arrB'] == [2.35, "B"]
-window.func_js2474_3()
+# assert window['dictA']['arrA'] == [1.25, "A"]
+# assert window['dictB']['arrB'] == [2.35, "B"]
+# window.func_js2474_3()
 
 # test functions to use Python code from Javascript
 window.test_use_python()
