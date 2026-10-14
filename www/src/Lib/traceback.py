@@ -489,6 +489,12 @@ def _walk_tb_with_full_positions(tb):
         # maintain behavior with walk_tb.
         if positions[0] is None:
             yield tb.tb_frame, (tb.tb_lineno, ) + positions[1:]
+        elif positions[0] != tb.tb_lineno:
+            # CS Academy: in Brython, tb_lasti is not updated for every
+            # instruction, so for the frames above the one where the
+            # exception was raised, it can point to a previous line. tb_lineno
+            # is always correct: use it, without column information.
+            yield tb.tb_frame, (tb.tb_lineno, None, None, None)
         else:
             yield tb.tb_frame, positions
         tb = tb.tb_next
