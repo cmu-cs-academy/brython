@@ -31,7 +31,9 @@ def discover_brython_test_modules():
           ("test_strings.py", "strings"),
           ("test_fstrings.py", "f-strings"),
           ("test_string_format.py", "string format"),
-          ("test_string_methods.py", "string methods")
+          ("test_string_methods.py", "string methods"),
+          # CS Academy
+          ("test_cs_academy.py", "features of the CS Academy fork")
         ]),
         ("DOM interface", [
             ("dom.py", "DOM"),
