@@ -21,6 +21,9 @@ window.make_app_like = function(){
                 if(attr === '__str__' || attr === '__repr__'){
                     return () => '<App object>'
                 }
+                if(attr === '__dir__'){
+                    return (self) => self.__dir__()
+                }
                 if(['__eq__', '__ne__', '__lt__', '__le__', '__gt__',
                         '__ge__'].includes(attr)){
                     return () => __BRYTHON__.builtins.NotImplemented
@@ -29,6 +32,9 @@ window.make_app_like = function(){
         },
         __js_getattribute__: function(attr, _default){
             var res = store.get(attr)
+            if(res === undefined && attr === '__dir__'){
+                return this.__dir__
+            }
             if(res === undefined){
                 if(_default !== undefined){
                     return _default
@@ -39,6 +45,9 @@ window.make_app_like = function(){
         },
         __js_setattribute__: function(attr, value){
             store.set(attr, value)
+        },
+        __dir__: function(){
+            return Array.from(store.keys())
         }
     }
     return obj
@@ -56,6 +65,13 @@ assert_raises(AttributeError, getattr, app, 'missing')
 assert str(app) == '<App object>'
 assert repr(app) == '<App object>'
 assert app != 3
+assert 'width' in dir(app)
+# a hook that returns undefined means that the attribute is missing
+assert_raises(AttributeError, getattr, type(app), 'missing')
+try:
+    app.widht
+except AttributeError as exc:
+    assert __BRYTHON__.offer_suggestions_for_attribute_error(exc) == 'width'
 
 def f():
     # attribute access in a function, with the same names as an instance

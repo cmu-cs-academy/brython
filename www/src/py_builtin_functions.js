@@ -999,6 +999,20 @@ $B.search_in_mro = function(klass, attr){
     }
 }
 
+function js_getattribute(obj, attr, _default){
+    // CS Academy: call the __js_getattribute__ hook of a Javascript object
+    // that emulates a Python object (see $B.$getattr). If the hook returns
+    // undefined, the attribute is missing.
+    var res = obj.__js_getattribute__(attr, _default)
+    if(res === undefined){
+        if(_default !== undefined){
+            return _default
+        }
+        throw $B.attr_error(attr, obj)
+    }
+    return res
+}
+
 $B.$getattr = function(obj, attr, _default){
     // Used internally to avoid having to parse the arguments
     var res
@@ -1041,7 +1055,7 @@ $B.$getattr = function(obj, attr, _default){
         // "app" object of cmu_graphics and its fake class) can define
         // __js_getattribute__ to handle attribute lookup. See also below.
         if(typeof obj == 'object' && obj.__js_getattribute__){
-            return obj.__js_getattribute__(attr, _default)
+            return js_getattribute(obj, attr, _default)
         }
         klass = $B.get_class(obj)
         if(klass === undefined){
@@ -1301,7 +1315,7 @@ $B.$getattr = function(obj, attr, _default){
             // class is a fake one) can define __js_getattribute__. Checking
             // it only here avoids slowing down attribute lookup in general.
             if(attr_func === undefined && obj.__js_getattribute__){
-                return obj.__js_getattribute__(attr, _default)
+                return js_getattribute(obj, attr, _default)
             }
         }
         if($test){

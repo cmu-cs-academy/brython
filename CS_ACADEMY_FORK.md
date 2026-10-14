@@ -78,7 +78,10 @@ strings) immediately, before the class checks. This is only for speed.
   `__js_getattribute__`. The hooks are checked only when the object has no
   `__class__`, or its class has no `__getattribute__` / `__setattr__`. Checking
   them at the start of `$B.$getattr` made attribute access on class instances
-  about 9% slower.
+  about 9% slower. If the hook returns `undefined`, the attribute is missing:
+  `$B.$getattr` returns the default value or raises `AttributeError`. Note that
+  since 3.12, `dir(obj)` looks up `__dir__` on the class of `obj`, so the fake
+  class of `app` must handle `__dir__`.
 - **`$B.EventTarget` and the `open()` event**
   (`www/src/py_builtin_functions.js`). `open()` dispatches a
   `function-call` event with `detail.function == '_b_.open'`. cmu-graphics.js
