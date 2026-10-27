@@ -16,6 +16,38 @@
 <div id="banner_row"></div>
 <div id="container"></div>
 
+<!-- Web workers used by test_web_worker.py, from upstream's index.html -->
+<!-- issue 2389 -->
+<script id="webworker_82c5f471-0adf-47b1-8d1c-7bcc11aa54e6" class="webworker" type="text/python" src="z.py">
+</script>
+
+<script type="text/python" class="webworker" id="test_web_worker">
+from browser import self, bind, is_webworker, console
+from tester import async_tester
+import z # cf issue #2402
+
+msg_num = 0
+
+@bind(self, 'message')
+def message(ev):
+    global msg_num
+    async_tester.assertTrue(is_webworker)
+    if msg_num == 0:
+      assert ev.data == 'hello'
+      self.send('sent by web worker')
+    elif msg_num == 1:
+      assert ev.data == ['a', 1]
+      assert isinstance(ev.data, list)
+      self.send(ev.data[:-1])
+    elif msg_num == 2:
+      self.send(['coucou', {'x': 1}])
+    elif msg_num == 3:
+      console.log('send last')
+      self.send( [1, {"a": [2]}] )
+    msg_num += 1
+
+</script>
+
 <script>
 // Web worker test: python_to_js must work in a worker, without leaking
 // builtins into the global scope

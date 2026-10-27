@@ -285,9 +285,9 @@ returns `2.68` (CPython: `2.67`), `float('inf') > 10**400` is `False`,
   `python_to_js` (`www/tests/web_worker_tests.js`). Upstream removed the QUnit
   page that the fork used to run with testem. `build_and_run.sh` builds and
   runs the tests; GitHub Actions (`.github/workflows/ci.yml`) runs them on pull
-  requests. `test_import.py`, `dom.py`, `test_webcomponent.py` and
-  `test_web_worker.py` need the page setup of upstream's
-  `www/tests/index.html`: the runner executes them one top-level statement at a
+  requests. `test_web_worker.py` waits for the page to print "all tests
+  ok" (`ASYNC_TESTS`). `test_import.py`, `dom.py` and `test_webcomponent.py`
+  need the page setup of upstream's `www/tests/index.html`: the runner executes them one top-level statement at a
   time (`run_statements` in `www/tests/cs_academy_tests.html`) and fails unless
   the statements that fail are exactly the ones in `KNOWN_FAILURES`, with the
   same errors.

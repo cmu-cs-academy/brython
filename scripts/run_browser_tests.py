@@ -13,7 +13,8 @@ Usage (after running make_dist.py):
 The exit code is 1 if a test fails. The modules in KNOWN_FAILURES need a
 page setup that this runner doesn't provide: they are run one top-level
 statement at a time, and the exit code is 1 unless the statements that fail
-are exactly the ones listed, with the same errors.
+are exactly the ones listed, with the same errors. The modules in
+ASYNC_TESTS also fail unless the page prints the given line in time.
 """
 
 import functools
@@ -23,6 +24,7 @@ import os
 import socketserver
 import sys
 import threading
+import time
 
 from playwright.sync_api import sync_playwright
 
@@ -66,11 +68,14 @@ KNOWN_FAILURES = {
         ('icon.className = "TEST"', "AttributeError: type object 'NoneType' has no attribute 'className'"),
         ('assert icon.className == "TEST"', "AttributeError: 'NoneType' object has no attribute 'className'"),
     },
-    'test_web_worker.py': {
-        ("worker.create_worker('test_web_worker', main, onmessage)", "RuntimeError: No webworker with id 'test_web_worker'"),
-        ('worker.create_worker(wid, onready, onmessage, onerror)', "RuntimeError: No webworker with id 'webworker_82c5f471-0adf-47b1-8d1c-7bcc11aa54e6'"),
-    },
 }
+
+# module -> line printed in the console when its asynchronous tests are done.
+# A failed assertion raises in an event handler, and the line is not printed.
+ASYNC_TESTS = {
+    'test_web_worker.py': 'all tests ok',
+}
+ASYNC_TIMEOUT = 20
 
 
 class QuietHandler(http.server.SimpleHTTPRequestHandler):
@@ -103,6 +108,15 @@ def check_known(test, errors):
     return ('FAIL', '\n'.join(report)) if report else ('KNOWN-FAIL', '')
 
 
+def wait_for_line(page, line):
+    deadline = time.monotonic() + ASYNC_TIMEOUT
+    while line not in page.console_lines:
+        if time.monotonic() > deadline:
+            return False
+        page.wait_for_timeout(100)
+    return True
+
+
 def main():
     only = sys.argv[1:]
     socketserver.TCPServer.allow_reuse_address = True
@@ -118,6 +132,10 @@ def main():
 
         def fresh_page():
             page = browser.new_page()
+            page.console_lines = []
+            page.on('console',
+                    lambda message: page.console_lines.append(
+                        message.text.strip()))
             page.on('dialog', lambda dialog: dialog.dismiss())
             page.set_default_timeout(120000)
             page.goto(url)
@@ -127,6 +145,7 @@ def main():
         page = fresh_page()
         tests = only or page.evaluate('list_tests()')
         for test in tests:
+            page.console_lines.clear()
             try:
                 if test in KNOWN_FAILURES:
                     ms, errors = page.evaluate(
@@ -141,6 +160,12 @@ def main():
                     status = 'PASS' if state else 'FAIL'
                     last_line = (msg.strip().splitlines()[-1]
                                  if msg.strip() else '')
+                    if state and test in ASYNC_TESTS:
+                        if not wait_for_line(page, ASYNC_TESTS[test]):
+                            status = 'FAIL'
+                            msg = last_line = (
+                                f'{ASYNC_TESTS[test]!r} not printed after '
+                                f'{ASYNC_TIMEOUT}s')
             except Exception as exc:
                 # the page crashed or timed out: report and start a new page
                 status, ms, msg = 'FAIL', -1, str(exc).splitlines()[0]
