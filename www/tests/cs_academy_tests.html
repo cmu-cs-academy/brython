@@ -50,8 +50,40 @@ def run_one(fn):
     state, t0, t1, msg = utils.run_test_module(fn)
     return [state, round((t1 - t0) * 1000), msg]
 
+def run_statements(fn):
+    # Run each top-level statement of a module separately, so that a failure
+    # doesn't hide the statements after it. Returns the failures as
+    # [line, first line of the statement, last line of the error, traceback]
+    import ast
+    import time
+    import traceback
+    src = open(fn).read()
+    lines = src.splitlines()
+    ns = {'__name__': '__main__', '__file__': fn}
+    failures = []
+    t0 = time.perf_counter()
+    try:
+        body = ast.parse(src, fn).body
+    except SyntaxError:
+        tb = traceback.format_exc()
+        return [0, [[0, '<module>', tb.strip().splitlines()[-1], tb]]]
+    for node in body:
+        start = min([node.lineno] +
+                    [d.lineno for d in getattr(node, 'decorator_list', [])])
+        # pad with newlines to keep the line numbers of the module
+        code = '\n' * (start - 1) + '\n'.join(lines[start - 1:node.end_lineno])
+        try:
+            exec(compile(code, fn, 'exec'), ns)
+        except Exception:
+            tb = traceback.format_exc()
+            failures.append([start, lines[start - 1].strip(),
+                             tb.strip().splitlines()[-1], tb])
+    t1 = time.perf_counter()
+    return [round((t1 - t0) * 1000), failures]
+
 window.list_tests = list_tests
 window.run_one = run_one
+window.run_statements = run_statements
 window.harness_ready = True
 </script>
 </body>

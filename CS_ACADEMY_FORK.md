@@ -165,6 +165,10 @@ worker.
   frame is backported from 3.14.3 (upstream 3.14.0 crashed with a Javascript
   error for `exec()` frames), and two error paths that looped forever now move
   to the next frame (still a bug upstream).
+- `exec()` of a code object made by `compile()` passed the code object instead
+  of its source to the compiler, so a function or class with annotations
+  raised "JavascriptError: scopes.src.split is not a function"
+  (`www/src/py_builtin_functions.js`, `$$eval`; still a bug upstream).
 - Bugs of upstream 3.14.0 that changed the errors and output of student
   programs compared to the previous version of the fork (tested in
   `www/tests/test_cs_academy.py`):
@@ -282,8 +286,11 @@ returns `2.68` (CPython: `2.67`), `float('inf') > 10**400` is `False`,
   page that the fork used to run with testem. `build_and_run.sh` builds and
   runs the tests; GitHub Actions (`.github/workflows/ci.yml`) runs them on pull
   requests. `test_import.py`, `dom.py`, `test_webcomponent.py` and
-  `test_web_worker.py` are expected to fail because they need the page setup of
-  upstream's `www/tests/index.html`.
+  `test_web_worker.py` need the page setup of upstream's
+  `www/tests/index.html`: the runner executes them one top-level statement at a
+  time (`run_statements` in `www/tests/cs_academy_tests.html`) and fails unless
+  the statements that fail are exactly the ones in `KNOWN_FAILURES`, with the
+  same errors.
 - `www/tests/test_cs_academy.py` tests the features of this document.
 - Other test changes: tests for fork-specific fixes added to `issues.py`,
   `test_math.py`, `test_strings.py`, `test_classes.py`, `test_numbers.py`,

@@ -779,7 +779,10 @@ var $$eval = _b_.eval = function(){
             js_obj = $B.js_from_root({ast: _ast,
                                       symtable,
                                       filename,
-                                      src,
+                                      // CS Academy: the source of a code
+                                      // object is used for annotations
+                                      src: src.__class__ === code ?
+                                           src.source : src,
                                       namespaces: {local_name,
                                                    exec_locals,
                                                    global_name,

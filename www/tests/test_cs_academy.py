@@ -272,4 +272,10 @@ except KeyError as exc:
 assert len.__name__ == 'len'
 assert math.sqrt.__name__ == 'sqrt'
 
+# exec() of a code object with annotations
+ns = {}
+exec(compile('def f(x: int) -> str:\n    return str(x)\n', 'test', 'exec'), ns)
+assert ns['f'](1) == '1'
+assert ns['f'].__annotations__ == {'x': int, 'return': str}
+
 print('passed all tests...')
