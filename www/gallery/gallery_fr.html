@@ -26,7 +26,7 @@
 </head>
 
 
-<body onload="brython(1)">
+<body>
 
     <div id="banner_row">
     <span class="logo"><a href="/index.html">brython</a></span>
@@ -43,9 +43,10 @@
         <br><a target="_blank" href="ajax.html">ajax</a>
         <br><a target="_blank" href="sort_table.html">tri de table</a>
         <br><a target="_blank" href="sort_table_template.html">tri de table
-            </a>(utilise <a href="../static_doc/fr/template.html" target="_blank">template</a>)
+            </a>(utilise <a id="template_doc" target="_blank">template</a>)
         <br><a target="_blank" href="calculator.html">calculatrice</a>
         <br><a target="_blank" href="markdown_exec.html">code Python exécutable dans une page markdown</a>
+        <br><a target="_blank" href="inject_scripts.html">insertion dynamique de scripts dans la page</a>
         <br>
         <br><a target="_blank" href="simulate_input.html">fonction input() personnalisée</a>
         <br><a target="_blank" href="simulate_input_dialog.html">fonction input() avec le package browser.widgets</a>
@@ -67,8 +68,12 @@
         <br><a target="_blank" href="kanban.html" title="par Pedro Rodriguez">simulateur Kanban</a>
         <br><a target="_blank" href="battery.html" title="par Nicolas Pinault">charge de batterie</a>
         <br><a target="_blank" href="barcode.html" title="par Carl Smith">code barre</a>
-        <br><a target="_blank" href="library.html">IndexedDB</a>
-        <br><a target="_blank" href="http://brython.info/cours_python/cours_python.html">tutoriel Python en diaporama</a>
+
+        <br>
+        <br><a target="_blank" href="library.html">IndexedDB: exemple basique</a>
+        <br><a target="_blank" href="indexedDB_cache.html">IndexedDB: cache des modules Brython</a>
+        <br>
+
         <br><a target="_blank" href="turtle.html">Turtle Graphics</a>
         <br><a target="_blank" href="clock.html">horloge analogique</a>
         <br><a target="_blank" href="europe.html">glisser-déposer</a>
@@ -89,23 +94,26 @@
         <a target="_blank" href="three.html" title="par Dirk Krause">three.js (3D animation) : exemple basique</a>
         <br><a target="_blank" href="three_webgl_interactive_cubes.html">three.js: cubes interactifs</a>
         <br>
-        <br><a target="_blank" href="raphael">Raphael (graphiques vectoriel)</a>
+        <br><a target="_blank" href="raphael/index.html">Raphael (graphiques vectoriel)</a>
         <br>
-        <br><a target="_blank" href="highcharts">Highcharts (courbes et graphes)</a>
+        <br><a target="_blank" href="highcharts/index.html">Highcharts (courbes et graphes)</a>
         <br>
         <br><a target="_blank" href="bokeh.html">Bokeh (graphes interactifs utilisant bokehJS)</a>
         <br>
         <br><a target="_blank" href="test_vue.html">vue.js (canevas pour interfaces utilisateur)</a>
         <br>
         <br><a target="_blank" href="phaser.html">Phaser (moteur de jeux)</a>
-
-
+        <br>
+        <br><a target="_blank" href="http://brython.info/gallery/babylon2_brython.html">Babylon (jeux et dessin 3D)</a>
         </td>
         </tr>
         </table>
     </div>
     <br>
 
+<script type="text/python">
+import set_template_doc_location
+</script>
 
 </body>
 

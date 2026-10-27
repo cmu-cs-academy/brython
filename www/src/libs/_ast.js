@@ -1,9 +1,10 @@
-var $module = (function($B){
+(function($B){
 
 var _b_ = $B.builtins,
     ast = $B.ast, // created in py2js
     mod = {}
 mod.PyCF_ONLY_AST = $B.PyCF_ONLY_AST
+mod.PyCF_TYPE_COMMENTS = $B.PyCF_TYPE_COMMENTS
 mod.AST = $B.AST // in builtin_modules.js
 $B.create_python_ast_classes() // in py_ast.js
 for(var klass in ast){
@@ -22,10 +23,10 @@ function ensure_literal_number(exp, allow_real, allow_imaginary){
         return false
     }
     var value = exp.value
-    if(allow_real && _b_.isinstance(value, [_b_.int, _b_.float])){
+    if(allow_real && $B.$isinstance(value, [_b_.int, _b_.float])){
         return true
     }
-    if(allow_imaginary && _b_.isinstance(value, _b_.complex)){
+    if(allow_imaginary && $B.$isinstance(value, _b_.complex)){
         return true
     }
     return false
@@ -230,7 +231,7 @@ function validate_pattern_match_value(exp){
                be used */
             validate_expr(exp, Load)
             var literal = exp.value
-            if(_b_.isinstance(literal, [_b_.int, _b_.float, _b_.bytes,
+            if($B.$isinstance(literal, [_b_.int, _b_.float, _b_.bytes,
                     _b_.complex, _b_.str])){
                 return true
             }
@@ -501,12 +502,12 @@ function validate_constant(value){
     if (value == _b_.None || value == _b_.Ellipsis){
         return true
     }
-    if(_b_.isinstance(value,
+    if($B.$isinstance(value,
             [_b_.int, _b_.float, _b_.complex, _b_.bool, _b_.bytes, _b_.str])){
         return true
     }
 
-    if(_b_.isinstance(value, [_b_.tuple, _b_.frozenset])){
+    if($B.$isinstance(value, [_b_.tuple, _b_.frozenset])){
         var it = _b_.iter(value)
         while(true){
             try{
@@ -743,7 +744,8 @@ mod._validate = function(ast_obj){
         // No default case so compiler emits warning for unhandled cases
     }
 }
-return mod
+
+$B.imported._ast = mod
 
 }
 )(__BRYTHON__)

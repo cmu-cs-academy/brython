@@ -14,6 +14,8 @@ a.sort_link{margin-left:10px;text-decoration:none}
 <script type="text/javascript" src="/src/unicode_data.js"></script>
 <script type="text/javascript" src="/src/version_info.js"></script>
 
+
+<script type="text/javascript" src="/src/py_tokens.js"></script>
 <script type="text/javascript" src="/src/python_tokenizer.js"></script>
 <script type="text/javascript" src="/src/py_ast.js"></script>
 <script type="text/javascript" src="/src/py2js.js"></script>
@@ -21,6 +23,7 @@ a.sort_link{margin-left:10px;text-decoration:none}
 <script type="text/javascript" src="/src/py_utils.js"></script>
 <script type="text/javascript" src="/src/py_object.js"></script>
 <script type="text/javascript" src="/src/py_type.js"></script>
+<script type="text/javascript" src="/src/py_functions.js"></script>
 <script type="text/javascript" src="/src/py_builtin_functions.js"></script>
 <script type="text/javascript" src="/src/py_sort.js"></script>
 <script type="text/javascript" src="/src/py_exceptions.js"></script>
@@ -35,8 +38,8 @@ a.sort_link{margin-left:10px;text-decoration:none}
 <script type="text/javascript" src="/src/py_complex.js"></script>
 <script type="text/javascript" src="/src/py_dict.js"></script>
 <script type="text/javascript" src="/src/py_list.js"></script>
-<script type="text/javascript" src="/src/py_generator.js"></script>
 <script type="text/javascript" src="/src/js_objects.js"></script>
+<script type="text/javascript" src="/src/py_generator.js"></script>
 <script type="text/javascript" src="/src/py_dom.js"></script>
 <script type="text/javascript" src="/src/py_pattern_matching.js"></script>
 <script type="text/javascript" src="/src/async.js"></script>
@@ -45,9 +48,20 @@ a.sort_link{margin-left:10px;text-decoration:none}
 <script type="text/javascript" src="/src/ast_to_js.js"></script>
 <script type="text/javascript" src="/src/symtable.js"></script>
 
+<!-- scripts for PEG parser -->
+<script type="text/javascript" src="/src/action_helpers.js"></script>
+<script type="text/javascript" src="/src/string_parser.js"></script>
+<script type="text/javascript" src="/src/number_parser.js"></script>
+<script type="text/javascript" src="/src/python_parser.js"></script>
+<script type="text/javascript" src="/src/pegen.js"></script>
+<script type="text/javascript" src="/src/gen_parse.js"></script>
+
+<script type="text/javascript" src="/src/brython_ready.js"></script>
+
 <script type="text/python" src="show_source.py"></script>
 </head>
-<body onLoad="brython(1)">
+
+<body>
 
 <div id="output">(empty)</div>
 <button id="get_text">get text file</button>
@@ -69,28 +83,31 @@ def log(*args):
     output.html += ', '.join(str(arg) for arg in args)
 
 def show(req):
-    log(req.text)
+    if req.status == 404:
+        log('File not found')
+    else:
+        log(req.text)
 
 @bind("#get_test", "click")
 def get(ev):
     output.clear()
-    ajax.get("/cgi-bin/get_test.py",
+    ajax.get("/ajax_get",
              oncomplete=show,
              data={"foo": 34})
 
     req = ajax.Ajax()
-    req.open("GET", "/cgi-bin/get_test.py?bar=35")
+    req.open("GET", "/ajax_get?bar=35")
     req.bind("complete", show)
     req.send()
 
 @bind("#post_test", "click")
 def post(ev):
     output.clear()
-    ajax.post("/cgi-bin/post_test.py",
+    ajax.post("/ajax_post",
              oncomplete=show,
              data={"foo": 34})
     req = ajax.Ajax()
-    req.open("POST", "/cgi-bin/post_test.py")
+    req.open("POST", "/ajax_post")
     req.bind("complete", show)
     req.send({"bar": 45})
 

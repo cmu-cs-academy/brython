@@ -310,10 +310,11 @@ class ModulesFinder:
         """Build brython_modules.js from the list of modules needed by the
         application.
         """
-        # CS Academy doesn't use indexeddb, so use a constant timestamp
-        # to prevent unnecessary changes from one build to another
+        # CS Academy doesn't use indexedDB, so use a constant timestamp and a
+        # sorted module list to prevent unnecessary changes from one build
+        # to another
         vfs = {"$timestamp": 0}
-        for module in sorted(list(self.modules)):
+        for module in sorted(self.modules):
             dico = self.stdlib if module in self.stdlib else self.user_modules
             vfs[module] = dico[module]
             elts = module.split('.')
@@ -322,7 +323,6 @@ class ModulesFinder:
                 if not pkg in vfs:
                     vfs[pkg] = dico[pkg]
         # save in brython_modules.js
-        print('Saving in %s' % path)
         if os.path.exists(path):
             # If brython_modules.js already exists, check if there have been
             # changes. Cf. issue #1471.
@@ -358,7 +358,6 @@ class ModulesFinder:
             # to prevent unnecessary changes from one build to the next.
             # out.write("__BRYTHON__.VFS_timestamp = {}".format(
             #     int(1000 * time.time())))
-
             # if run outside a Web Worker, the script sets the attribute
             # __BRYTHON__.brython_modules to the path of brython_modules.js,
             # so that it is imported by libs/_webworker.js instead of
@@ -499,25 +498,31 @@ def parse_stdlib(stdlib_dir, js_name='brython_stdlib.js'):
 
     return stdlib
 
+# Get the absolute path of brython_stdlib.js from the current directory
+# or below.
+def find_stdlib(top_path):
+    stdlib_file = os.path.normcase("brython_stdlib.js")
+    for dirname, _, filenames in os.walk(top_path):
+        for filename in filenames:
+            if os.path.normcase(filename) == stdlib_file:
+                return dirname
+    return None
 
-def load_stdlib_sitepackages():
+def load_stdlib_sitepackages(top_path=None):
     """
     Search brython_stdlib.js, and load it
     Load site-packages from the current directory
     :return:
 
     """
-    stdlib_dir = None
-    for dirname, dirnames, filenames in os.walk('..'):
-        for filename in filenames:
-            if filename == "brython_stdlib.js":
-                stdlib_dir = dirname
-                stdlib = parse_stdlib(stdlib_dir)
-                break
+    # CS Academy: top_path lets the caller search from a parent directory
+    stdlib_dir = find_stdlib(top_path or os.getcwd())
 
-    if not stdlib_dir:
+    if stdlib_dir is None:
         raise FileNotFoundError("Could not find brython_stdlib.js in this"
                                 " directory or below")
+
+    stdlib = parse_stdlib(stdlib_dir)
 
     # search in site-packages
     sp_dir = os.path.join(stdlib_dir, "Lib", "site-packages")
@@ -571,42 +576,55 @@ def is_package(folder):
             return True
 
 
-def load_user_modules(module_dir=os.getcwd()):
+def load_user_modules(modules_paths, modules_dirs=None):
+    # CS Academy: modules_dirs lets the caller pass directories directly
+    if modules_dirs is not None:
+        pass
+    elif modules_paths is None:
+        modules_dirs = [os.getcwd()]
+    else:
+        with open(modules_paths, encoding='utf-8') as f:
+            modules_dirs = [os.path.abspath(line.strip()) for line in f if line.strip()]
+    
+    # All module directories should be considered valid package paths,
+    # as that's how the user likely used them.
+    packages.update(modules_dirs)
+
     user_modules = {}
-    for dirname, dirnames, filenames in os.walk(module_dir):
-        for filename in filenames:
-            name, ext = os.path.splitext(filename)
-            if not ext == ".py" or filename == "list_modules.py":
-                continue
-            if dirname == module_dir:
-                # modules in the same directory
-                path = os.path.join(dirname, filename)
-                with open(path, encoding="utf-8") as fobj:
-                    try:
+    for module_dir in modules_dirs:
+        for dirname, _, filenames in os.walk(module_dir):
+            for filename in filenames:
+                name, ext = os.path.splitext(filename)
+                if not ext == ".py" or filename == "list_modules.py":
+                    continue
+                if dirname == module_dir:
+                    # modules in the same directory
+                    path = os.path.join(dirname, filename)
+                    with open(path, encoding="utf-8") as fobj:
+                        try:
+                            src = fobj.read()
+                        except:
+                            logger.error("Unable to read %s", path)
+                    mf = ModulesFinder(dirname)
+                    imports = sorted(list(mf.get_imports(src)))
+                    user_modules[name] = [ext, src, imports]
+                elif is_package(dirname):
+                    # modules in packages below current directory
+                    path = os.path.join(dirname, filename)
+                    package = dirname[len(module_dir) + 1:].replace(os.sep, '.')
+                    if package.startswith('Lib.site-packages.'):
+                        package = package[len('Lib.site-packages.'):]
+                    if filename == "__init__.py":
+                        module_name = package
+                    else:
+                        module_name = "{}.{}".format(package, name)
+                    with open(path, encoding="utf-8") as fobj:
                         src = fobj.read()
-                    except:
-                        logger.error("Unable to read %s", path)
-                mf = ModulesFinder(dirname)
-                imports = sorted(list(mf.get_imports(src)))
-                user_modules[name] = [ext, src, imports]
-            elif is_package(dirname):
-                # modules in packages below current directory
-                path = os.path.join(dirname, filename)
-                package = dirname[len(os.getcwd()) + 1:].replace(os.sep, '.')
-                if package.startswith('Lib.site-packages.'):
-                    package = package[len('Lib.site-packages.'):]
-                if filename == "__init__.py":
-                    module_name = package
-                else:
-                    module_name = "{}.{}".format(package, name)
-                with open(path, encoding="utf-8") as fobj:
-                    src = fobj.read()
-                #mf = ModulesFinder(dirname)
-                #imports = mf.get_imports(src, package or None)
-                #imports = sorted(list(imports))
-                user_modules[module_name] = [ext, src, None]
-                if module_name == package:
-                    user_modules[module_name].append(1)
+                    mf = ModulesFinder(dirname)
+                    imports = sorted(list(mf.get_imports(src, package or None)))
+                    user_modules[module_name] = [ext, src, imports]
+                    if module_name == package:
+                        user_modules[module_name].append(1)
 
     return user_modules
 
@@ -713,6 +731,3 @@ class VFSReplacementParser(html.parser.HTMLParser):
 if __name__ == "__main__":
     finder = ModulesFinder()
     finder.inspect()
-    # print(sorted(list(finder.modules)))
-
-

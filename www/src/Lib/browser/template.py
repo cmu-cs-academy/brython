@@ -53,8 +53,7 @@ functions as the second argument of Template():
 After a handler function is run, if element.data has changed, the element is
 rendered again, with the new value of element.data.
 """
-import tb as traceback
-from browser import document, html
+from browser import document, html, console
 
 # HTML elements that don't need a closing tag
 # Cf. http://w3c.github.io/html/syntax.html#void-elements
@@ -137,7 +136,7 @@ class Template:
         self.add("    " * self.indent + content, elt)
 
     def write(self, content):
-        self.html += str(content) + "\n"
+        self.html += str(content)
 
     def parse(self, elt):
         """Parse the element recursively to generate the Python code that
@@ -181,7 +180,7 @@ class Template:
                     value = item.value.replace("\n", "")
                     if "{" in value:
                         dynamic_attrs.append("'" + item.name + "', f'" +
-                            value.replace("'", "\\'") + "'")
+                            value + "'")
                     else:
                         static_attrs.append(item.name + '="' + value +'"')
 
@@ -256,14 +255,13 @@ class Template:
         try:
             exec(self.python, ns)
         except Exception as exc:
-            print('template 259, exc', exc)
+            import tb as traceback
             msg = traceback.format_exc()
             if isinstance(exc, SyntaxError):
-                line_no = exc.args[2]
+                line_no = exc.lineno
             else:
                 tb = exc.__traceback__
                 while tb is not None:
-                    print('template 265, tb', tb, tb.tb_frame, tb.tb_lineno)
                     line_no = tb.tb_lineno
                     tb = tb.tb_next
             elt = self.line_mapping[line_no]
@@ -276,7 +274,7 @@ class Template:
                 except AttributeError:
                     print('no outerHTML for', elt)
                     print(elt.html)
-            print(f"{exc.__class__.__name__}:  {exc}")
+            print(msg)
             return
 
         # Replace element content by generated html.

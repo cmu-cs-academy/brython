@@ -1,10 +1,8 @@
-;(function($B){
+"use strict";
+
+(function($B){
 
 var _b_ = $B.builtins
-
-var object = _b_.object
-
-var _window = self;
 
 function to_simple(value){
     switch(typeof value){
@@ -21,6 +19,7 @@ function to_simple(value){
             }else if(value instanceof String){
                 return value.valueOf()
             }
+            break
         default:
             throw _b_.TypeError.$factory("keys must be str, int, " +
                 "float, bool or None, not " + $B.class_name(value))
@@ -40,13 +39,13 @@ $B.pyobj2structuredclone = function(obj, strict){
     }else if(obj === _b_.None){
         return null // _b_.None
     }else if(Array.isArray(obj) || obj.__class__ === _b_.list ||
-            obj.__class__ === _b_.tuple){
-        var res = []
-        for(var i = 0, len = obj.length; i < len; i++){
-            res.push($B.pyobj2structuredclone(obj[i]))
+            obj.__class__ === _b_.tuple || obj.__class__ === js_array){
+        let res = new Array(obj.length);
+        for(var i = 0, len = obj.length; i < len; ++i){
+            res[i] = $B.pyobj2structuredclone(obj[i]);
         }
         return res
-    }else if(_b_.isinstance(obj, _b_.dict)){
+    }else if($B.$isinstance(obj, _b_.dict)){
         if(strict){
             for(var key of $B.make_js_iterator(_b_.dict.keys(obj))){
                 if(typeof key !== 'string'){
@@ -55,14 +54,23 @@ $B.pyobj2structuredclone = function(obj, strict){
                 }
             }
         }
-        var res = {}
+        let res = {}
         for(var entry of $B.make_js_iterator(_b_.dict.items(obj))){
             res[to_simple(entry[0])] = $B.pyobj2structuredclone(entry[1])
+        }
+        return res
+    }else if(obj.__class__ === $B.long_int){
+        return obj.value
+    }else if(Object.getPrototypeOf(obj).constructor === Object){
+        var res = {}
+        for(var key in obj){
+            res[key] = $B.pyobj2structuredclone(obj[key])
         }
         return res
     }else{
         return obj
     }
+    throw _b_.TypeError.$factory(`cannot send '${$B.class_name(obj)}' object`)
 }
 
 $B.structuredclone2pyobj = function(obj){
@@ -70,194 +78,352 @@ $B.structuredclone2pyobj = function(obj){
         return _b_.None
     }else if(obj === undefined){
         return $B.Undefined
-    }else if(typeof obj == "boolean" ||
-            typeof obj == "string"){
+    }else if(typeof obj == "boolean"){
         return obj
-    }else if(typeof obj == "number"){
+    }else if(typeof obj == "string" || obj instanceof String){
+        return $B.String(obj)
+    }else if(typeof obj == "number" || obj instanceof Number){
+        obj += 0 // convert to primitive
         return Number.isInteger(obj) ?
                    obj :
                    {__class__: _b_.float, value: obj}
-    }else if(obj instanceof Number || obj instanceof String){
-        return obj.valueOf()
     }else if(Array.isArray(obj) || obj.__class__ === _b_.list ||
             obj.__class__ === _b_.tuple){
-        var res = _b_.list.$factory()
+        let res = _b_.list.$factory()
         for(var i = 0, len = obj.length; i < len; i++){
             res.push($B.structuredclone2pyobj(obj[i]))
         }
         return res
     }else if(typeof obj == "object"){
-        var res = $B.empty_dict()
-        for(var key in obj){
-            _b_.dict.$setitem(res, key, $B.structuredclone2pyobj(obj[key]))
+        if(Object.getPrototypeOf(obj) === Object.prototype){
+            if(! $B.$isinstance(obj, $B.JSObj)){
+                return obj
+            }
+            // transform to Python dict
+            let res = $B.empty_dict()
+            for(var key in obj){
+                _b_.dict.$setitem(res, key, $B.structuredclone2pyobj(obj[key]))
+            }
+            return res
+        }else{
+            return obj
         }
-        return res
     }else{
         throw _b_.TypeError.$factory(_b_.str.$factory(obj) +
             " does not support the structured clone algorithm")
     }
-
 }
 
-// Transforms a Javascript constructor into a Python function
-// that returns instances of the constructor, converted to Python objects
+const JSOBJ = $B.JSOBJ = Symbol('JSOBJ')
+const PYOBJ = $B.PYOBJ = Symbol('PYOBJ')
+const PYOBJFCT = Symbol('PYOBJFCT')
+const PYOBJFCTS = Symbol('PYOBJFCTS')
 
-var JSConstructor = $B.make_class('JSConstructor')
-
-JSConstructor.__module__ = "<javascript>"
-
-JSConstructor.__call__ = function(_self){
-    // _self.func is a constructor
-    // It takes Javascript arguments so we must convert
-    // those passed to the Python function
-    return function(){
-        var args = [null]
-        for(var i = 0, len = arguments.length; i < len; i++){
-            args.push(pyobj2jsobj(arguments[i]))
-        }
-        var factory = _self.func.bind.apply(_self.func, args)
-        var res = new factory()
-        // res is a Javascript object
-        return $B.$JS2Py(res)
+function js_array_to_list(js_array, memo){
+    // CS Academy: used by jsobj2pyobj() to convert a Javascript array to a
+    // Python list. memo maps the arrays already converted, to handle arrays
+    // that contain themselves.
+    let pyobj = js_array[PYOBJ]
+    if(pyobj !== undefined){
+        // array created by pyobj2jsobj() from a Python list or tuple
+        return pyobj
     }
-}
-
-JSConstructor.__getattribute__ = function(_self, attr){
-    // Attributes of a constructor are taken from the original JS object
-    if(attr == "__call__"){
-        return function(){
-            var args = [null]
-            for(var i = 0, len = arguments.length; i < len; i++){
-                args.push(pyobj2jsobj(arguments[i]))
-            }
-            var factory = _self.func.bind.apply(_self.func, args)
-            var res = new factory()
-            // res is a Javascript object
-            return $B.$JS2Py(res)
-        }
+    memo = memo ?? new Map()
+    let res = memo.get(js_array)
+    if(res !== undefined){
+        return res
     }
-    return JSObject.__getattribute__(_self, attr)
-}
-
-JSConstructor.$factory = function(obj){
-    return {
-        __class__: JSConstructor,
-        js: obj,
-        func: obj.js_func
+    res = $B.$list(new Array(js_array.length))
+    memo.set(js_array, res)
+    for(let i = 0, len = js_array.length; i < len; i++){
+        let item = js_array[i]
+        res[i] = Array.isArray(item) && item.__class__ === undefined ?
+                     js_array_to_list(item, memo) :
+                     jsobj2pyobj(item)
     }
+    return res
 }
-
-
 
 var jsobj2pyobj = $B.jsobj2pyobj = function(jsobj, _this){
     // If _this is passed and jsobj is a function, the function is called
     // with built-in value `this` set to _this
-    switch(jsobj) {
-      case true:
-      case false:
-        return jsobj
-    }
 
-    if(jsobj === undefined){
-        return $B.Undefined
-    }else if(jsobj === null){
+    if(jsobj === null){
+        // CS Academy: convert Javascript null to None, as Brython did before
+        // version 3.12 (upstream returns null, ie javascript.NULL). The code
+        // of cmu_graphics, and student programs through it, rely on this.
         return _b_.None
     }
 
-    if(Array.isArray(jsobj)){
-        return $B.$list(jsobj.map(jsobj2pyobj))
-    }else if(typeof jsobj === 'number'){
-       if(jsobj.toString().indexOf('.') == -1){
-           return _b_.int.$factory(jsobj)
-       }
-       // for now, lets assume a float
-       return _b_.float.$factory(jsobj)
-    }else if(typeof jsobj == "string"){
-        return $B.String(jsobj)
-    }else if(typeof jsobj == "function"){
-        // transform Python arguments to equivalent JS arguments
-        _this = _this === undefined ? null : _this
-        return function(){
-            var args = []
-            for(var i = 0, len = arguments.length; i < len; i++){
-                args.push(pyobj2jsobj(arguments[i]))
-            }
-            return jsobj2pyobj(jsobj.apply(_this, args))
-        }
+    // Immutable types
+    switch(typeof jsobj){
+        case 'boolean':
+            return jsobj
+
+        case 'undefined':
+            return $B.Undefined
+
+        case 'number':
+             // convert JS numbers with no decimal to a Python int
+             if(jsobj % 1 === 0){
+                 return Number.isSafeInteger(jsobj) ? jsobj : $B.fast_long_int(jsobj)
+             }
+             // other numbers to Python floats
+             return _b_.float.$factory(jsobj)
+
+        case 'bigint':
+            return jsobj
+
+        case 'string':
+            return $B.String(jsobj)
     }
 
-    if(jsobj.$kw) {
+    if(Array.isArray(jsobj)){
+        // CS Academy: convert Javascript arrays to Python lists, as Brython
+        // did before version 3.12 (upstream returns the array itself, an
+        // instance of javascript.Array, which is not a subclass of list).
+        if(jsobj.__class__ !== undefined){
+            // already a Python list or tuple
+            return jsobj
+        }
+        return js_array_to_list(jsobj)
+    }
+
+    let pyobj = jsobj[PYOBJ]
+    if(pyobj !== undefined) {
+        return pyobj
+    }
+
+    // check if obj is an instance of Promise
+    // cf. issue #2321
+    if(jsobj instanceof Promise || typeof jsobj.then == "function"){
+        return jsobj
+    }
+
+    if(typeof jsobj === "function"){
+        // transform Python arguments to equivalent JS arguments
+        _this = _this === undefined ? null : _this
+
+        if(_this === null){
+            const pyobj = jsobj[PYOBJFCT];
+            if(pyobj !== undefined){
+                return pyobj
+            }
+        }else{
+            const pyobjfcts = _this[PYOBJFCTS]
+            if(pyobjfcts !== undefined) {
+                const pyobj = pyobjfcts.get(jsobj)
+                if(pyobj !== undefined){
+                    return pyobj
+                }
+            }else{
+                try{
+                    _this[PYOBJFCTS] = new Map()
+                }catch(err){
+                    // probably read-only, ignore
+                }
+            }
+        }
+
+        var res = function(){
+            var args = new Array(arguments.length)
+            for(var i = 0, len = arguments.length; i < len; ++i){
+                var arg = arguments[i]
+                if(arg !== null && arg.constructor === Object && arg.$kw){
+                    // CS Academy: pass keyword arguments to the Javascript
+                    // function as the Brython object {$kw: [...]}, as Brython
+                    // did before 3.12 (upstream raises TypeError). Functions
+                    // of cmu-graphics.js such as drawRect() read them.
+                    args[i] = arg
+                    continue
+                }
+                args[i] = pyobj2jsobj(arg)
+            }
+            try{
+                var result = jsobj.apply(_this, args)
+            }catch(err){
+                throw $B.exception(err)
+            }
+            if(typeof result == 'function' && result[PYOBJ] === undefined &&
+                    ! result.$infos && ! result.$function_infos){
+                // CS Academy: a Javascript function returned by a call to a
+                // Javascript function is returned as is, as Brython did before
+                // 3.12. When Python code calls it, it receives the Brython
+                // objects (eg None, not null) and the keyword arguments as
+                // {$kw: [...]}. cmu-graphics.js relies on this (functions such
+                // as jsSetWithTypeCheckBry() or jsDrawRect() return the
+                // functions that cmu_graphics calls).
+                return result
+            }
+            return jsobj2pyobj(result)
+        }
+
+        if(_this === null){
+            jsobj[PYOBJFCT] = res;
+        }else if(_this[PYOBJFCTS] !== undefined){
+            _this[PYOBJFCTS].set(jsobj, res)
+        }
+
+        res[JSOBJ] = jsobj
+        Object.defineProperty(res, '$js_func',
+            {value: jsobj})
+        Object.defineProperty(res, '$infos', {
+            value: {
+                __name__: jsobj.name,
+                __qualname__: jsobj.name
+            },
+            writable: true
+        })
+        let value = []
+        value[$B.func_attrs.name] = jsobj.name
+        value[$B.func_attrs.qualname] = jsobj.name
+        Object.defineProperty(res, '$function_infos',
+            {
+                value,
+                writable: true
+            }
+        )
+
+        return res
+    }
+
+    if(jsobj.$kw){
         return jsobj
     }
 
     if($B.$isNode(jsobj)){
-        return $B.DOMNode.$factory(jsobj)
+        const res = $B.DOMNode.$factory(jsobj)
+        jsobj[PYOBJ] = res
+        res[JSOBJ] = jsobj
+        return res
     }
 
-    return $B.JSObj.$factory(jsobj)
+    return jsobj
 }
 
 var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
     // conversion of a Python object into a Javascript object
-    if(pyobj === _b_.None){
-        return null
-    }else if(pyobj === $B.Undefined){
-        return undefined
-    } else if(pyobj === true || pyobj === false){
-        return pyobj
+    // Immutable types
+
+    // CS Academy: fast path for the most common values passed from Python to
+    // Javascript (ints and str). They are returned unchanged by the code
+    // below, but only after several class checks.
+    switch(typeof pyobj){
+        case 'number':
+        case 'string':
+            return pyobj
+    }
+
+    switch(pyobj){
+        case true:
+        case false:
+            return pyobj
+        case _b_.None:
+            // CS Academy: convert None to null, as Brython did before
+            // version 3.12 (see jsobj2pyobj)
+            return null
+        case $B.Undefined:
+            return undefined
+        case null:
+            // javascript.NULL
+            return null
+    }
+
+    let _jsobj = pyobj[JSOBJ]
+    if(_jsobj !== undefined){
+        return _jsobj
     }
 
     var klass = $B.get_class(pyobj)
-    if(klass === undefined){
-        // not a Python object, consider arg as Javascript object instead
+
+    function has_type(cls, base){
+        return cls === base || cls.__mro__.includes(base)
+    }
+
+    if(has_type(klass, $B.DOMNode)){
         return pyobj
     }
-    if(klass === JSConstructor){
-        // Instances of JSConstructor are transformed into the
-        // underlying Javascript object
 
-        if(pyobj.js_func !== undefined){
-            return pyobj.js_func
+    if(has_type(klass, _b_.list) || has_type(klass, _b_.tuple)){
+        // Python list : transform its elements
+        var jsobj = pyobj.map(pyobj2jsobj)
+        jsobj[PYOBJ] = pyobj
+        //jsobj.__class__ = js_array
+        return jsobj
+    }
+
+    if(has_type(klass, _b_.dict)){
+        // Python dictionaries are transformed into a Javascript object
+        // whose attributes are the dictionary keys
+        // Non-string keys are converted to strings by str(key). This will
+        // affect Python dicts such as {"1": 'a', 1: "b"}, the result will
+        // be the Javascript object {1: "b"}
+        let jsobj = {}
+        for(var entry of _b_.dict.$iter_items(pyobj)){
+            var key = entry.key
+            if(typeof key !== "string"){
+                key = _b_.str.$factory(key)
+            }
+            if(typeof entry.value === 'function'){
+                // set "this" to jsobj
+                entry.value.bind(jsobj)
+            }
+            jsobj[key] = pyobj2jsobj(entry.value)
         }
-        return pyobj.js
-
-    }else if(klass === _b_.str){
-
+        pyobj[JSOBJ] = jsobj
+        return jsobj
+    }
+    if(has_type(klass, _b_.str)){
         // Python strings are converted to the underlying value
         return pyobj.valueOf()
+    }
 
-    }else if(klass === _b_.float){
+    if(klass === $B.long_int){
+        return pyobj.value
+    }
 
+    if(has_type(klass, _b_.float)){
         // floats are implemented as
         // {__class__: _b_.float, value: <JS number>}
         return pyobj.value
+    }
 
-    }else if(klass === $B.function || klass === $B.method){
-        // Transform arguments
-        if(pyobj.prototype &&
+    if(klass === $B.function || klass === $B.method){
+        if(typeof pyobj == 'function' && pyobj.prototype &&
                 pyobj.prototype.constructor === pyobj &&
-                ! pyobj.$is_func){
+                ! pyobj.$function_infos){
             // pyobj is a Javascript constructor - this happens with
             // javascript.extends. Cf. issue #1439
             return pyobj
         }
+        if(pyobj.$is_async){
+            // issue 2251 : calling the Python async function in Javascript
+            // returns a Promise
+            let jsobj = function(){
+                var res = pyobj.apply(null, arguments)
+                return $B.coroutine.send(res)
+            }
+
+            pyobj[JSOBJ] = jsobj
+            jsobj[PYOBJ] = pyobj
+
+            return jsobj
+        }
         // Transform into a Javascript function
-        return function(){
+        let jsobj = function(){
             try{
                 // transform JS arguments to Python arguments
-                var args = []
-                for(var i = 0; i < arguments.length; i++){
-                    if(arguments[i] === undefined){
-                        args.push(_b_.None)
-                    }else{
-                        args.push(jsobj2pyobj(arguments[i]))
-                    }
+                var args = new Array(arguments.length)
+                for(var i = 0; i < arguments.length; ++i){
+                    args[i] = jsobj2pyobj(arguments[i])
                 }
                 // Apply Python arguments to Python function
-                if(pyobj.prototype.constructor === pyobj && ! pyobj.$is_func){
-                    var res = new pyobj(...args)
+                let res
+                if(pyobj.prototype && pyobj.prototype.constructor === pyobj &&
+                        ! pyobj.$function_infos){
+                    res = new pyobj(...args)
                 }else{
-                    var res = pyobj.apply(this, args)
+                    res = pyobj.apply(this, args)
                 }
                 // Return a Javascript result
                 return pyobj2jsobj(res)
@@ -265,52 +431,17 @@ var pyobj2jsobj = $B.pyobj2jsobj = function(pyobj){
                 $B.handle_error(err)
             }
         }
-    }else if(klass === $B.DOMNode ||
-            klass.__mro__.indexOf($B.DOMNode) > -1){
 
-        // instances of DOMNode or its subclasses are transformed into the
-        // underlying DOM element
-        return pyobj
+        pyobj[JSOBJ] = jsobj
+        jsobj[PYOBJ] = pyobj
 
-    }else if([_b_.list, _b_.tuple].indexOf(klass) > -1){
-
-        // Python list : transform its elements
-        var res = []
-        pyobj.forEach(function(item){
-            res.push(pyobj2jsobj(item))
-        })
-        return res
-
-    }else if(klass === _b_.dict || _b_.issubclass(klass, _b_.dict)){
-
-        // Python dictionaries are transformed into a Javascript object
-        // whose attributes are the dictionary keys
-        // Non-string keys are converted to strings by str(key). This will
-        // affect Python dicts such as {"1": 'a', 1: "b"}, the result will
-        // be the Javascript object {1: "b"}
-        var jsobj = {}
-        for(var entry of _b_.dict.$iter_items_with_hash(pyobj)){
-            var key = entry.key
-            if(typeof key != "string"){
-                key = _b_.str.$factory(key)
-            }
-            if(typeof entry.value == 'function'){
-                // set "this" to jsobj
-                entry.value.bind(jsobj)
-            }
-            jsobj[key] = pyobj2jsobj(entry.value)
-        }
         return jsobj
-    }else{
-        // other types are left unchanged
-        return pyobj
     }
+    return pyobj
 }
 
-$B.JSConstructor = JSConstructor
-
 function pyargs2jsargs(pyargs){
-    var args = []
+    var args = new Array(pyargs.length);
     for(var i = 0, len = pyargs.length; i < len; i++){
         var arg = pyargs[i]
         if(arg !== undefined && arg !== null &&
@@ -324,95 +455,15 @@ function pyargs2jsargs(pyargs){
             throw _b_.TypeError.$factory(
                 "A Javascript function can't take " +
                     "keyword arguments")
-        }else{
-            args.push($B.pyobj2jsobj(arg))
         }
+
+        args[i] = $B.pyobj2jsobj(arg)
+
     }
     return args
 }
 
-var js_list_meta = $B.make_class('js_list_meta')
-js_list_meta.__mro__ = [_b_.type, _b_.object]
-
-js_list_meta.__getattribute__ = function(_self, attr){
-    if(_b_.list[attr] === undefined){
-        throw _b_.AttributeError.$factory(attr)
-    }
-    if(['__delitem__', '__setitem__'].indexOf(attr) > -1){
-        // Transform Python values to Javascript values before setting item
-        return function(){
-            var args = [arguments[0]]
-            for(var i = 1, len = arguments.length; i < len; i++){
-                args.push(pyobj2jsobj(arguments[i]))
-            }
-            if(attr == '__contains__'){
-                console.log(attr, args)
-            }
-            return _b_.list[attr].apply(null, args)
-        }
-    }else if(['__add__', '__contains__', '__eq__', '__getitem__', '__mul__',
-              '__ge__', '__gt__', '__le__', '__lt__'].indexOf(attr) > -1){
-        // Apply to a Python copy of the JS list
-        return function(){
-            return jsobj2pyobj(_b_.list[attr].call(null,
-                jsobj2pyobj(arguments[0]),
-                ...Array.from(arguments).slice(1)))
-        }
-    }
-    return function(){
-        var js_list = arguments[0],
-            t = jsobj2pyobj(js_list),
-            args = [t]
-        return _b_.list[attr].apply(null, args)
-    }
-}
-
-$B.set_func_names(js_list_meta, 'builtins')
-
-
-var js_list = $B.make_class('jslist')
-js_list.__class__ = js_list_meta
-js_list.__mro__ = [_b_.list, _b_.object]
-
-js_list.__getattribute__ = function(_self, attr){
-    if(_b_.list[attr] === undefined){
-        // Methods of Python lists take precedence, but if they fail, try
-        // attributes of _self Javascript prototype
-        var proto = Object.getPrototypeOf(_self),
-            res = proto[attr]
-        if(res !== undefined){
-            // pass _self as `this` if res is a function
-            return jsobj2pyobj(res, _self)
-        }
-        if(_self.hasOwnProperty(attr)){ // issue 2172
-            return $B.JSObj.$factory(_self[attr])
-        }
-        throw $B.attr_error(attr, _self)
-    }
-    return function(){
-        var args = pyobj2jsobj(Array.from(arguments))
-        return _b_.list[attr].call(null, _self, ...args)
-    }
-}
-
-$B.set_func_names(js_list, 'builtins')
-
-$B.JSObj = $B.make_class("JSObject",
-    function(jsobj){
-        if(Array.isArray(jsobj)){
-            // Return a Python object that wraps the Javascript list
-            jsobj.__class__ = js_list
-        }else if(typeof jsobj == "function"){
-            jsobj.$is_js_func = true
-            jsobj.__new__ = function(){
-                return new jsobj.$js_func(...arguments)
-            }
-        }else if(typeof jsobj == "number" && ! Number.isInteger(jsobj)){
-            return {__class__: _b_.float, value: jsobj}
-        }
-        return jsobj
-    }
-)
+$B.JSObj = $B.make_class("JSObject", jsobj2pyobj)
 
 // Operations are implemented only for BigInt objects (cf. issue 1417)
 function check_big_int(x, y){
@@ -459,17 +510,25 @@ $B.JSObj.__bool__ = function(_self){
     return !! _self
 }
 
+$B.JSObj.__contains__ = function(_self, key){
+    return key in _self
+}
+
+$B.JSObj.__delitem__ = function(_self, key){
+    delete _self[key]
+    return _b_.None
+}
+
 $B.JSObj.__dir__ = function(_self){
-    var attrs = []
-    for(key in _self){
-        attrs.push(key)
-    }
+    var attrs = Object.keys(_self);
     attrs = attrs.sort()
     return attrs
 }
 
 $B.JSObj.__eq__ = function(_self, other){
     switch(typeof _self){
+        case "string":
+            return _self == other
         case "object":
             if(_self.__eq__ !== undefined){
                 return _self.__eq__(other)
@@ -481,13 +540,52 @@ $B.JSObj.__eq__ = function(_self, other){
                 return true
             }
             for(var key in _self){
-                if(! $B.JSObj.__eq__(_self[key], other[key])){
+                if(! $B.rich_comp('__eq__', _self[key], other[key])){
                     return false
                 }
             }
+            return true
+        case 'function':
+            if(_self.$js_func && other.$js_func){
+                return _self.$js_func === other.$js_func
+            }
+            return _self === other
         default:
             return _self === other
     }
+}
+
+var iterator = $B.make_class('js_iterator',
+    function(obj){
+        return {
+            __class__: iterator,
+            keys: Object.keys(obj),
+            values: Object.values(obj),
+            length: Object.keys(obj).length,
+            counter: -1
+        }
+    }
+)
+
+iterator.__next__ = function(_self){
+    _self.counter++
+    if(_self.counter == _self.length){
+        throw _b_.StopIteration.$factory('')
+    }
+    return _self.keys[_self.counter]
+}
+
+$B.set_func_names(iterator, 'builtins')
+
+$B.JSObj.__hash__ = function(_self){
+    // must not be the same object as object.__hash__ because, since
+    // JSObj.__eq__ is not the same as object.__eq__, JSObj instances
+    // would be unhashable
+    return _b_.object.__hash__(_self)
+}
+
+$B.JSObj.__iter__ = function(_self){
+    return iterator.$factory(_self)
 }
 
 $B.JSObj.__ne__ = function(_self, other){
@@ -496,6 +594,7 @@ $B.JSObj.__ne__ = function(_self, other){
 
 function jsclass2pyclass(js_class){
     // Create a Python class based on a Javascript class
+    //console.log('jsclass', js_class)
     var proto = js_class.prototype,
         klass = $B.make_class(js_class.name)
     klass.__init__ = function(self){
@@ -508,7 +607,7 @@ function jsclass2pyclass(js_class){
     }
     klass.new = function(){
         var args = pyargs2jsargs(arguments)
-        return $B.JSObj.$factory(new proto.constructor(...args))
+        return jsobj2pyobj(new proto.constructor(...args))
     }
     var key, value
     for([key, value] of Object.entries(Object.getOwnPropertyDescriptors(proto))){
@@ -520,13 +619,20 @@ function jsclass2pyclass(js_class){
                     return function(self){
                         return v.get.call(self.__dict__.$jsobj)
                     }
-                })(value),
-                setter = (function(v){
-                    return function(self, x){
-                        v.set.call(self.__dict__.$jsobj, x)
-                    }
                 })(value)
-            klass[key] = _b_.property.$factory(getter, setter)
+            getter.$infos = {__name__: key}
+            var setter
+            if(value.set){
+                setter = (function(v){
+                        return function(self, x){
+                            v.set.call(self.__dict__.$jsobj, x)
+                        }
+                    })(value)
+                klass[key] = _b_.property.$factory(getter, setter)
+            }else{
+                klass[key] = _b_.property.$factory(getter)
+            }
+
         }else{
             klass[key] = (function(m){
                 return function(self){
@@ -536,12 +642,20 @@ function jsclass2pyclass(js_class){
             })(key)
         }
     }
+    for(var name of Object.getOwnPropertyNames(js_class)){
+        klass[name] = (function(k){
+            return function(self){
+                var args = Array.from(arguments).map(pyobj2jsobj)
+                return js_class[k].apply(self, args)
+            }
+        })(name)
+    }
     var js_parent = Object.getPrototypeOf(proto).constructor
     if(js_parent.toString().startsWith('class ')){
         var py_parent = jsclass2pyclass(js_parent)
         klass.__mro__ = [py_parent].concat(klass.__mro__)
     }
-    var frame = $B.last($B.frames_stack)
+    var frame = $B.frame_obj.frame
     if(frame){
         $B.set_func_names(klass, frame[2])
     }
@@ -549,49 +663,77 @@ function jsclass2pyclass(js_class){
 }
 
 $B.JSObj.__getattribute__ = function(_self, attr){
-    var test = false // attr == "Rectangle"
+    var test = false // attr == "setFilter"
     if(test){
         console.log("__ga__", _self, attr)
     }
     if(attr == "new" && typeof _self == "function"){
         // constructor
+        var new_func
         if(_self.$js_func){
-            return function(){
+            new_func = function(){
                 var args = pyargs2jsargs(arguments)
-                return $B.JSObj.$factory(new _self.$js_func(...args))
+                return new _self.$js_func(...args)
             }
         }else{
-            return function(){
+            new_func = function(){
                 var args = pyargs2jsargs(arguments)
-                return $B.JSObj.$factory(new _self(...args))
+                return new _self(...args)
             }
         }
+        Object.defineProperty(new_func, '$infos',
+            {
+                value: {
+                    __name__: attr,
+                    __qualname__: attr
+                },
+                writable: true
+            }
+        )
+        let value = []
+        value[$B.func_attrs.__name__] = attr
+        value[$B.func_attrs.__qualname__] = attr
+        Object.defineProperty(new_func, '$function_infos',
+            {
+                value,
+                writable: true
+            }
+        )
+
+        return new_func
     }
     var js_attr = _self[attr]
-    if(js_attr == undefined && typeof _self == "function" && _self.$js_func){
+    if(js_attr == undefined && typeof _self == "function"){
         js_attr = _self.$js_func[attr]
     }
     if(test){
         console.log('js_attr', js_attr, typeof js_attr,
-            '\n is JS class ?', js_attr.toString().startsWith('class '))
+            '\n is JS class ?', js_attr === undefined ? false :
+            js_attr.toString().startsWith('class '))
     }
     if(js_attr === undefined){
+        if(typeof _self == 'object' && attr in _self){
+            // attr is in _self properties (possibly inherited) and the value
+            // is `undefined`
+            return $B.Undefined
+        }
         if(typeof _self.getNamedItem == 'function'){
             var res = _self.getNamedItem(attr)
             if(res !== undefined){
-                return $B.JSObj.$factory(res)
+                return jsobj2pyobj(res)
             }
         }
-        var klass = $B.get_class(_self)
-        if(klass && klass[attr]){
-            var class_attr = klass[attr]
+        var klass = $B.get_class(_self),
+            class_attr = $B.$getattr(klass, attr, null)
+        if(class_attr !== null){
             if(typeof class_attr == "function"){
                 return function(){
-                    var args = [_self]
+                    var args = new Array(arguments.length + 1)
+                    args[0] = _self;
                     for(var i = 0, len = arguments.length; i < len; i++){
-                        args.push(arguments[i])
+                        args[i + 1] = arguments[i]
                     }
-                    return $B.JSObj.$factory(class_attr.apply(null, args))
+                    return jsobj2pyobj(class_attr.apply(null, args))
                 }
             }else{
                 return class_attr
@@ -601,58 +743,48 @@ $B.JSObj.__getattribute__ = function(_self, attr){
     }
     if(js_attr !== null &&
             js_attr.toString &&
-            typeof js_attr.toString == 'function' &&
-            js_attr.toString().startsWith('class ') &&
-            js_attr.prototype){
+            typeof js_attr == 'function' &&
+            js_attr.toString().startsWith('class ')){
         // Javascript class
         return jsclass2pyclass(js_attr)
     }else if(typeof js_attr === 'function'){
-        var res = function(){
-            var args = pyargs2jsargs(arguments),
-                target = _self.$js_func || _self
-            try{
-                var result = js_attr.apply(target, args)
-            }catch(err){
-                console.log("error", err)
-                console.log("attribute", attr, "of _self", _self,
-                    js_attr, args, arguments)
-                throw err
-            }
-            if(result === undefined){
-                return $B.Undefined
-            }else if(result === null){
-                return _b_.None
-            }
-            return $B.JSObj.$factory(result)
+        // The second argument is the value passed as "this" when the JS
+        // function is executed. If _self is a wrapper around a JS function,
+        // pass the JS function, not the wrapper
+        if(! js_attr.$infos && ! js_attr.$function_infos){
+            js_attr.$js_func = js_attr
         }
-        // this is very important for class-emulating functions
-        res.prototype = js_attr.prototype
-        res.$js_func = js_attr
-        res.__mro__ = [_b_.object]
-        res.$infos = {
-            __name__: js_attr.name,
-            __qualname__: js_attr.name
-        }
-        if($B.frames_stack.length > 0){
-            res.$infos.__module__ = $B.last($B.frames_stack)[3].__name__
-        }
-        return $B.JSObj.$factory(res)
+        return jsobj2pyobj(js_attr, _self.$js_func || _self)
     }else{
-        return $B.JSObj.$factory(js_attr)
+        if(test){
+            console.log('jsobj2pyobj on', js_attr)
+        }
+        var res = jsobj2pyobj(js_attr)
+        if(test){
+            console.log('    res', res)
+        }
+        return res
     }
 }
 
 $B.JSObj.__setattr__ = function(_self, attr, value){
-    _self[attr] = $B.pyobj2structuredclone(value)
+    _self[attr] = $B.pyobj2jsobj(value)
     return _b_.None
 }
 
 $B.JSObj.__getitem__ = function(_self, key){
     if(typeof key == "string"){
-        return $B.JSObj.__getattribute__(_self, key)
+        try{
+            return $B.JSObj.__getattribute__(_self, key)
+        }catch(err){
+            if($B.is_exc(err, [_b_.AttributeError])){
+                throw _b_.KeyError.$factory(err.name)
+            }
+            throw err
+        }
     }else if(typeof key == "number"){
         if(_self[key] !== undefined){
-            return $B.JSObj.$factory(_self[key])
+            return jsobj2pyobj(_self[key])
         }
         if(typeof _self.length == 'number'){
             if((typeof key == "number" || typeof key == "boolean") &&
@@ -661,54 +793,36 @@ $B.JSObj.__getitem__ = function(_self, key){
                 if(rank < 0){
                     rank += _self.length
                 }
-                var res = _self.item(rank)
+                let res = _self.item(rank)
                 if(res === null){
                     throw _b_.IndexError.$factory(rank)
                 }
-                return $B.JSObj.$factory(res)
+                return jsobj2pyobj(res)
             }
         }
     }else if(key.__class__ === _b_.slice &&
             typeof _self.item == 'function'){
         var _slice = _b_.slice.$conv_for_seq(key, _self.length)
-        var res = []
+        let res = new Array(Math.floor((_slice.stop - _slice.start) / _slice.step))
+        let offset = 0
         for(var i = _slice.start; i < _slice.stop; i += _slice.step){
-            res.push(_self.item(i))
+            res[offset++] = _self.item(i)
         }
         return res
     }
-    throw _b_.KeyError.$factory(rank)
+    throw _b_.KeyError.$factory(key)
 }
 
 $B.JSObj.__setitem__ = $B.JSObj.__setattr__
 
-var JSObj_iterator = $B.make_iterator_class('JS object iterator')
-
-$B.JSObj.__iter__ = function(_self){
-    var items = []
-    if(_window.Symbol && _self[Symbol.iterator] !== undefined){
-        // Javascript objects that support the iterable protocol, such as Map,
-        // views on ArrayBuffer, etc.
-        return JSObj_iterator.$factory(Array.from(_self))
-    }else if(_self.length !== undefined && _self.item !== undefined){
-        // collection
-        for(var i = 0; i < _self.length; i++){
-            items.push($B.JSObj.$factory(_self.js.item(i)))
-        }
-        return JSObj_iterator.$factory(items)
-    }
-    // Else iterate on the dictionary built from the JS object
-    return JSObj_iterator.$factory(Object.keys(_self))
-}
-
-$B.JSObj.__len__ = function(_self){
-    if(typeof _self.length == 'number'){
-        return _self.length
-    }
-    throw $B.attr_error('__len__', _self)
-}
-
 $B.JSObj.__repr__ = $B.JSObj.__str__ = function(_self){
+    if(typeof _self == 'number'){
+        return _self + ''
+    }
+    if(typeof _self == 'function' && _self.$js_func.name &&
+            globalThis[_self.$js_func.name] === _self.$js_func){
+        return `<function window.${_self.$js_func.name}>`
+    }
     var js_repr = Object.prototype.toString.call(_self)
     return `<Javascript object: ${js_repr}>`
 }
@@ -730,7 +844,12 @@ $B.JSObj.bind = function(_self, evt, func){
             }
         }
     }
-    _self.$brython_events = _self.$brython_events || {}
+    Object.defineProperty(_self, '$brython_events',
+        {
+            value: _self.$brython_events || {},
+            writable: true
+        }
+    )
     if(_self.$brython_events){
         _self.$brython_events[evt] = _self.$brython_events[evt] || []
         _self.$brython_events[evt].push([func, js_func])
@@ -767,6 +886,7 @@ $B.JSObj.unbind = function(_self, evt, func){
     }else{
         for(var i = 0, len = events.length; i < len; i++){
             if(events[i][0] === func){
+                _self.removeEventListener(evt, events[i][1])
                 events.splice(i, 1)
             }
         }
@@ -778,21 +898,306 @@ $B.JSObj.unbind = function(_self, evt, func){
 
 $B.JSObj.to_dict = function(_self){
     // Returns a Python dictionary based on the underlying Javascript object
-    return $B.structuredclone2pyobj(_self)
+    if(typeof _self == 'function'){
+        throw _b_.TypeError.$factory(
+            "method 'to_dict()' not supported for functions")
+    }
+    var res = $B.empty_dict()
+    for(var key in _self){
+        _b_.dict.$setitem_string(res, key, convert_to_python(_self[key]))
+    }
+    return res
+}
+
+function convert_to_python(obj){
+    // same as pyobj2jsobj but
+    // - converts Array to list and converts its items
+    // - converts "raw" Object to dict and converts its values
+    if(obj === null || obj === undefined){
+        return $B.jsobj2pyobj(obj)
+    }
+    if(obj.__class__){
+        // already a Python object
+        return obj
+    }
+    if(Array.isArray(obj)){
+        return obj.map(convert_to_python)
+    }
+    if($B.$isinstance(obj, $B.JSObj)){
+        if(typeof obj == 'number'){
+            // float
+            return $B.fast_float(obj)
+        }
+        var res = $B.empty_dict()
+        for(var key in obj){
+            _b_.dict.$setitem_string(res, key, convert_to_python(obj[key]))
+        }
+        return res
+    }
+    return $B.jsobj2pyobj(obj)
 }
 
 $B.set_func_names($B.JSObj, "builtins")
 
+var js_list_meta = $B.make_class('js_list_meta')
+js_list_meta.__mro__ = [_b_.type, _b_.object]
+
+js_list_meta.__getattribute__ = function(_self, attr){
+
+    if(_b_.list[attr] === undefined){
+        if(js_array.hasOwnProperty(attr)){
+            return js_array[attr]
+        }
+        throw _b_.AttributeError.$factory(attr)
+    }
+    if(['__delitem__', '__setitem__'].indexOf(attr) > -1){
+        // Transform Python values to Javascript values before setting item
+        return function(){
+            var args = new Array(arguments.length)
+            args[0] = arguments[0]
+            for(var i = 1, len = arguments.length; i < len; i++){
+                args[i] = pyobj2jsobj(arguments[i])
+            }
+            return _b_.list[attr].apply(null, args)
+        }
+    }else if(['__contains__', '__eq__', '__getitem__',
+              '__ge__', '__gt__', '__le__', '__lt__'].indexOf(attr) > -1){
+        // Apply to a Python copy of the JS list
+        return function(){
+            var pylist = $B.$list(arguments[0].map(jsobj2pyobj))
+            return jsobj2pyobj(_b_.list[attr].call(null,
+                pylist,
+                ...Array.from(arguments).slice(1)))
+        }
+    }else if(js_array.hasOwnProperty(attr)){
+        return js_array[attr]
+    }else if(['__repr__', '__str__'].includes(attr)){
+        return function(js_array){
+            var t = jsobj2pyobj(js_array)
+            return _b_.list[attr]($B.$list(t))
+        }
+    }
+    return function(js_array){
+        var t = jsobj2pyobj(js_array)
+        return _b_.list[attr](t)
+    }
+}
+
+$B.set_func_names(js_list_meta, 'builtins')
+
+
+$B.SizedJSObj = $B.make_class('SizedJavascriptObject')
+$B.SizedJSObj.__bases__ = [$B.JSObj]
+$B.SizedJSObj.__mro__ = [$B.JSObj, _b_.object]
+
+$B.SizedJSObj.__len__ = function(_self){
+    return _self.length
+}
+
+$B.set_func_names($B.SizedJSObj, 'builtins')
+
+$B.IterableJSObj = $B.make_class('IterableJavascriptObject')
+$B.IterableJSObj.__bases__ = [$B.JSObj]
+$B.IterableJSObj.__mro__ = [$B.JSObj, _b_.object]
+
+$B.IterableJSObj.__contains__ = function(self, key){
+    if(self.contains !== undefined && typeof self.contains == 'function'){
+        return self.contains(key)
+    }else{
+        for(var item of $B.IterableJSObj.__iter__(self).it){
+            if($B.is_or_equals(item, key)){
+                return true
+            }
+        }
+        return false
+    }
+}
+
+$B.IterableJSObj.__iter__ = function(_self){
+    return {
+        __class__: $B.IterableJSObj,
+        it: _self[Symbol.iterator]()
+    }
+}
+
+$B.IterableJSObj.__len__ = function(_self){
+    return _self.length
+}
+
+$B.IterableJSObj.__next__ = function(_self){
+    var value = _self.it.next()
+    if(! value.done){
+        return jsobj2pyobj(value.value)
+    }
+    throw _b_.StopIteration.$factory('')
+}
+
+$B.set_func_names($B.IterableJSObj, 'builtins')
+
+
+var js_array = $B.js_array = $B.make_class('Array')
+js_array.__class__ = js_list_meta
+js_array.__mro__ = [$B.JSObj, _b_.object]
+
+js_array.__add__ = function(_self, other){
+    var res = _self.slice()
+    if($B.$isinstance(other, js_array)){
+        return _self.slice().concat(other)
+    }
+    for(var item of $B.make_js_iterator(other)){
+        res.push(pyobj2jsobj(item))
+    }
+    return res
+}
+
+js_array.__getattribute__ = function(_self, attr){
+    if(_b_.list[attr] === undefined){
+        // Methods of Python lists take precedence, but if they fail, try
+        // attributes of _self Javascript prototype
+        var proto = Object.getPrototypeOf(_self),
+            res = proto[attr]
+        if(res !== undefined){
+            // pass _self as `this` if res is a function
+            return jsobj2pyobj(res, _self)
+        }
+        if(_self.hasOwnProperty(attr)){ // issue 2172
+            return jsobj2pyobj(_self[attr])
+        }
+        if(js_array.hasOwnProperty(attr)){
+            return js_array[attr]
+        }
+        throw $B.attr_error(attr, _self)
+    }
+    if(js_array.hasOwnProperty(attr)){
+        return function(){
+            return js_array[attr](_self, ...arguments)
+        }
+    }
+    return function(){
+        var args = pyobj2jsobj(Array.from(arguments))
+        return _b_.list[attr].call(null, _self, ...args)
+    }
+}
+
+js_array.__getitem__ = function(_self, i){
+    i = $B.PyNumber_Index(i)
+    return jsobj2pyobj(_self[i])
+}
+
+js_array.__iadd__ = function(_self, other){
+    if($B.$isinstance(other, js_array)){
+        for(var item of other){
+            _self.push(item)
+        }
+    }else{
+        for(var item of $B.make_js_iterator(other)){
+            _self.push($B.pyobj2jsobj(item))
+        }
+    }
+    return _self
+}
+
+js_array.__iter__ = function(_self){
+    return js_array_iterator.$factory(_self)
+}
+
+js_array.__mul__ = function(_self, nb){
+    var res = _self.slice()
+    for(var i = 1; i < nb; i++){
+        res = res.concat(_self)
+    }
+    return res
+}
+
+var js_array_iterator = $B.make_class('JSArray_iterator',
+    function(obj){
+        return {
+            __class__: js_array_iterator,
+            it: obj[Symbol.iterator]()
+        }
+    }
+)
+
+js_array_iterator.__next__ = function(_self){
+    var v = _self.it.next()
+    if(v.done){
+        throw _b_.StopIteration.$factory('')
+    }
+    return jsobj2pyobj(v.value)
+}
+
+$B.set_func_names(js_array_iterator, 'builtins')
+
+
+js_array.__iter__ = function(_self){
+    return js_array_iterator.$factory(_self)
+}
+
+js_array.__radd__ = function(_self, other){
+    var res = other.slice()
+    if($B.$isinstance(other, js_array)){
+        res = res.concat(_self)
+        return res
+    }
+    for(var item of _self){
+        res.push($B.jsobj2pyobj(item))
+    }
+    res.__class__ = other.__class__
+    return res
+}
+
+js_array.__repr__ = function(_self){
+    if($B.repr.enter(_self)){ // in py_utils.js
+        return '[...]'
+    }
+    var _r = new Array(_self.length),
+        res
+
+    for(var i = 0; i < _self.length; ++i){
+        _r[i] = _b_.str.$factory(_self[i])
+    }
+
+    res = "[" + _r.join(", ") + "]"
+    $B.repr.leave(_self)
+    return res
+}
+
+js_array.append = function(_self, x){
+    _self.push(pyobj2jsobj(x))
+    if(_self[PYOBJ]){
+        _self[PYOBJ].push(x)
+    }
+    return _b_.None
+}
+
+$B.set_func_names(js_array, 'javascript')
+
+$B.get_jsobj_class = function(obj){
+    if(typeof obj == 'function'){
+        return $B.JSObj
+    }
+    var proto = Object.getPrototypeOf(obj)
+    if(proto === null){
+        return $B.JSObj
+    }
+    if(proto[Symbol.iterator] !== undefined){
+        return $B.IterableJSObj
+    }else if(Object.getOwnPropertyNames(proto).indexOf('length') > -1){
+        return $B.SizedJSObj
+    }
+    return $B.JSObj
+}
 // Class used as a metaclass for Brython classes that inherit a Javascript
 // constructor
 $B.JSMeta = $B.make_class("JSMeta")
 
 $B.JSMeta.__call__ = function(cls){
     // Create an instance of a class that inherits a Javascript contructor
-    var extra_args = [],
+    console.log('create', cls)
+    var extra_args = new Array(arguments.length-1),
         klass = arguments[0]
     for(var i = 1, len = arguments.length; i < len; i++){
-        extra_args.push(arguments[i])
+        extra_args[i-1] = arguments[i]
     }
     var new_func = _b_.type.__getattribute__(klass, "__new__")
     // create an instance with __new__
@@ -816,6 +1221,13 @@ $B.JSMeta.__getattribute__ = function(cls, attr){
     if(cls[attr] !== undefined){
         return cls[attr]
     }else if($B.JSMeta[attr] !== undefined){
+        if(attr == '__new__'){
+            return function(){
+                var res = new cls.$js_func(...Array.from(arguments).slice(1))
+                res.__class__ = cls
+                return res
+            }
+        }
         return $B.JSMeta[attr]
     }else{
         // Search in type
@@ -843,18 +1255,30 @@ $B.JSMeta.__new__ = function(metaclass, class_name, bases, cl_dict){
             return new bases[0].$js_func(...arguments)
         }
     }`
+    var proto = bases[0].$js_func.prototype
+    if(proto instanceof Node){
+        throw _b_.TypeError.$factory(`class ${class_name} cannot inherit ` +
+            `a subclass of Node`)
+    }
     var new_js_class = Function('cl_dict', 'bases', body)(cl_dict, bases)
     new_js_class.prototype = Object.create(bases[0].$js_func.prototype)
     new_js_class.prototype.constructor = new_js_class
-    new_js_class.__mro__ = [bases[0], _b_.type]
-    new_js_class.__qualname__ = class_name
+    Object.defineProperty(new_js_class, '$js_func',
+                          {value: bases[0].$js_func})
+    new_js_class.__class__ = $B.JSMeta
+    new_js_class.__bases__ = [bases[0]]
+    new_js_class.__mro__ = [bases[0], _b_.object]
+    new_js_class.__qualname__ = new_js_class.__name__ = class_name
     new_js_class.$is_js_class = true
+    for(var item of _b_.dict.$iter_items(cl_dict)){
+        new_js_class[item.key] = item.value
+    }
     return new_js_class
 }
 
 $B.set_func_names($B.JSMeta, "builtins")
 
 
-})(__BRYTHON__)
+})(__BRYTHON__);
 
 

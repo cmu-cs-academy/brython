@@ -31,11 +31,14 @@ def discover_brython_test_modules():
           ("test_strings.py", "strings"),
           ("test_fstrings.py", "f-strings"),
           ("test_string_format.py", "string format"),
-          ("test_string_methods.py", "string methods")
+          ("test_string_methods.py", "string methods"),
+          # CS Academy
+          ("test_cs_academy.py", "features of the CS Academy fork")
         ]),
         ("DOM interface", [
             ("dom.py", "DOM"),
-            ("test_webcomponent.py", "Web component")
+            ("test_webcomponent.py", "Web component"),
+            ("test_web_worker.py", "Web Worker")
         ]),
         ("Issues", [
           ("issues_gc.py", "issues (GC)"),
@@ -44,12 +47,12 @@ def discover_brython_test_modules():
         ]),
         ("Modules", [
           ("test_ast.py", "ast"),
+          ("test_binascii.py", "base64 / binascii"),
+          ("test_bisect.py", "bisect"),
           ("test_aio.py", "browser.aio"),
           ("test_ajax.py", "browser.ajax"),
           ("test_highlight.py", "browser.highlight"),
           ("test_browser_html.py", "browser.html"),
-          ("test_binascii.py", "binascii"),
-          ("test_bisect.py", "bisect"),
           ("test_builtins.py", "builtins"),
           ("test_code.py", "code"),
           ("test_collections.py", "collections"),
@@ -57,6 +60,7 @@ def discover_brython_test_modules():
           ("test_dataclasses.py", "dataclasses"),
           ("test_datetime.py", "datetime"),
           ("test_decimals.py", "decimals"),
+          ("test_doctest.py", "doctest"),
           ("test_functools.py", "functools"),
           ("test_compression.py", "gzip / zlib"),
           ("test_hashlib.py", "hashlib"),
@@ -71,7 +75,9 @@ def discover_brython_test_modules():
           ("test_storage.py", "storage"),
           ("test_struct.py", "struct"),
           ("test_sys.py", "sys"),
+          ("test_traceback.py", "traceback"),
           ("test_types.py", "types"),
+          ("test_typing.py", "typing"),
           ("test_unicodedata.py", "unicodedata"),
           ("test_unittest.py", "unittest"),
           ("test_urllib.py", "urllib"),

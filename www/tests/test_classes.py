@@ -633,7 +633,6 @@ class CMeta(type):
 class CC(metaclass=CMeta):
     XX: 'ANNOT'
 
-assert CC.__annotations__['xx'] == 'ANNOT'
 
 # similar to issue 600: == with subclassing
 class A_eqWithoutOverride:
@@ -807,9 +806,6 @@ assert_raises(SyntaxError, exec, 'class(x):\n pass')
 # reference to class inside class definition raises NameError
 assert_raises(NameError, exec, "class A:\n A")
 
-# also for annotations
-assert_raises(NameError, exec, "class A:\n x:A")
-
 # except with __future__ annotations
 exec("""from __future__ import annotations
 class A:
@@ -964,10 +960,6 @@ assert not isinstance(A, type)
 
 assert A.__class__ is Base
 
-t = list[int]
-
-assert not issubclass(t, type)
-
 class B(list[int]):
   pass
 
@@ -1054,6 +1046,68 @@ class B(A):
 
 assert B().m == 2
 
+# if A.__new__ returns a instance of a subclass of A, call A.__init__
+t = []
+class A:
+
+  def __new__(cls):
+      return object.__new__(B)
+
+  def __init__(self, *args):
+      t.append('init A')
+
+class B(A):
+  pass
+
+A()
+assert t == ['init A']
+
+# report error when a property has no setter
+class A:
+
+  @property
+  def x(self):
+    return 'I am x'
+
+a = A()
+assert a.x == 'I am x'
+
+assert_raises(AttributeError, setattr, a, 'x', 'coucou',
+  msg="property 'x' of 'A' object has no setter")
+
+# issue 2434
+class A:
+    def f(self, __v, **__kw):
+        assert __v == 1
+        assert _A__v == 1
+        assert __kw == {'x': 2}
+        assert _A__kw == {'x': 2}
+
+A().f(1, x=2)
+assert A.f.__code__.co_varnames == ('self', '_A__v', '_A__kw')
+
+# issue 2435
+class A:
+    a = "-".join
+
+assert A().a(['a', 'b']) == 'a-b'
+
+# setting a classmethod
+class A:
+
+  @classmethod
+  def f(cls, value):
+      return value
+
+  def g(self, value):
+      self.__class__.func = self.__class__.f
+      return self.__class__.func(value)
+
+a = A()
+
+assert a.f(5) == 5
+assert a.g(77) == 77
+
 # issue 2452
 class C:
     def __init__(self, x):
@@ -1071,6 +1125,84 @@ assert_raises(TypeError, hash, c,
     msg='__hash__ method should return an integer')
 s = set()
 assert_raises(TypeError, exec, "c in s", globals(),
-    msg='__hash__ method should return an integer')
+    msg="cannot use 'C' as a set element (__hash__ method should return an integer)")
 
+# issue 2467
+class MyClass(object):
+    @staticmethod
+    def __call__(arg):
+        return arg
+
+assert MyClass.__call__(42) == 42
+
+# __static_attributes__, new in Python 3.13
+class C:
+    def f(self):
+        self.x = 1
+        self.y = 2
+        self.x = 3   # check deduplication
+
+    def g(self, obj):
+        self.y = 4
+        self.z = 5
+
+        def h(self, a):
+            self.u = 6
+            self.v = 7
+
+        obj.self = 8
+
+assert sorted(C.__static_attributes__) == ["u", "v", "x", "y", "z"]
+
+class A:
+
+  def f(self):
+    self.x = 8
+    self.y[3] = 7
+    self.z()
+
+assert sorted(A.__static_attributes__) == ['x']
+
+# issue 2533
+class A:
+  if True:
+    x = 9
+  assert x == 9
+
+# issue 2555
+class MyClass:
+
+    def another_method(self):
+        return "another_method"
+
+    def method(self):
+        self.method = self.another_method
+        return 'method'
+
+a = MyClass()
+assert a.method() == 'method'
+assert a.method() == 'another_method'
+
+# issue 2614
+class A:
+  pass
+
+assert_raises(TypeError, object.__init__, A(), 1)
+
+class Foo:
+  def __init__(self, foo_id, **kwargs):
+    super().__init__(**kwargs)
+    self.foo_id = foo_id
+
+expected = "object.__init__() takes exactly one argument (the instance to initialize)"
+assert_raises(TypeError, Foo, foo_id=1, bar_id=2,
+  msg=expected)
+
+t = {'x': 1}
+assert_raises(TypeError, Foo, foo_id=1, bar_id=2,
+  msg=expected)
+
+Foo(foo_id=1)
+Foo(foo_id=1, **{})
+  
 print('passed all tests..')

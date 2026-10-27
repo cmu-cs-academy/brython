@@ -20,12 +20,15 @@
           type="text/css"
           href="https://cdn.bokeh.org/bokeh/release/bokeh-0.12.0.css"
           crossorigin="anonymous">
+
     <script type="text/javascript" src="../src/brython.js"></script>
+
     <script type="text/python" src="show_source.py"></script>
 
     <script type="text/python">
         from browser import document, window
         import random
+        import javascript
 
         # 'importing' the bokehJS library
         Bokeh = window.Bokeh
@@ -52,7 +55,7 @@
         # make the plot and add some tools
         tools = "pan,crosshair,wheel_zoom,box_zoom,reset,save"
         p = plt.figure({'title': "Colorful Scatter", 'tools': tools})
-
+        
 
         # call the circle glyph method to add some circle glyphs
         circles = p.circle({'field': "x" }, {'field': "y" }, {
@@ -60,7 +63,7 @@
             'radius': radii,
             'fill_color': colors,
             'fill_alpha': 0.6,
-            'line_color': None
+            'line_color': javascript.NULL
         })
 
         # show the plot
@@ -74,7 +77,7 @@
     </script>
 
 </head>
-<body onload="brython(2)">
+<body>
     <h1>Example of an interactive plot using bokeh</h1>
     <p>In this example we are using <a href="http://bokeh.pydata.org/en/latest/docs/user_guide/bokehjs.html" target="_blank">bokehJS</a>, used internally by <a href="http://bokeh.pydata.org/en/latest/" target="_blank">bokeh</a> to render the plots in the browser.</p>
     <p><a href="https://jsfiddle.net/fbnLa3tz/" target="_blank">Here</a> you have a jsfiddle working example that you can modify to learn how it works.</p>

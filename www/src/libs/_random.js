@@ -1,7 +1,7 @@
 // Javascript implementation of the _random module
 // Based on Ian Bicking's implementation of the Mersenne twister
 
-var $module = (function($B){
+(function($B){
 
 var _b_ = $B.builtins
 
@@ -278,7 +278,7 @@ function RandomStream(seed) {
             return
         }
 
-        if(!_b_.isinstance(seed, _b_.int)){
+        if(!$B.$isinstance(seed, _b_.int)){
             seed = _b_.hash(seed)
         }
 
@@ -348,7 +348,7 @@ Random.getrandbits = function(){
     var $ = $B.args("getrandbits", 2, {self: null, k:null}, ["self", "k"],
         arguments, {}, null, null),
         self = $.self,
-        k = $B.$GetInt($.k)
+        k = $B.PyNumber_Index($.k)
 
     if(k < 0)
         throw _b_.ValueError.$factory('number of bits must be non-negative')
@@ -392,10 +392,11 @@ Random.seed = function(){
         self = $.self,
         n = $.n
 
-    if (self._random === undefined)
+    if (self._random === undefined){
         self._random = RandomStream(n)
-    else
+    }else{
         self._random.seed(n)
+    }
 }
 
 Random.setstate = function(){
@@ -408,6 +409,6 @@ Random.setstate = function(){
 
 $B.set_func_names(Random, "_random")
 
-return { Random }
+$B.imported._random = { Random }
 
 })(__BRYTHON__)

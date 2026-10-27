@@ -1,5 +1,5 @@
-// range
-;(function($B){
+"use strict";
+(function($B){
 
 var _b_ = $B.builtins,
     None = _b_.None,
@@ -10,6 +10,7 @@ var _b_ = $B.builtins,
         $is_class: true,
         $native: true,
         $match_sequence_pattern: true, // for Pattern Matching (PEP 634)
+        $is_sequence: true,
         $not_basetype: true, // range cannot be a base class
         $descriptors:{
             start: true,
@@ -36,8 +37,8 @@ range.__contains__ = function(self, other){
     }
     var start = _b_.int.$to_bigint(self.start),
         stop = _b_.int.$to_bigint(self.stop),
-        step = _b_.int.$to_bigint(self.step),
-        other = _b_.int.$to_bigint(other)
+        step = _b_.int.$to_bigint(self.step)
+    other = _b_.int.$to_bigint(other)
 
     var sub = other - start,
         fl = sub / step,
@@ -53,12 +54,12 @@ range.__contains__ = function(self, other){
     }
 }
 
-range.__delattr__ = function(self, attr, value){
+range.__delattr__ = function(){
     throw _b_.AttributeError.$factory("readonly attribute")
 }
 
 range.__eq__ = function(self, other){
-    if(_b_.isinstance(other, range)){
+    if($B.$isinstance(other, range)){
         var len = range.__len__(self)
         if(! $B.rich_comp('__eq__', len, range.__len__(other))){
             return false
@@ -88,15 +89,18 @@ function compute_item(r, i){
 }
 
 range.__getitem__ = function(self, rank){
-    if(_b_.isinstance(rank, _b_.slice)){
+    if($B.$isinstance(rank, _b_.slice)){
         var norm = _b_.slice.$conv_for_seq(rank, range.__len__(self)),
             substep = $B.rich_op('__mul__', self.step, norm.step),
             substart = compute_item(self, norm.start),
             substop = compute_item(self, norm.stop)
         return range.$factory(substart, substop, substep)
     }
-    if(typeof rank != "number"){
-      rank = $B.$GetInt(rank)
+    try{
+        rank = $B.PyNumber_Index(rank)
+    }catch(err){
+        throw _b_.TypeError.$factory("range indices must be integers " +
+            `or slices, not ${$B.class_name(rank)}`)
     }
     if($B.rich_comp('__gt__', 0, rank)){
         rank = $B.rich_op('__add__', rank, range.__len__(self))
@@ -207,7 +211,7 @@ range.__repr__ = function(self){
     return res + ")"
 }
 
-range.__setattr__ = function(self, attr, value){
+range.__setattr__ = function(){
     throw _b_.AttributeError.$factory("readonly attribute")
 }
 
@@ -217,7 +221,7 @@ range.step = function(self){return self.step},
 range.stop = function(self){return self.stop}
 
 range.count = function(self, ob){
-    if(_b_.isinstance(ob, [_b_.int, _b_.float, _b_.bool])){
+    if($B.$isinstance(ob, [_b_.int, _b_.float, _b_.bool])){
         return _b_.int.$factory(range.__contains__(self, ob))
     }else{
         var comp = function(other){return $B.rich_comp("__eq__", ob, other)},
@@ -228,7 +232,7 @@ range.count = function(self, ob){
             try{
                 if(comp(_next(it))){nb++}
             }catch(err){
-                if(_b_.isinstance(err, _b_.StopIteration)){
+                if($B.$isinstance(err, _b_.StopIteration)){
                     return nb
                 }
                 throw err
@@ -237,7 +241,7 @@ range.count = function(self, ob){
     }
 }
 
-range.index = function(self, other){
+range.index = function(){
     var $ = $B.args("index", 2, {self: null, other: null}, ["self", "other"],
         arguments, {}, null, null),
         self = $.self,
@@ -254,7 +258,7 @@ range.index = function(self, other){
                 if(comp(_next(it))){return nb}
                 nb++
             }catch(err){
-                if(_b_.isinstance(err, _b_.StopIteration)){
+                if($B.$isinstance(err, _b_.StopIteration)){
                     throw _b_.ValueError.$factory(_b_.str.$factory(other) +
                         " not in range")
                 }
@@ -352,7 +356,7 @@ slice.__repr__ = function(self){
         _b_.str.$factory(self.stop) + ", " + _b_.str.$factory(self.step) + ")"
 }
 
-slice.__setattr__ = function(self, attr, value){
+slice.__setattr__ = function(){
     throw _b_.AttributeError.$factory("readonly attribute")
 }
 
@@ -384,7 +388,8 @@ slice.$conv_for_seq = function(self, len){
     if(step == 0){
         throw _b_.ValueError.$factory('slice step cannot be zero')
     }
-    var start
+    var start,
+        stop
     if(self.start === None){
         start = step_is_neg ? len_1 : 0
     }else{
@@ -395,14 +400,20 @@ slice.$conv_for_seq = function(self, len){
                 start = 0
             }
         }
-        if($B.rich_comp('__ge__', start, len)){start = step < 0 ? len_1 : len}
+        if($B.rich_comp('__ge__', start, len)){
+            start = step < 0 ? len_1 : len
+        }
     }
     if(self.stop === None){
         stop = step_is_neg ? -1 : len
     }else{
         stop = $B.PyNumber_Index(self.stop)
-        if($B.rich_comp('__gt__', 0, stop)){stop = $B.rich_op('__add__', stop, len)}
-        if($B.rich_comp('__ge__', stop, len)){stop = step_is_neg ? len_1 : len}
+        if($B.rich_comp('__gt__', 0, stop)){
+            stop = $B.rich_op('__add__', stop, len)
+        }
+        if($B.rich_comp('__ge__', stop, len)){
+            stop = step_is_neg ? len_1 : len
+        }
     }
     return {start: start, stop: stop, step: step}
 }
@@ -411,7 +422,7 @@ slice.start = function(self){return self.start}
 slice.step = function(self){return self.step}
 slice.stop = function(self){return self.stop}
 
-slice.indices = function(self, length){
+slice.indices = function(self){
     // This method takes a single integer argument length and computes
     // information about the slice that the slice object would describe if
     // applied to a sequence of length items. It returns a tuple of three
@@ -420,20 +431,29 @@ slice.indices = function(self, length){
     // are handled in a manner consistent with regular slices.
     var $ = $B.args("indices", 2, {self: null, length: null},
             ["self", "length"], arguments, {}, null, null)
-    var len = $B.$GetInt($.length)
-    if(len < 0){_b_.ValueError.$factory("length should not be negative")}
-    var _step = (self.step == _b_.None)? 1 : self.step
+    var len = $B.PyNumber_Index($.length)
+    if(len < 0){
+        throw _b_.ValueError.$factory("length should not be negative")
+    }
+    var _step = (self.step == _b_.None)? 1 : self.step,
+        _start,
+        _stop
     if(_step < 0){
-        var _start = self.start, _stop = self.stop
+        _start = self.start
+        _stop = self.stop
         _start = (_start == _b_.None)? len - 1 :
             (_start < 0)? _b_.max(-1, _start + len) : _b_.min(len - 1, self.start)
         _stop = (self.stop == _b_.None)? -1 :
             (_stop < 0)? _b_.max(-1, _stop + len) : _b_.min(len - 1, self.stop)
     }else{
-        var _start = (self.start == _b_.None) ? 0 : _b_.min(len, self.start)
-        var _stop = (self.stop == _b_.None)? len :_b_.min(len, self.stop)
-        if(_start < 0){_start = _b_.max(0, _start + len)}
-        if(_stop < 0){_stop=_b_.max(0, _stop + len)}
+        _start = (self.start == _b_.None) ? 0 : _b_.min(len, self.start)
+        _stop = (self.stop == _b_.None)? len :_b_.min(len, self.stop)
+        if(_start < 0){
+            _start = _b_.max(0, _start + len)
+        }
+        if(_stop < 0){
+            _stop = _b_.max(0, _stop + len)
+        }
     }
     return _b_.tuple.$factory([_start, _stop, _step])
 }
@@ -473,4 +493,4 @@ $B.set_func_names(slice, "builtins")
 _b_.range = range
 _b_.slice = slice
 
-})(__BRYTHON__)
+})(__BRYTHON__);

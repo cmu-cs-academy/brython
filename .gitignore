@@ -111,3 +111,6 @@ www/src/version_info.js
 .idea
 
 node_modules/
+
+# Files copied by make_dist (Brython >= 3.14.1)
+setup/brython/data/

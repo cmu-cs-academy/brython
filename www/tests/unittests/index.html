@@ -300,13 +300,15 @@ document['version'].text = '%s.%s.%s' % (info.major,info.minor,info.micro)
 <script type="text/python">
 from browser import worker
 from browser import document, alert, bind, window, html, console
-
-worker = worker.Worker('test_runner')
+import javascript
 
 table = document["result_table"]
 limit = document["duration"]
 
-@bind(worker, 'message')
+def ready(w):
+    global worker
+    worker = w
+
 def message(ev):
     if ev.data == 'ready':
         del document["msgbox"]
@@ -359,11 +361,15 @@ def show_test(event):
     mod = __import__(module)
     tab = window.open('show.html?file=%s' %mod.__file__)
 
+worker = worker.create_worker('test_runner', onready=ready,
+    onmessage=message)
+
+
 </script>
 
 </head>
 
-<body onload="brython({debug:2, cache:false})">
+<body>
 
 <h1 style="padding-left:3%;">CPython tests</h1>
 
@@ -420,6 +426,7 @@ UnitTests:
   <option value="test_re">test_re</option>
   <option value="test_set">test_set</option>
   <option value="test_string">test_string</option>
+  <option value="test_syntax">test_syntax</option>
   <!-- option value="test_with">test_with</option -->
 </select>
 <button id="btn_test" disabled>Run test</button>
@@ -442,9 +449,6 @@ Brython version: <span id="version"></span>
 
 <table id="result_table" width="100%"></table>
 
-
-
-
 <script type="text/javascript" src="/src/brython_builtins.js"></script>
 
 <script type="text/javascript" src="/src/py_ast_classes.js"></script>
@@ -452,6 +456,8 @@ Brython version: <span id="version"></span>
 <script type="text/javascript" src="/src/unicode_data.js"></script>
 <script type="text/javascript" src="/src/version_info.js"></script>
 
+
+<script type="text/javascript" src="/src/py_tokens.js"></script>
 <script type="text/javascript" src="/src/python_tokenizer.js"></script>
 <script type="text/javascript" src="/src/py_ast.js"></script>
 <script type="text/javascript" src="/src/py2js.js"></script>
@@ -459,6 +465,7 @@ Brython version: <span id="version"></span>
 <script type="text/javascript" src="/src/py_utils.js"></script>
 <script type="text/javascript" src="/src/py_object.js"></script>
 <script type="text/javascript" src="/src/py_type.js"></script>
+<script type="text/javascript" src="/src/py_functions.js"></script>
 <script type="text/javascript" src="/src/py_builtin_functions.js"></script>
 <script type="text/javascript" src="/src/py_sort.js"></script>
 <script type="text/javascript" src="/src/py_exceptions.js"></script>
@@ -473,8 +480,8 @@ Brython version: <span id="version"></span>
 <script type="text/javascript" src="/src/py_complex.js"></script>
 <script type="text/javascript" src="/src/py_dict.js"></script>
 <script type="text/javascript" src="/src/py_list.js"></script>
-<script type="text/javascript" src="/src/py_generator.js"></script>
 <script type="text/javascript" src="/src/js_objects.js"></script>
+<script type="text/javascript" src="/src/py_generator.js"></script>
 <script type="text/javascript" src="/src/py_dom.js"></script>
 <script type="text/javascript" src="/src/py_pattern_matching.js"></script>
 <script type="text/javascript" src="/src/async.js"></script>
@@ -482,6 +489,16 @@ Brython version: <span id="version"></span>
 <script type="text/javascript" src="/src/builtin_modules.js"></script>
 <script type="text/javascript" src="/src/ast_to_js.js"></script>
 <script type="text/javascript" src="/src/symtable.js"></script>
+
+<!-- scripts for PEG parser -->
+<script type="text/javascript" src="/src/action_helpers.js"></script>
+<script type="text/javascript" src="/src/string_parser.js"></script>
+<script type="text/javascript" src="/src/number_parser.js"></script>
+<script type="text/javascript" src="/src/python_parser.js"></script>
+<script type="text/javascript" src="/src/pegen.js"></script>
+<script type="text/javascript" src="/src/gen_parse.js"></script>
+
+<script type="text/javascript" src="/src/brython_ready.js"></script>
 
 <!-- script type="text/javascript" src="/src/brython_stdlib.js"></script -->
 

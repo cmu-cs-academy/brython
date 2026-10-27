@@ -11,11 +11,12 @@
 <script src="/assets/header.brython.js"></script>
 
 <script type="text/python">
-from browser import window, document, html, highlight
+from browser import window, document, html, highlight, bind
 import html_parser
 
 import header
 header.show('fr')
+
 
 def run(ev):
     # run the code in the element after the button
@@ -82,7 +83,7 @@ for elt in document[target].select('.xml'):
 </script>
 
 </head>
-<body onLoad="brython(1)">
+<body>
 
 <div id="banner_row">
 <span class="logo"><a href="/index.html">brython</a></span>
@@ -92,6 +93,7 @@ for elt in document[target].select('.xml'):
 <table class="main-table">
 <tr>
 <td style="width:25%;vertical-align:top;">
+
 <h4><a class="navig" href="intro.html">Introduction</a></h4>
 <h4><a class="navig" href="install.html">Installation</a></h4>
 <h4><a class="navig" href="file_or_http.html">Limitations du protocole "file"</a></h4>
@@ -116,7 +118,7 @@ for elt in document[target].select('.xml'):
 <br>
 <br><a class="navig" href="query.html">Chaine de requête</a>
 <br>
-<br><a class="navig" href="jsobjects.html">Objets et librairies Javascript</a>
+<br><a class="navig" href="jsobjects.html">Interactions avec Javascript</a>
 </div>
 
 <h4>Modules intégrés propres à Brython</h4>
@@ -146,7 +148,7 @@ for elt in document[target].select('.xml'):
 
 <h4>Travailler avec Brython</h4>
 <div style="padding-left:10px;">
-<a class="navig" href="options.html">Options de la fonction <code>brython()</code></a>
+<a class="navig" href="options.html">Options d'exécution</a>
 <br><a class="navig" href="test.html">Test et débogage</a>
 <br><a class="navig" href="deploy.html">Deployer une application</a></div>
 

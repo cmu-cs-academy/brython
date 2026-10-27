@@ -1,4 +1,4 @@
-var $module = (function($B){
+(function($B){
 
 var _b_ = $B.builtins
 
@@ -27,15 +27,15 @@ var float_check = function(x) {
 }
 
 function check_int(x){
-    if(! _b_.isinstance(x, _b_.int)){
+    if(! $B.$isinstance(x, _b_.int)){
         throw _b_.TypeError.$factory("'" + $B.class_name(x) +
             "' object cannot be interpreted as an integer")
     }
 }
 
 function check_int_or_round_float(x){
-    return (_b_.isinstance(x, _b_.float) && Number.isInteger(x.value)) ||
-            _b_.isinstance(x, _b_.int)
+    return ($B.$isinstance(x, _b_.float) && Number.isInteger(x.value)) ||
+            $B.$isinstance(x, _b_.int)
 }
 
 var isWholeNumber = function(x){return (x * 10) % 10 == 0}
@@ -69,8 +69,10 @@ function nextUp(x){
         }
         return _mod.inf
     }
-    if(_b_.isinstance(x, $B.long_int)){
+    if($B.$isinstance(x, $B.long_int)){
         x = Number(x.value)
+    }else if($B.$isinstance(x, _b_.float)){
+        x = x.value
     }
 
     if(x == +MAX_VALUE){
@@ -276,18 +278,6 @@ function m_lgamma(x){
     return r;
 }
 
-function __getattr__(attr){
-    $B.check_nb_args('__getattr__ ', 1, arguments)
-    $B.check_no_kw('__getattr__ ', attr)
-
-    var res = this[attr]
-    if(res === undefined){
-        throw _b_.AttributeError.$factory(
-            'module math has no attribute ' + attr)
-    }
-    return res
-}
-
 function acos(x){
     $B.check_nb_args('acos', 1, arguments)
     $B.check_no_kw('acos', x)
@@ -413,7 +403,7 @@ function ceil(x){
 
     var res
 
-    if(_b_.isinstance(x, _b_.float)){
+    if($B.$isinstance(x, _b_.float)){
         if(_b_.float.$funcs.isinf(x)){
             throw _b_.OverflowError.$factory(
                 "cannot convert float infinity to integer")
@@ -1205,9 +1195,150 @@ function floor(x){
     }
 }
 
+var _fma = (function () {
+    // copied from 
+    // https://gist.github.com/Yaffle/fb47de4c18b63147699e0b621f1031f7
+
+  "use strict";
+
+  var SPLIT = Math.pow(2, 27) + 1;
+  var MIN_VALUE = Math.pow(2, -1022);
+  var EPSILON = Math.pow(2, -52);
+  // (1022 + 52) / 3 < C <= (1022 - 53 - 53 + 4) / 2 - ?
+  var C = 416;
+  var A = Math.pow(2, +C);
+  var B = Math.pow(2, -C);
+
+  var multiply = function (a, b) {
+    var at = SPLIT * a;
+    var ahi = at - (at - a);
+    var alo = a - ahi;
+    var bt = SPLIT * b;
+    var bhi = bt - (bt - b);
+    var blo = b - bhi;
+    var p = a * b;
+    var e = ((ahi * bhi - p) + ahi * blo + alo * bhi) + alo * blo;
+    return {
+      p: p,
+      e: e
+    };
+  };
+
+  var add = function (a, b) {
+    var s = a + b;
+    var v = s - a;
+    var e = (a - (s - v)) + (b - v);
+    return {
+      s: s,
+      e: e
+    };
+  };
+
+  var adjust = function (x, y) {
+    return x !== 0 && y !== 0 && SPLIT * x - (SPLIT * x - x) === x ? x * (1 + (x < 0 ? -1 : +1) * (y < 0 ? -1 : +1) * EPSILON) : x;
+  };
+
+  var fma = function (x, y, z) {
+    x = Number(x);
+    y = Number(y);
+    z = Number(z);
+
+    if (x === 0 || x !== x || x === +1 / 0 || x === -1 / 0 ||
+        y === 0 || y !== y || y === +1 / 0 || y === -1 / 0) {
+      return x * y + z;
+    }
+    if (z === 0) {
+      return x * y;
+    }
+    if (z !== z || z === +1 / 0 || z === -1 / 0) {
+      return z;
+    }
+
+    var scale = 1;
+    while (Math.abs(x) > A) {
+      scale *= A;
+      x *= B;
+    }
+    while (Math.abs(y) > A) {
+      scale *= A;
+      y *= B;
+    }
+    if (scale === 1 / 0) {
+      return x * y * scale;
+    }
+    while (Math.abs(x) < B) {
+      scale *= B;
+      x *= A;
+    }
+    while (Math.abs(y) < B) {
+      scale *= B;
+      y *= A;
+    }
+    if (scale === 0) {
+      return z;
+    }
+
+    var xs = x;
+    var ys = y;
+    var zs = z / scale;
+
+    if (Math.abs(zs) > Math.abs(xs * ys) * 4 / EPSILON) {
+      return z;
+    }
+    if (Math.abs(zs) < Math.abs(xs * ys) * EPSILON / 4 * EPSILON / 4) {
+      zs = (z < 0 ? -1 : +1) * MIN_VALUE;
+    }
+
+    var xy = multiply(xs, ys);
+    var s = add(xy.p, zs);
+    var u = add(xy.e, s.e);
+    var i = add(s.s, u.s);
+
+    var f = i.s + adjust(i.e, u.e);
+    if (f === 0) {
+      return f;
+    }
+
+    var fs = f * scale;
+    if (Math.abs(fs) > MIN_VALUE) {
+      return fs;
+    }
+
+    // It is possible that there was extra rounding for a denormalized value.
+    return fs + adjust(f - fs / scale, i.e) * scale;
+  };
+
+  return fma
+
+}());
+
+function fma(x, y, z){
+    var $ = $B.args('fma', 3, {x: null, y: null, z: null}, ['x', 'y', 'z'],
+            arguments, {}, null, null),
+        x = float_check($.x),
+        y = float_check($.y),
+        z = float_check($.z)
+
+    var res =_fma(x, y, z)
+    if(isFinite(res)){
+        return $B.fast_float(res)
+    }
+    if(isNaN(res)){
+        if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+            /* NaN result from non-NaN inputs. */
+            throw _b_.ValueError.$factory("invalid operation in fma");
+        }
+    }else if(isFinite(x) && isFinite(y) && isFinite(z)) {
+        /* Infinite result from finite inputs. */
+        throw _b_.OverflowError.$factory("overflow in fma");
+    }
+
+    return $B.fast_float(res)
+}
+
 function fmod(x, y){
     $B.check_nb_args_no_kw('fmod', 2, arguments)
-    if(_b_.isinstance(x, _b_.float)){
+    if($B.$isinstance(x, _b_.float)){
         if(_b_.float.$funcs.isinf(x)){
             throw _b_.ValueError.$factory('math domain error')
         }
@@ -1258,7 +1389,7 @@ function fsum(x){
             }
             partials = partials.slice(0, i).concat([x])
         }catch(err){
-            if(_b_.isinstance(err, _b_.StopIteration)){break}
+            if($B.$isinstance(err, _b_.StopIteration)){break}
             throw err
         }
     }
@@ -1279,9 +1410,9 @@ function gamma(x){
         sqrtpow
 
     /* special cases */
-    if(_b_.isinstance(x, _b_.float)){
+    if($B.$isinstance(x, _b_.float)){
         x_as_number = x.value
-    }else if(! _b_.isinstance(x, _b_.int)){
+    }else if(! $B.$isinstance(x, _b_.int)){
         throw _b_.TypeError.$factory("must be real number, not " +
             $B.class_name(x))
     }
@@ -1694,13 +1825,13 @@ function log(x, base){
         return log2(x)
     }
     var log
-    if(_b_.isinstance(x, $B.long_int)){
+    if($B.$isinstance(x, $B.long_int)){
         if(x.value <= 0){
             throw _b_.ValueError.$factory('math domain error')
         }
         var mant_exp = longint_mant_exp(x)
         log = Math.log(mant_exp[0]) + Math.log(2) * mant_exp[1]
-    }else if(_b_.isinstance(x, _b_.int)){
+    }else if($B.$isinstance(x, _b_.int)){
         x = _b_.int.$int_value(x)
         if(x <= 0){
             throw _b_.ValueError.$factory('math domain error')
@@ -1729,7 +1860,7 @@ function log(x, base){
 function log1p(x){
     $B.check_nb_args('log1p', 1, arguments)
     $B.check_no_kw('log1p', x)
-    if(_b_.isinstance(x, $B.long_int)){
+    if($B.$isinstance(x, $B.long_int)){
         if($B.long_int.bit_length(x) > 1024){
             throw _b_.OverflowError.$factory(
                 "int too large to convert to float")
@@ -1748,7 +1879,7 @@ function log2(x){
     $B.check_nb_args('log2', 1, arguments)
     $B.check_no_kw('log2', x)
     var log2_func = Math.log2 || (x => Math.log(x) / Math.LN2)
-    if(_b_.isinstance(x, $B.long_int)){
+    if($B.$isinstance(x, $B.long_int)){
         if(x.value <= 0){
             throw _b_.ValueError.$factory('math domain error')
         }
@@ -1765,7 +1896,6 @@ function log2(x){
     if(isNaN(x)){
         return _b_.float.$factory('nan')
     }
-    // idk dont ask me
     if(x < 0.0){
         throw _b_.ValueError.$factory('math domain error')
     }
@@ -1775,7 +1905,7 @@ function log2(x){
 function log10(x){
     $B.check_nb_args('log10', 1, arguments)
     $B.check_no_kw('log10', x)
-    if(_b_.isinstance(x, $B.long_int)){
+    if($B.$isinstance(x, $B.long_int)){
         return $B.fast_float($B.long_int.$log10(x).value)
     }
     x = float_check(x)
@@ -1814,12 +1944,153 @@ function modf(x){
 
 var nan = _b_.float.$factory('nan')
 
+function _nextafter(x, y){
+    // always returns a Javascript number
+    if($B.rich_comp('__lt__', y, x)){
+        var nu = nextUp($B.rich_op('__mul__', -1, x))
+        return -nu
+    }else if($B.rich_comp('__gt__', y, x)){
+        return nextUp(x)
+    }else{
+        var res = x !== x ? x : y
+        res = typeof res == 'number' ? res : res.value
+        return res
+    }
+}
+
+function make_float(x){
+    return typeof x == 'number' ? $B.fast_float(x) : x
+}
+
+function make_number(x){
+    return typeof x == 'number' ? x : x.value
+}
+
+function doubleToByteArray(number) {
+    // adapted from https://stackoverflow.com/questions/
+    // 25942516/double-to-byte-array-conversion-in-javascript
+    var buffer = new ArrayBuffer(8);         // JS numbers are 8 bytes long, or 64 bits
+    var longNum = new Float64Array(buffer);  // so equivalent to Float64
+
+    longNum[0] = number;
+
+    return Array.from(new Uint8Array(buffer)).reverse();  // reverse to get little endian
+}
+
+function byteArrayToDouble(bytearray) {
+    // adapted from https://stackoverflow.com/questions/
+    // 42699162/javascript-convert-array-of-4-bytes-into-a-float-value-from-modbustcp-read
+    // Create a buffer
+    var buf = new ArrayBuffer(8);
+    // Create a data view of it
+    var view = new DataView(buf);
+
+    // set bytes
+    bytearray.forEach(function (b, i) {
+        view.setUint8(i, b);
+    });
+
+    // Read the bits as a float
+    var num = view.getFloat64(0);
+    // Done
+    return num
+}
+
+function addSteps(array, steps){
+    // convert to BigInt, avoids issue when steps >= 2 ** 32
+    if(steps.__class__ == $B.long_int){
+        steps = steps.value
+    }else{
+        steps = BigInt(steps)
+    }
+    var positive = steps > 0n
+    if(steps < 0n){
+        steps = -steps
+    }
+    var x1 = steps >> 32n,
+        x2 = steps - x1 * 2n ** 32n
+    var buffer = new ArrayBuffer(8)
+    var longStep = new BigInt64Array(buffer)
+    longStep[0] = steps
+    var stepArray = Array.from(new Uint8Array(buffer)).reverse()
+    if(positive){
+        var carry = 0
+        for(var i = 7; i >= 0; i--){
+            array[i] += stepArray[i] + carry
+            if(array[i] > 255){
+                carry = 1
+                array[i] -= 256
+            }else{
+                carry = 0
+            }
+        }
+    }else{
+        var carry = 0
+        for(var i = 7; i >= 0; i--){
+            array[i] -= stepArray[i] - carry
+            if(array[i] < 0){
+                carry = -1
+                array[i] += 256
+            }else{
+                carry = 0
+            }
+        }
+    }
+}
+
 function nextafter(){
-    var $ = $B.args("nextafter", 2, {x: null, y: null}, ['x', 'y'],
-                arguments, {}, null, null),
+    var $ = $B.args("nextafter", 3, {x: null, y: null, steps: null},
+                ['x', 'y', 'steps'], arguments, {steps: _b_.None}, null, null),
         x = $.x,
-        y = $.y
-    return y < x ? -nextUp(-x) : (y > x ? nextUp(x) : (x !== x ? x : y))
+        y = $.y,
+        steps = $.steps
+    if(! $B.$isinstance(x, [_b_.int, _b_.float])){
+        throw _b_.TypeError.$factory('must be a real number, not ' +
+            $B.class_name(x))
+    }
+    if(! $B.$isinstance(y, [_b_.int, _b_.float])){
+        throw _b_.TypeError.$factory('must be a real number, not ' +
+            $B.class_name(y))
+    }
+    if(isnan(x)){
+        return make_float(x)
+    }
+    if(isnan(y)){
+        return make_float(y)
+    }
+    if(steps === _b_.None){
+        return $B.fast_float(_nextafter(x, y))
+    }
+    steps = $B.PyNumber_Index(steps);
+    if(steps < 0) {
+        throw _b_.ValueError.$factory(
+                        "steps must be a non-negative integer");
+    }
+    if(steps == 0){
+        return make_float(x)
+    }
+    if(isnan(x)){
+        return make_float(x)
+    }
+    if(isnan(y)){
+        return make_float(y)
+    }
+    var x1 = make_number(x),
+        y1 = make_number(y)
+
+    if(y1 == x1){
+        return make_float(y)
+    }else if(y1 > x1){
+        var x_uint64 = doubleToByteArray(x1)
+        addSteps(x_uint64, steps)
+        var res = byteArrayToDouble(x_uint64)
+        return res >= y1 ? y : make_float(res)
+    }else{
+        var x_uint64 = doubleToByteArray(x1)
+        addSteps(x_uint64, -steps)
+        var res = byteArrayToDouble(x_uint64)
+        return res <= y1 ? y : make_float(res)
+    }
 }
 
 function perm(n, k){
@@ -1978,8 +2249,8 @@ function radians(x){
 function is_finite(x){
     return typeof x == "number" ||
                (x.__class__ === _b_.floar && isFinite(x.value)) ||
-               _b_.isinstance(x, _b_.int) ||
-               (_b_.isinstance(x, _b_.float) && isFinite(x.value))
+               $B.$isinstance(x, _b_.int) ||
+               ($B.$isinstance(x, _b_.float) && isFinite(x.value))
 }
 
 function remainder(x, y){
@@ -2069,6 +2340,300 @@ function sqrt(x){
     return _r
 }
 
+/*[clinic input]
+math.sumprod
+
+    p: object
+    q: object
+    /
+
+Return the sum of products of values from two iterables p and q.
+
+Roughly equivalent to:
+
+    sum(itertools.starmap(operator.mul, zip(p, q, strict=True)))
+
+For float and mixed int/float inputs, the intermediate products
+and sums are computed with extended precision.
+[clinic start generated code]*/
+
+const tl_zero = {hi: 0, lo: 0, tiny: 0}
+
+function _check_long_mult_overflow(a, b) {
+
+    /* From Python2's int_mul code:
+
+    Integer overflow checking for * is painful:  Python tried a couple ways, but
+    they didn't work on all platforms, or failed in endcases (a product of
+    -sys.maxint-1 has been a particular pain).
+
+    Here's another way:
+
+    The native long product x*y is either exactly right or *way* off, being
+    just the last n bits of the true product, where n is the number of bits
+    in a long (the delivered product is the true product plus i*2**n for
+    some integer i).
+
+    The native double product (double)x * (double)y is subject to three
+    rounding errors:  on a sizeof(long)==8 box, each cast to double can lose
+    info, and even on a sizeof(long)==4 box, the multiplication can lose info.
+    But, unlike the native long product, it's not in *range* trouble:  even
+    if sizeof(long)==32 (256-bit longs), the product easily fits in the
+    dynamic range of a double.  So the leading 50 (or so) bits of the double
+    product are correct.
+
+    We check these two ways against each other, and declare victory if they're
+    approximately the same.  Else, because the native long product is the only
+    one that can lose catastrophic amounts of information, it's the native long
+    product that must have overflowed.
+
+    */
+
+    /*
+
+    var longprod = (long)((unsigned long)a * b);
+    double doubleprod = (double)a * (double)b;
+    double doubled_longprod = (double)longprod;
+
+    if (doubled_longprod == doubleprod) {
+        return 0;
+    }
+
+    const double diff = doubled_longprod - doubleprod;
+    const double absdiff = diff >= 0.0 ? diff : -diff;
+    const double absprod = doubleprod >= 0.0 ? doubleprod : -doubleprod;
+
+    if (32.0 * absdiff <= absprod) {
+        return 0;
+    }
+
+    return 1;
+    */
+    return 0
+}
+
+function long_add_would_overflow(a, b){
+    return (a > 0n) ? (b > BigInt(LONG_MAX) - a) : (b < BigInt(LONG_MIN) - a);
+}
+
+function PyLong_CheckExact(n){
+    return typeof n == 'number' || n.__class__ === $B.long_int
+}
+
+/*
+   The default implementation of dl_mul() depends on the C math library
+   having an accurate fma() function as required by § 7.12.13.1 of the
+   C99 standard.
+
+   The UNRELIABLE_FMA option is provided as a slower but accurate
+   alternative for builds where the fma() function is found wanting.
+   The speed penalty may be modest (17% slower on an Apple M1 Max),
+   so don't hesitate to enable this build option.
+
+   The algorithms are from the T. J. Dekker paper:
+   A Floating-Point Technique for Extending the Available Precision
+   https://csclub.uwaterloo.ca/~pbarfuss/dekker1971.pdf
+*/
+
+function dl_split(x) {
+    // Dekker (5.5) and (5.6).
+    var t = x * 134217729.0;  // Veltkamp constant = 2.0 ** 27 + 1
+    var hi = t - (t - x);
+    var lo = x - hi;
+    return {hi, lo};
+}
+
+function dl_mul(x, y){
+    // Dekker (5.12) and mul12()
+    var xx = dl_split(x);
+    var yy = dl_split(y);
+    var p = xx.hi * yy.hi;
+    var q = xx.hi * yy.lo + xx.lo * yy.hi;
+    var z = p + q;
+    var zz = p - z + q + xx.lo * yy.lo;
+    return {hi: z, lo:  zz};
+}
+
+function dl_sum(a, b){
+    /* Algorithm 3.1 Error-free transformation of the sum */
+    var x = a + b;
+    var z = x - a;
+    var y = (a - (x - z)) + (b - z);
+    return {hi: x, lo: y};
+}
+
+function tl_fma(x, y, total){
+    /* Algorithm 5.10 with SumKVert for K=3 */
+    var pr = dl_mul(x, y);
+    var sm = dl_sum(total.hi, pr.hi);
+    var r1 = dl_sum(total.lo, pr.lo);
+    var r2 = dl_sum(r1.hi, sm.lo);
+    return {hi: sm.hi, lo: r2.hi, tiny: total.tiny + r1.lo + r2.lo}
+}
+
+function tl_to_d(total){
+    var last = dl_sum(total.lo, total.hi);
+    return total.tiny + last.lo + last.hi;
+}
+
+function sumprod(p, q){
+    var $ = $B.args('sumprod', 2, {p: null, q: null}, ['p', 'q'],
+            arguments, {}, null, null)
+    var p_i = NULL,
+        q_i = NULL,
+        term_i = NULL,
+        new_total = NULL;
+    var p_it, q_it, total;
+    var p_next, q_next;
+    var p_stopped = false, q_stopped = false;
+    var int_path_enabled = true,
+        int_total_in_use = false;
+    var flt_path_enabled = true,
+        flt_total_in_use = false;
+    var int_total = 0n;
+    var flt_total = tl_zero;
+
+    p_it = $B.make_js_iterator(p);
+    q_it = $B.make_js_iterator(q);
+    total = 0
+    p_next = p_it.next
+    q_next = q_it.next
+    while (1) {
+        var finished;
+        p_i = p_it.next()
+        if (p_i.done) {
+            p_stopped = true;
+        }else{
+            p_i = p_i.value
+        }
+        q_i = q_it.next()
+        if (q_i.done) {
+            q_stopped = true;
+        }else{
+            q_i = q_i.value
+        }
+        if (p_stopped != q_stopped) {
+            throw _b_.ValueError.$factory("Inputs are not the same length");
+        }
+
+        finished = p_stopped & q_stopped;
+
+        if (int_path_enabled) {
+
+            if (! finished && PyLong_CheckExact(p_i) & PyLong_CheckExact(q_i)) {
+                var overflow;
+                var int_p, int_q, int_prod;
+
+                int_p = _b_.int.$to_bigint($B.PyNumber_Index(p_i))
+                overflow = int_p > LONG_MAX || int_p < LONG_MIN
+
+                if (overflow) {
+                    finalize_int_path()
+                }
+                int_q = _b_.int.$to_bigint($B.PyNumber_Index(q_i));
+                overflow = int_q > LONG_MAX || int_q < LONG_MIN
+                if (overflow) {
+                    finalize_int_path()
+                }
+                if (_check_long_mult_overflow(int_p, int_q)) {
+                    finalize_int_path()
+                }
+                int_prod = int_p * int_q;
+                if (long_add_would_overflow(int_total, int_prod)) {
+                    finalize_int_path()
+                }
+                if(int_path_enabled){
+                    int_total = int_total + int_prod;
+                    int_total_in_use = true;
+                    continue;
+                }
+            }
+
+            if(finished){
+                finalize_int_path()
+            }
+
+          function finalize_int_path(){
+            // We're finished, overflowed, or have a non-int
+            int_path_enabled = false;
+            if (int_total_in_use) {
+                term_i = _b_.int.$int_or_long(int_total);
+                new_total = $B.rich_op('__add__', total, term_i);
+                total = new_total
+                new_total = NULL;
+                int_total = 0;   // An ounce of prevention, ...
+                int_total_in_use = false;
+            }
+          }
+        }
+
+        if (flt_path_enabled) {
+
+            if (!finished) {
+                var flt_p, flt_q;
+                var p_type_float = p_i.__class__ === _b_.float;
+                var q_type_float = q_i.__class__ === _b_.float
+                if(p_type_float && q_type_float) {
+                    flt_p = p_i;
+                    flt_q = q_i;
+                }else if (p_type_float && (PyLong_CheckExact(q_i) ||
+                                           typeof q_i == 'boolean')){
+                    /* We care about float/int pairs and int/float pairs because
+                       they arise naturally in several use cases such as price
+                       times quantity, measurements with integer weights, or
+                       data selected by a vector of bools. */
+                    flt_p = p_i
+                    flt_q = _b_.int.$int_value(q_i)
+                }else if(q_type_float && (PyLong_CheckExact(p_i) ||
+                                          typeof p_i == 'boolean')) {
+                    flt_q = q_i
+                    flt_p = _b_.int.$int_value(p_i)
+                }else{
+                    finalize_flt_path()
+                }
+                if(flt_path_enabled){
+                    var new_flt_total = tl_fma(flt_p.value, flt_q.value, flt_total);
+                    if (isfinite(new_flt_total.hi)) {
+                        flt_total = new_flt_total;
+                        flt_total_in_use = true;
+                        continue;
+                    }
+                }
+            }
+            if(finished){
+                finalize_flt_path()
+            }
+
+          function finalize_flt_path(){
+            // We're finished, overflowed, have a non-float, or got a non-finite value
+            flt_path_enabled = false;
+            if(flt_total_in_use){
+                term_i = $B.fast_float(tl_to_d(flt_total));
+                if (term_i == NULL) {
+                    err_exit()
+                }
+                new_total = $B.rich_op('__add__', total, term_i);
+                total = new_total
+                new_total = NULL
+                flt_total = tl_zero;
+                flt_total_in_use = false;
+            }
+          }
+        }
+
+        if (finished) {
+            return total
+        }
+        term_i = $B.rich_op('__mul__', p_i, q_i);
+        new_total = $B.rich_op('__add__', total, term_i);
+        total = new_total
+        new_total = NULL;
+    }
+
+}
+
+
+
 function tan(x) {
     $B.check_nb_args('tan', 1, arguments)
     $B.check_no_kw('tan', x)
@@ -2093,11 +2658,18 @@ function trunc(x) {
     $B.check_nb_args('trunc', 1, arguments)
     $B.check_no_kw('trunc', x)
 
-   try{return $B.$getattr(x, '__trunc__')()}catch(err){}
+   try{
+       return $B.$getattr(x, '__trunc__')()
+   }catch(err){
+   }
    var x1 = float_check(x)
    if(!isNaN(parseFloat(x1)) && isFinite(x1)){
-      if(Math.trunc !== undefined){return _b_.int.$factory(Math.trunc(x1))}
-      if(x1 > 0){return _b_.int.$factory(Math.floor(x1))}
+      if(Math.trunc !== undefined){
+          return _b_.int.$factory(Math.trunc(x1))
+      }
+      if(x1 > 0){
+          return _b_.int.$factory(Math.floor(x1))
+      }
       return _b_.int.$factory(Math.ceil(x1))  // x1 < 0
    }
    throw _b_.ValueError.$factory(
@@ -2107,7 +2679,7 @@ function trunc(x) {
 function ulp(){
     var $ = $B.args("ulp", 1, {x: null}, ['x'], arguments, {}, null, null),
         x = $.x
-    if(_b_.isinstance(x, _b_.float)){
+    if($B.$isinstance(x, _b_.float)){
         if(_b_.float.$funcs.isinf(x)){
             return _mod.inf
         }else if(_b_.float.$funcs.isnan(x)){
@@ -2117,7 +2689,7 @@ function ulp(){
     if(typeof x == "number"){
         return x >= 0 ? $B.fast_float(nextUp(x) - x) :
                        $B.fast_float(x - (-nextUp(-x)))
-    }else if(_b_.isinstance(x, $B.long_int)){
+    }else if($B.$isinstance(x, $B.long_int)){
         x = Number(_b_.int.$to_bigint(x))
         return x > 0 ? $B.fast_float(nextUp(x) - x) :
                        $B.fast_float(x - (-nextUp(-x)))
@@ -2133,7 +2705,6 @@ function ulp(){
 }
 
 var _mod = {
-    __getattr__,
     acos,
     acosh,
     asin,
@@ -2158,6 +2729,7 @@ var _mod = {
     fabs,
     factorial,
     floor,
+    fma,
     fmod,
     frexp,
     fsum,
@@ -2189,6 +2761,7 @@ var _mod = {
     sin,
     sinh,
     sqrt,
+    sumprod,
     tan,
     tanh,
     tau,
@@ -2202,6 +2775,6 @@ for(var $attr in _mod){
     }
 }
 
-return _mod
+$B.addToImported('math', _mod)
 
 })(__BRYTHON__)

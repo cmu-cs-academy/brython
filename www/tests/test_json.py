@@ -81,4 +81,51 @@ assert list(ComplexEncoder().iterencode(2 + 1j)) == ['[2.0', ', 1.0', ']']
 # issue 1944
 assert json.loads('{"a":[]}') == {'a': []}
 
+# detected in issue 2322
+d = "0.000000000000000"
+assert json.loads(d) == 0.0
+
+# issue 2331
+len1 = len(json.dumps("🙂", ensure_ascii=False))
+len2 = len(json.dumps("🙂"))
+assert len2 > len1
+
+# issue 2355
+x = json.loads("1e-06")
+assert x == 1e-06
+
+# issue 2510
+assert json.dumps((1, 2, 3)) == '[1, 2, 3]'
+
+# issue 2636
+try:
+    json.loads('')
+    assert False, "Expected JSONDecodeError to be raised"
+except json.JSONDecodeError as e:
+    # Verify it's the correct error type and message
+    assert 'Expecting value' in str(e)
+    assert e.pos == 0
+
+# issue 2637
+# Test that json.loads with unterminated string raises JSONDecodeError
+try:
+    json.loads('"unclosed')
+    assert False, "Expected JSONDecodeError for unterminated string"
+except json.JSONDecodeError as e:
+    assert 'Unterminated string' in str(e)
+
+# Test that json.loads with incomplete object raises JSONDecodeError
+try:
+    json.loads('{"key": "value"')
+    assert False, "Expected JSONDecodeError for incomplete object"
+except json.JSONDecodeError as e:
+    assert 'Expecting' in str(e)
+
+# Test that json.loads with incomplete array raises JSONDecodeError
+try:
+    json.loads('["item1", "item2"')
+    assert False, "Expected JSONDecodeError for incomplete array"
+except json.JSONDecodeError as e:
+    assert 'Expecting' in str(e)
+
 print('all tests ok..')

@@ -1,45 +1,53 @@
 // Regular expression
-
+(function($B){
 
 var _debug = {value: 0}
 
-var $B = __BRYTHON__,
-    _b_ = $B.builtins
+var _b_ = $B.builtins
 
 var MAXGROUPS = 2147483647,
     MAXREPEAT = 2147483648
 
-var is_word = {}
 var word_gcs = ['Ll', 'Lu', 'Lm', 'Lt', 'Lo',
                 'Nd',
                 'Mc', 'Me', 'Mn',
                 'Pc']
-for(var word_gc of word_gcs){
-    for(var cp in $B.unicode_tables[word_gc]){
-        is_word[cp] = true
+
+function is_word(cp){
+    if((cp >= 97 && cp <= 122) // a-z
+            || (cp >= 65 && cp <= 90) // A-Z
+        ){
+            return true
     }
+    for(var word_gc of word_gcs){
+        if($B.in_unicode_category(word_gc, cp)){
+            return true
+        }
+    }
+    return false
 }
 
-var is_ascii_word = {}
+var ascii_word = {}
 
 for(var cp = 0; cp <= 127; cp++){
-    if(is_word[cp]){
-        is_ascii_word[cp] = true
+    if(is_word(cp)){
+        ascii_word[cp] = true
     }
 }
 
-var is_digit = {}
-
-for(var cp in $B.unicode_tables['Nd']){
-    is_digit[cp] = true
+function is_ascii_word(cp){
+    return ascii_word[cp] !== undefined
 }
 
-var is_ascii_digit = {}
-
-for(var cp = 0; cp <= 127; cp++){
-    if(is_digit[cp]){
-        is_ascii_digit[cp] = true
+function is_digit(cp){
+    if(cp >= 48 && cp <= 57){
+        return true
     }
+    return $B.in_unicode_category('Nd', cp)
+}
+
+function is_ascii_digit(cp){
+    return cp <= 127 && is_digit(cp)
 }
 
 var $error_2 = {
@@ -97,7 +105,7 @@ function fail(message, pos, pattern){
 }
 
 function warn(klass, message, pos, text){
-    var frame = $B.last($B.frames_stack),
+    var frame = $B.frame_obj.frame,
         file = frame[3].__file__,
         src = $B.file_cache[file]
     if(text === undefined){
@@ -266,7 +274,7 @@ function validate_num_or_name(so, pos, is_bytes){
 
 var character_classes = {
     in_charset: to_codepoint_list('dDsSwW'),
-    in_re: to_codepoint_list('AbBdDsSwWZ')
+    in_re: to_codepoint_list('AbBdDsSwWZz')
 }
 
 function escaped_char(args){
@@ -503,6 +511,7 @@ function parse_character_set(text, pos, is_bytes){
             if(pos == start + 1 ||
                     (result.neg && pos == start + 2) ||
                     pos == text.length - 2 || // [a-]
+                    text[pos + 1] == BRACKET_CLOSE ||
                     range ||
                     (result.items.length > 0 &&
                     result.items[result.items.length - 1].type ==
@@ -931,161 +940,16 @@ function transform_repl(data, pattern){
     repl = repl.replace(/\\v/g, '\v')
     repl = repl.replace(/\\f/g, '\f')
     repl = repl.replace(/\\a/g, '\x07')
-    // detect backreferences
-    var pos = 0,
-        escaped = false,
-        br = false,
-        repl1 = "",
-        has_backref = false
-    while(pos < repl.length){
-        br = false
-        if(repl[pos] == "\\"){
-            escaped = ! escaped
-            if(escaped){
-                pos++
-                continue
-            }
-        }else if(escaped){
-            escaped = false
-            var mo = /^\d+/.exec(repl.substr(pos))
-            if(mo){
-                var cps = to_codepoint_list(repl)
-                var escape = escaped_char({
-                        codepoints: cps,
-                        pos: pos - 1,
-                        is_bytes: cps.type == "bytes"
-                     })
-                if(escape.type == "o"){
-                    if(escape.ord > 0o377){
-                        fail(`octal escape value \\${mo[0]} ` +
-                            " outside of range 0-0o377", pos)
-                    }
-                    repl1 += escape.char
-                    pos += escape.length - 1
-                    continue
-                }else if(escape.type != "backref"){
-                    var group_num = mo[0].substr(0,
-                        Math.min(2, mo[0].length))
-                    fail(`invalid group reference ${group_num}`, pos)
-                }else{
-                    // only keep first 2 digits
-                    var group_num = mo[0].substr(0,
-                        Math.min(2, mo[0].length))
-                    // check that pattern has the specified group num
-                    if(pattern.groups === undefined){
-                        throw _b_.AttributeError.$factory("$groups")
-                    }
-                    if(pattern.groups[group_num] === undefined){
-                        fail(`invalid group reference ${group_num}`,
-                            pos)
-                    }else{
-                        mo[0] = group_num
-                    }
-                }
-                if(! has_backref){
-                    var parts = [repl.substr(0, pos - 1),
-                            parseInt(mo[0])]
-                }else{
-                    parts.push(repl.substring(next_pos, pos - 1))
-                    parts.push(parseInt(mo[0]))
-                }
-                has_backref = true
-                var next_pos = pos + mo[0].length
-                br = true
-                pos += mo[0].length
-            }else if(repl[pos] == "g"){
-                pos++
-                if(repl[pos] != '<'){
-                    fail("missing <", pos)
-                }
-                pos++
-                mo = /(.*?)>/.exec(repl.substr(pos))
-                if(mo){
-                    if(mo[1] == ""){
-                        pos += mo[0].length
-                        fail("missing group name", pos - 1)
-                    }
-                    var group_name = mo[1]
-                    if(group_name == '0'){
-                        //  The backreference \g<0> substitutes in the entire
-                        // substring matched by the RE.
-                    }else if(/^\d+$/.exec(group_name)){
-                        if(pattern.groups[group_name] === undefined){
-                            fail(`invalid group reference ${group_name}`,
-                                pos)
-                        }
-                    }else{
-                        try{
-                            var group_num = _b_.int.$factory(group_name)
-                            if(group_num < 0){
-                                fail(`bad character in group name ` +
-                                    `'${group_name}' at position ${pos}`, pos)
-                            }
-                            warn(_b_.DeprecationWarning,
-                                `bad character in group name '${group_name}' ` +
-                                `at position ${pos}`)
-                            mo[1] = group_name = group_num + ''
-                        }catch(err){
-                            if(! _b_.str.isidentifier(group_name)){
-                                var cps = to_codepoint_list(group_name)
-                                if($B.unicode_tables.XID_Start[cps[0]] === undefined){
-                                    fail("bad character in group name '" +
-                                        group_name + "'", pos)
-                                }else{
-                                    for(cp of cps.slice(1)){
-                                        if($B.unicode_tables.XID_Continue[cp] === undefined){
-                                            fail("bad character in group name '" +
-                                                group_name + "'", pos)
-                                        }
-                                    }
-                                }
-                            }else if(data.type == "bytes" && ! is_ascii(group_name)){
-                                var b = _b_.bytes.$factory(group_name, 'latin-1'),
-                                    s = _b_.bytes.decode(b, 'ascii', 'backslashreplace')
-                                warn(_b_.DeprecationWarning,
-                                    `bad character in group name '${s}'` +
-                                    ` at position ${pos}`)
-                            }
-                        }
-                        if(pattern.groups[group_name] === undefined){
-                            throw _b_.IndexError.$factory(
-                                `unknown group name '${group_name}'`,
-                                pos)
-                        }
-                    }
-                    if(! has_backref){
-                        var parts = [repl.substr(0, pos - 3),
-                                mo[1]]
-                    }else{
-                        parts.push(repl.substring(next_pos, pos - 3))
-                        parts.push(mo[1])
-                    }
-                    has_backref = true
-                    var next_pos = pos + mo[0].length
-                    br = true
-                    pos = next_pos
-                }else{
-                    if(repl.substr(pos).length > 0){
-                        fail("missing >, unterminated name", pos)
-                    }else{
-                        fail("missing group name", pos)
-                    }
-                }
-            }else{
-                if(/[a-zA-Z]/.exec(repl[pos])){
-                    fail("unknown escape", pos)
-                }
-                pos += repl[pos]
-            }
-        }
-        if(! br){
-            repl1 += repl[pos]
-            pos ++
-        }
-    }
-    data.repl1 = repl1
+    repl = repl.replace(/\\\\/g, '\\')
+    var split_backrefs = repl.split(/(\\\d+)/)
+    var has_backref = split_backrefs.length > 1
+    //data.repl1 = repl1
     if(has_backref){
-        parts.push(repl.substr(next_pos))
+        //parts.push(repl.substr(next_pos))
+        parts = split_backrefs
+        for(var i = 1; i < parts.length; i +=2){
+            parts[i] = parseInt(parts[i].substr(1))
+        }
         data.repl = function(bmo){
             var mo = bmo.mo,
                 res = parts[0],
@@ -1125,6 +989,7 @@ function transform_repl(data, pattern){
         }
     }else{
         data.repl = new StringObj(repl)
+        data.repl1 = repl
     }
     return data
 }
@@ -1171,7 +1036,7 @@ Flag.__or__ = function(self, other){
 }
 
 Flag.__rand__ = function(self, other){
-    if(typeof other == "number" || _b_.isinstance(other, _b_.int)){
+    if(typeof other == "number" || $B.$isinstance(other, _b_.int)){
         if(other == 0){
             return false // Flag.$factory(self.value)
         }
@@ -1181,7 +1046,7 @@ Flag.__rand__ = function(self, other){
 }
 
 Flag.__ror__ = function(self, other){
-    if(typeof other == "number" || _b_.isinstance(other, _b_.int)){
+    if(typeof other == "number" || $B.$isinstance(other, _b_.int)){
         if(other == 0){
             return self.value
         }
@@ -1249,7 +1114,7 @@ Scanner.match = function(self){
 
 Scanner.search = function(self){
     if(! self.$iterator){
-        self.$iterator = $module.finditer(self.pattern, self.$string)
+        self.$iterator = module.finditer(self.pattern, self.$string)
     }
     // return last match
     var mo = _b_.None
@@ -1337,7 +1202,7 @@ Pattern.__reduce_ex__ = function(self, protocol){
 function _reconstructor(cls, base, state){
     var pattern = _b_.dict.$getitem(state, 'pattern'),
         flags = Flag.$factory(_b_.dict.$getitem(state, 'flags'))
-    return $module.compile(pattern, flags)
+    return module.compile(pattern, flags)
 }
 
 Pattern.__repr__ = Pattern.__str__ = function(self){
@@ -1375,7 +1240,7 @@ Pattern.findall = function(self){
     while(true){
         var next = iter.next()
         if(next.done){
-            return res
+            return $B.$list(res)
         }
         var bmo = next.value,
             mo = bmo.mo,
@@ -1402,11 +1267,10 @@ Pattern.finditer = function(self){
             {self: null, string: null, pos: null, endpos: null},
             'self string pos endpos'.split(' '), arguments,
             {pos: 0, endpos: _b_.None}, null, null)
-    var original_string = $.string,
-        data = prepare({string: $.string})
+    var data = prepare({string: $.string})
     var endpos = $.endpos === _b_.None ? data.string.length : $.endpos
     return $B.generator.$factory(iterator)(self.$pattern, data.string,
-            no_flag, $.string, $.pos, endpos)
+            self.flags, $.string, $.pos, endpos)
 }
 
 Pattern.fullmatch = function(self, string){
@@ -1485,7 +1349,7 @@ Pattern.search = function(self, string){
 }
 
 Pattern.split = function(){
-    return $module.split.apply(null, arguments)
+    return module.split.apply(null, arguments)
 }
 
 Pattern.sub = function(){
@@ -1499,7 +1363,7 @@ Pattern.sub = function(){
             "and string")
     }
 
-    return $module.sub($.self, $.repl, $.string, $.count)
+    return module.sub($.self, $.repl, $.string, $.count)
 }
 
 $B.set_func_names(Pattern, "re")
@@ -2022,7 +1886,7 @@ function CharacterClass(pos, cp, length, groups){
         case 's':
             this.test_func = function(string, pos){
                 var cp = string.cp_at(pos)
-                return $B.unicode_tables.Zs[cp] !== undefined ||
+                return $B.in_unicode_category('Zs', cp) ||
                     $B.unicode_bidi_whitespace.indexOf(cp) > -1
             }
             break
@@ -2030,7 +1894,7 @@ function CharacterClass(pos, cp, length, groups){
             this.test_func = function(string, pos){
                 var cp = string.cp_at(pos)
                 return cp !== undefined &&
-                    $B.unicode_tables.Zs[cp] === undefined &&
+                    ! $B.in_unicode_category('Zs', cp) &&
                     $B.unicode_bidi_whitespace.indexOf(cp) == -1
             }
             break
@@ -2052,39 +1916,39 @@ function CharacterClass(pos, cp, length, groups){
                     console.log("\\d, no flags", this)
                 }
                 var cp = string.cp_at(pos),
-                    table = (this.flags.value & ASCII.value) ?
+                    tester = (this.flags.value & ASCII.value) ?
                         is_ascii_digit : is_digit
-                return table[cp]
+                return tester(cp)
             }
             break
         case 'D':
             this.test_func = function(string, pos){
                 var cp = string.cp_at(pos),
-                    table = (this.flags.value & ASCII.value) ?
+                    tester = (this.flags.value & ASCII.value) ?
                         is_ascii_digit : is_digit
-                return ! table[cp]
+                return ! tester(cp)
             }
             break
         case 'b':
             this.test_func = function(string, pos){
-                var table = is_word
+                var tester = is_word
                 if(this.is_bytes || (this.flags.value & ASCII.value)){
-                    table = is_ascii_word
+                    tester = is_ascii_word
                 }
                 var cp = string.cp_at(pos),
                     ok = {nb_min: 0, nb_max: 0}
 
                 // return true if char at pos is at the beginning or start
                 // of a word
-                if(pos == 0 && table[cp]){
+                if(pos == 0 && tester(cp)){
                     return ok
                 }
-                if(string.cp_at(pos) === undefined && table[string.cp_at(pos - 1)]){
+                if(string.cp_at(pos) === undefined && tester(string.cp_at(pos - 1))){
                     return ok
                 }
                 if(pos > 0 && string.cp_at(pos) !== undefined){
-                    if((table[string.cp_at(pos - 1)]) !==
-                            table[cp]){
+                    if((tester(string.cp_at(pos - 1))) !==
+                            tester(cp)){
                         return ok
                     }
                 }
@@ -2093,9 +1957,9 @@ function CharacterClass(pos, cp, length, groups){
             break
         case 'B':
             this.test_func = function(string, pos){
-                var table = is_word
+                var tester = is_word
                 if(this.is_bytes || (this.flags.value & ASCII.value)){
-                    table = is_ascii_word
+                    tester = is_ascii_word
                 }
 
                 var cp = string.cp_at(pos),
@@ -2106,15 +1970,15 @@ function CharacterClass(pos, cp, length, groups){
                     // empty string
                     return false
                 }
-                if(pos == 0 && table[cp]){
+                if(pos == 0 && tester(cp)){
                     return false
                 }
                 if(cp === undefined &&
-                        table[string.cp_at(pos - 1)]){
+                        tester(string.cp_at(pos - 1))){
                     return false
                 }
                 if(pos > 0 && cp !== undefined){
-                    if(table[string.cp_at(pos - 1)] !== table[cp]){
+                    if(tester(string.cp_at(pos - 1)) !== tester(cp)){
                         return false
                     }
                 }
@@ -2123,23 +1987,24 @@ function CharacterClass(pos, cp, length, groups){
             break
         case 'w':
             this.test_func = function(string, pos){
-                var table = is_word
+                var tester = is_word
                 if(this.is_bytes || (this.flags.value & ASCII.value)){
-                    table = is_ascii_word
+                    tester = is_ascii_word
                 }
-                return table[string.cp_at(pos)]
+                return tester(string.cp_at(pos))
             }
             break
         case 'W':
             this.test_func = function(string, pos){
-                var table = is_word
+                var tester = is_word
                 if(this.is_bytes || (this.flags.value & ASCII.value)){
-                    table = is_ascii_word
+                    tester = is_ascii_word
                 }
-                return ! table[string.cp_at(pos)]
+                return ! tester(string.cp_at(pos))
             }
             break
         case 'Z':
+        case 'z':
             this.test_func = function(string, pos){
                 if(string.cp_at(pos) === undefined){
                     return {nb_min: 0, nb_max: 0}
@@ -2165,7 +2030,7 @@ CharacterClass.prototype.match = function(string, pos, endpos){
 
     // browse string codepoints until they don't match, or the number of
     // matches is above the maximum allowed
-    var i = 0 
+    var i = 0
     while(i < this.repeat.max && i < len){
         var test = this.test_func(string, pos + i, this.flags)
         if(! test){
@@ -2235,9 +2100,6 @@ CharacterSet.prototype.match = function(string, pos, endpos){
 
         for(var cp1 of cps){
             for(var item of this.set.items){
-                if(typeof item == 'string'){
-
-                }
                 if(Array.isArray(item.ord)){
                     if(cp1 >= item.ord[0] &&
                             cp1 <= item.ord[1]){
@@ -2259,6 +2121,9 @@ CharacterSet.prototype.match = function(string, pos, endpos){
                     }
                 }else if(item instanceof CharacterClass){
                     test = !! item.match(string, pos + i, endpos) // boolean
+                    if(test){
+                        break
+                    }
                 }else{
                     if(item.ord == cp1){
                         test = true
@@ -2982,7 +2847,7 @@ function show(node, indent){
 
 function to_codepoint_list(s){
     var items = []
-    if(typeof s == "string" || _b_.isinstance(s, _b_.str)){
+    if(typeof s == "string" || $B.$isinstance(s, _b_.str)){
         if(typeof s != "string"){
             s = s.valueOf()
         }
@@ -2990,8 +2855,8 @@ function to_codepoint_list(s){
             items.push(char.codePointAt(0))
         }
         items.type = "unicode"
-    }else if(_b_.isinstance(s, [_b_.bytes, _b_.bytearray, _b_.memoryview])){
-        if(_b_.isinstance(s, _b_.memoryview)){
+    }else if($B.$isinstance(s, [_b_.bytes, _b_.bytearray, _b_.memoryview])){
+        if($B.$isinstance(s, _b_.memoryview)){
             items = s.obj.source
         }else{
             items = s.source
@@ -3070,16 +2935,16 @@ function StringObj(obj){
         this.codepoints = obj.codepoints
         this.index_map = obj.index_map
         this.length = _b_.str.__len__(obj)
-    }else if(_b_.isinstance(obj, _b_.str)){ // str subclass
+    }else if($B.$isinstance(obj, _b_.str)){ // str subclass
         var so = new StringObj(_b_.str.$factory(obj))
         this.string = so.string
         this.codepoints = so.codepoints
         this.length = _b_.str.__len__(obj)
-    }else if(_b_.isinstance(obj, [_b_.bytes, _b_.bytearray])){
+    }else if($B.$isinstance(obj, [_b_.bytes, _b_.bytearray])){
         this.string = _b_.bytes.decode(obj, 'latin1')
         this.codepoints = obj.source
         this.type = "bytes"
-    }else if(_b_.isinstance(obj, _b_.memoryview)){
+    }else if($B.$isinstance(obj, _b_.memoryview)){
         this.string = _b_.bytes.decode(obj.obj, 'latin1')
         this.codepoints = obj.obj.source
         this.type = "bytes"
@@ -3176,7 +3041,6 @@ function prepare(args){
 function subn(pattern, repl, string, count, flags){
     // string is a StringObj instance
     // pattern is either a Pattern instance or a StringObj instance
-    var t0 = window.performance.now()
     var res = '',
         pos = 0,
         nb_sub = 0
@@ -3190,7 +3054,7 @@ function subn(pattern, repl, string, count, flags){
     }
     pos = 0
     var s = string.to_str()
-    for(var bmo of $module.finditer(Pattern.$factory(pattern), s).js_gen){
+    for(var bmo of module.finditer(Pattern.$factory(pattern), s).js_gen){
         // finditer yields instances of MatchObject
         var mo = bmo.mo // instance of MO
         res += from_codepoint_list(string.codepoints.slice(pos, mo.start))
@@ -3271,7 +3135,7 @@ function* iterator(pattern, string, flags, original_string, pos, endpos){
         if(cp === undefined){
             accept_one = false
         }
-        if(starts_with_string_start(pattern)){
+        if (starts_with_string_start(pattern) && !(flags.value & MULTILINE.value)) {
             break
         }
     }
@@ -3327,23 +3191,23 @@ function GroupMO(node, start, matches, string, groups, endpos){
     // Match Object for Groups
     this.node = node
     this.start = start
-    this.matches = matches
+    this._matches = matches
+    this.matches = this.node.non_greedy ? matches.slice(0, this.node.repeat.min) : matches.slice()
     this.string = string
-    this.end = matches.length > 0 ? $last(matches).end : start
-    this.endpos = endpos === undefined ? this.end : endpos
+    this.end = this.matches.length > 0 ? $last(matches).end : start
+    this.endpos = endpos === undefined
+        ? matches.length > 0
+            ? $last(matches).end
+            : start
+        : endpos
     this.$groups = groups
 }
-
-$B.nb_group_backtrack = 0
-$B.t_group_backtrack = 0
 
 GroupMO.prototype.backtrack = function(string, groups){
     if(_debug.value){
         console.log('group MO backtrack, this', this)
         alert()
     }
-    $B.nb_group_backtrack++
-    var t0 = performance.now()
     // Try backtracking in the last match
     if(this.node.possessive || this.node.atomic){
         return false
@@ -3367,7 +3231,6 @@ GroupMO.prototype.backtrack = function(string, groups){
                             var ix = this.$groups.$last[this.$groups.$last.length - 1]
                             this.$groups[ix].end = _mo.end
                         }
-                        $B.t_group_backtrack += performance.now() - t0
                         return true
                     }
                 }
@@ -3378,31 +3241,40 @@ GroupMO.prototype.backtrack = function(string, groups){
                     groups[this.node.num].end = mo.end
                 }
                 this.end = mo.end
-                $B.t_group_backtrack += performance.now() - t0
                 return true
             }
         }
     }
     // Else, remove last match if possible
-    if(this.matches.length > this.node.repeat.min &&
-            this.matches.length >= 1){
-        this.matches.pop()
-        if(this.matches.length > 0){
+    if(this.node.non_greedy){
+        if(this.matches.length < this._matches.length){
+            this.matches.push(this._matches[this.matches.length])
             this.end = $last(this.matches).end
+            return true
         }else{
             // remove this group and its children from groups
             del_groups(groups, this.node)
             this.end = this.start
         }
-        $B.t_group_backtrack += performance.now() - t0
-        return true
+    }else{
+        if(this.matches.length > this.node.repeat.min &&
+                this.matches.length >= 1){
+            this.matches.pop()
+            if(this.matches.length > 0){
+                this.end = $last(this.matches).end
+            }else{
+                // remove this group and its children from groups
+                del_groups(groups, this.node)
+                this.end = this.start
+            }
+            return true
+        }
     }
     // Group fails; if some of its subgroups succeded, remove them from
     // groups
     if(this.node.repeat.min > 0){
         del_groups(groups, this.node)
     }
-    $B.t_group_backtrack += performance.now() - t0
     return false
 }
 
@@ -3706,6 +3578,9 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
     // Follow the pattern tree structure
     if(_debug.value){
         console.log('match pattern', pattern.text, 'pos', pos, string.substring(pos))
+        if(pattern.text == "\\."){
+            console.log('  ', pattern)
+        }
         alert()
     }
     if(endpos !== undefined){
@@ -3801,10 +3676,6 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
                             mos.push(mo)
                             pos = mo.end
                         }
-                        i++
-                    }else if(false && item instanceof Group &&
-                            item.type == "negative_lookahead_assertion"){
-                        log("negative lookahead assertion", item, "fails : ok !")
                         i++
                     }else{
                         if(_debug.value){
@@ -3925,7 +3796,7 @@ function match(pattern, string, pos, endpos, no_zero_width, groups){
 }
 
 // expose re module API
-var $module = {
+var module = {
     cache: cache,
     compile: function(){
         var $ = $B.args("compile", 2, {pattern: null, flags: null},
@@ -3960,7 +3831,7 @@ var $module = {
             res.push(cp)
         }
         res = from_codepoint_list(res, data.type)
-        if(data.type == "bytes" && _b_.isinstance(res, _b_.str)){
+        if(data.type == "bytes" && $B.$isinstance(res, _b_.str)){
             res = _b_.str.encode(res, 'latin1')
         }
         return res
@@ -3998,12 +3869,12 @@ var $module = {
             }
         }
 
-        var iter = $module.finditer.apply(null, arguments).js_gen,
+        var iter = module.finditer.apply(null, arguments).js_gen,
             res = []
         while(true){
             var next = iter.next()
             if(next.done){
-                return res
+                return $B.$list(res)
             }
             var bmo = next.value,
                 mo = bmo.mo,
@@ -4033,7 +3904,7 @@ var $module = {
                 pattern = $.pattern,
                 string = $.string,
                 flags = $.flags
-        if(_b_.isinstance(string, [_b_.bytearray, _b_.memoryview])){
+        if($B.$isinstance(string, [_b_.bytearray, _b_.memoryview])){
             string.in_iteration = true
         }
         var original_string = string,
@@ -4202,7 +4073,7 @@ var $module = {
         }else{
             data = {pattern, string}
         }
-        for(var bmo of $module.finditer(pattern, $.string).js_gen){
+        for(var bmo of module.finditer(pattern, $.string).js_gen){
             var mo = bmo.mo, // finditer returns instances of MatchObject
                 groupobj = mo.$groups
             res.push(data.string.substring(pos, mo.start))
@@ -4229,13 +4100,13 @@ var $module = {
         if(data.type === "bytes"){
             res = res.map(
                 function(x){
-                    return _b_.isinstance(x, _b_.bytes) ?
+                    return $B.$isinstance(x, _b_.bytes) ?
                                x :
                                _b_.str.encode(x, "latin-1")
                 }
             )
         }
-        return res
+        return $B.$list(res)
     },
     sub: function(){
         var $ = $B.args("sub", 5,
@@ -4295,16 +4166,17 @@ var $module = {
 
 }
 
-var ASCII = $module.A = $module.ASCII = Flag.$factory(256)
-var IGNORECASE = $module.I = $module.IGNORECASE = Flag.$factory(2)
-var LOCALE = $module.L = $module.LOCALE = Flag.$factory(4)
-var MULTILINE = $module.M = $module.MULTILINE = Flag.$factory(8)
-var DOTALL = $module.S = $module.DOTALL = Flag.$factory(16)
-var U = $module.U = $module.UNICODE = Flag.$factory(32)
-var VERBOSE = $module.X = $module.VERBOSE = Flag.$factory(64)
-$module.cache = cache
-$module._compile = $module.compile
+var ASCII = module.A = module.ASCII = Flag.$factory(256)
+var IGNORECASE = module.I = module.IGNORECASE = Flag.$factory(2)
+var LOCALE = module.L = module.LOCALE = Flag.$factory(4)
+var MULTILINE = module.M = module.MULTILINE = Flag.$factory(8)
+var DOTALL = module.S = module.DOTALL = Flag.$factory(16)
+var U = module.U = module.UNICODE = Flag.$factory(32)
+var VERBOSE = module.X = module.VERBOSE = Flag.$factory(64)
+module.cache = cache
+module._compile = module.compile
 
+$B.set_func_names(module, 're')
 
 var inline_flags = {
     i: IGNORECASE,
@@ -4325,3 +4197,7 @@ var flag_names = {
     x: 'VERBOSE',
     a: 'ASCII'
 }
+
+$B.addToImported('python_re', module)
+
+})(__BRYTHON__)

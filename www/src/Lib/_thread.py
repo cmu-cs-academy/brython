@@ -26,6 +26,9 @@ TIMEOUT_MAX = 2**31
 
 error = RuntimeError
 
+def daemon_threads_allowed():
+    return False
+
 def _set_sentinel(*args, **kw):
     return LockType()
 
@@ -61,6 +64,14 @@ def start_new_thread(function, args, kwargs={}):
         _interrupt = False
         raise KeyboardInterrupt
 
+start_joinable_thread = start_new_thread # lazy
+
+def _make_thread_handle(ident):
+    return 999
+    
+def _shutdown():
+    return None
+
 def exit():
     """Dummy implementation of _thread.exit()."""
     raise SystemExit
@@ -83,6 +94,16 @@ def stack_size(size=None):
     if size is not None:
         raise error("setting thread stack size not supported")
     return 0
+
+def _get_main_thread_ident():
+    return 999
+
+def _is_main_interpreter():
+    return True
+
+class _ThreadHandle:
+    pass
+
 
 class LockType(object):
     """Class implementing dummy implementation of _thread.LockType.

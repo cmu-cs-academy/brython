@@ -1,60 +1,28 @@
-Using Javascript objects
-------------------------
+Interactions with Javascript
+----------------------------
 
 We have to handle the transition period when Brython is going to coexist with
 Javascript ;-)
 
-### Accessing Brython objects from Javascript
+An HTML document HTML can include Javascript scripts and Python scripts.
 
-By default, Brython only exposes two names in the global Javascript namespace:
+This page deals with the interactions between Python programs and Javascript
+programs, under two categories:
 
-> `brython()` : the function run on page load
+- <a href="#js_from_brython">using Javascript data from Brython programs</a>
+- <a href="#brython_from_js">using Brython data from Javascript programs</a>
 
-> `__BRYTHON__` : an object used internally by Brython to store the objects
-> needed for scripts execution
+An important point is that Brython scripts are executed when the HTML has
+finished loading, while Javascript scripts are executed on the fly when they
+are loaded in the page. Consequently, Brython data cannot be used by
+Javascript programs until the page is completely loaded.
 
-Consequently, by default, a Javascript program cannot access Brython objects.
- For instance, for a function `echo()` defined in a Brython script
-to react to an event on an element in the page, instead of using the regular
-javascript syntax:
-
-```xml
-<button onclick="echo()">
-```
-(because the brython function _echo_ is not accessible from Javascript), the
-solution is to set an id to the element:
-
-```xml
-<button id="mybutton">
-```
-
-and to define the link between this element and the event _click_ by :
-
-```python
-from browser import document
-document['mybutton'].bind('click', echo)
-```
-
-Another option is to force the introduction of the name _echo_ in the
-Javascript namespace, by defining it as an attribute of the object
-`window` in module **browser** :
-
-```python
-from browser import window
-window.echo = echo
-```
-<strong>NOTE: This method is not recommended, because it introduces a risk of
-conflict with names defined in a Javascript program or library used in the page.
-</strong>
-
-### Objects in Javascript programs
-
-An HTML document can use Javascript scripts or libraries, and Python scripts
-or libraries
+<a name="js_from_brython"></a>
+## Using Javascript data from Brython programs
 
 The names added by Javascript programs to the global Javascript namespace are
-available in Brython scripts as attributes of the object `window` defined in
-the module **browser**
+available to Brython scripts as attributes of the object `window` defined in
+module **browser**.
 
 For instance :
 
@@ -69,6 +37,7 @@ from browser import document, window
 document['result'].value = window.circle.surface(10)
 </script>
 ```
+
 Javascript objects are converted into their Python equivalent in this way :
 
 <table border='1' cellpadding=3>
@@ -80,12 +49,26 @@ Javascript objects are converted into their Python equivalent in this way :
 <tr><td>Collection of DOM elements</td><td>list of `DOMNode` instances</td>
 </tr>
 <tr><td>`true, false`</td><td>`True, False`</td></tr>
-<tr><td>`null`</td><td>unchanged (printed as '<Javascript null>')</td></tr>
-<tr><td>Integer</td><td>instance of `int`</td></tr>
-<tr><td>Float</td><td>instance of `float`</td></tr>
-<tr><td>String</td><td>instance of `str`</td></tr>
-<tr><td>Array</td><td>instance of `list`</td></tr>
+<tr><td>`null`</td><td>unchanged (1)</td></tr>
+<tr><td>`undefined`</td><td>unchanged (1)</td></tr>
+<tr><td>number (Number)</td><td>instance of `int` or `float`</td></tr>
+<tr><td>big integer (BigInt)</td><td>instance of `int`</td></tr>
+<tr><td>string (String)</td><td>instance of `str`</td></tr>
+<tr><td>Javascript array (Array)</td><td>unchanged (2)</td></tr>
+<tr><td>function (Function)</td><td>unchanged (3)</td></tr>
 </table>
+
+_(1) The value can be tested by comparing it with `is` to constants `NULL`_
+_and `UNDEFINED` in module [javascript](javascript.html)_
+
+_(2) The items in the Javascript array are converted to Python objects_
+_with this conversion table_
+
+_(3) If the object is a function, the Python arguments passed to the Python_
+_function are converted when calling the Javascript function with the reverse_
+_conversion table as above. If the argument is a Python dictionary, it is_
+_converted to a Javascript objects; the keys are converted to strings in the_
+_Javascript object._
 
 The other Javascript objects are converted into an instance of the class
 `JSObject` defined in module **javascript**. They can be converted into
@@ -94,12 +77,6 @@ a Python dictionary by :
 ```python
 py_obj = window.js_obj.to_dict()
 ```
-
-If the Javascript object is a function, the arguments passed to the Python
-function are converted into Javascript objects, using the reverse of the
-above table. If the argument is a Python dictionary, it is converted into a
-Javascript object; keys in the Python dictionary are converted to strings in
-the Javascript object.
 
 Take care, a Javascript function can't be called with keyword arguments, this
 raises a `TypeError` exception : if the function is defined by
@@ -144,6 +121,13 @@ rectangle = window.Rectangle
 alert(rectangle.new(10, 10, 30, 30).surface())
 </script>
 ```
+
+### Exceptions
+
+If an error happens in a Javascript script called by a Brython script, an
+exception instance of class `JavascriptError` is triggered and can be
+caught by the Brython code. The Javascript error trace is printed on
+`sys.stderr`.
 
 ### jQuery example
 
@@ -193,7 +177,7 @@ def show(i, obj):
 jq.each(jq('span'), show)
 </script>
 
-<body onload="brython(1)">
+<body>
 
 <select id="sel">
   <option value="one">one
@@ -210,7 +194,7 @@ jq.each(jq('span'), show)
 
 ### Other examples
 
-You will find in the [gallery](../../gallery/gallery_en.html) other examples
+You will find in the [gallery](/gallery/gallery_en.html) other examples
 of how to use Javascript libraries (Three, Highcharts, Raphael) in Brython
 scripts.
 
@@ -246,7 +230,8 @@ jquery.js):
 <head>
 <script src="brython.js"></script>
 </head>
-<body onload="brython(1)">
+
+<body>
 <script type="text/python">
 import jquery
 
@@ -257,3 +242,192 @@ jquery("#test").text("I can use jQuery here !")
 </body>
 </html>
 ```
+
+
+<a name="brython_from_js"></a>
+
+## Using Brython data from Javascript programs
+
+By default, Brython only exposes two names in the global Javascript namespace:
+
+> `brython()` : function that triggers execution of the Python scripts in the page
+> (see [Execution options](options.html))
+
+> `__BRYTHON__` : an object used internally by Brython to store the objects
+> needed for scripts execution
+
+Consequently, by default, a Javascript program cannot access Brython objects.
+ For instance, for a function `echo()` defined in a Brython script
+to react to an event on an element in the page, instead of using the regular
+javascript syntax:
+
+```xml
+<button onclick="echo()">
+```
+(because the brython function _echo_ is not accessible from Javascript), the
+solution is to set an id to the element:
+
+```xml
+<button id="mybutton">
+```
+
+and to define the link between this element and the event _click_ by :
+
+```python
+from browser import document
+document['mybutton'].bind('click', echo)
+```
+
+Another option is to force the introduction of the name _echo_ in the
+Javascript namespace, by defining it as an attribute of the object
+`window` in module **browser** :
+
+```python
+from browser import window
+window.echo = echo
+```
+<strong>NOTE: This method is not recommended, because it introduces a risk of
+conflict with names defined in a Javascript program or library used in the page.
+</strong>
+
+### Properties of object `__BRYTHON__`
+
+The object `__BRYTHON__` exposes attributes that can be used by Javascript
+programs to interact with objects defined in Python scripts in the same page.
+
+
+*`__BRYTHON__`.whenReady*
+
+> A Javascript `Promise` resolved when Brython is loaded and can be used by
+> Javascript programs
+
+<blockquote>
+```xml
+function use_brython(){
+    // code here
+}
+
+__BRYTHON__.whenReady.then(use_brython)
+```
+</blockquote>
+
+*`__BRYTHON__`.getPythonModule(module_name)*
+
+> if the Python module named _module_name_ is imported in the page, returns
+> the Javascript object whose properties are the names defined in the module
+>
+> For the Python scripts in the page, `module_name` is the script identifier
+> (attribute `id` of the `<script>` tag).
+
+<blockquote>
+```xml
+<script type="text/python" id="s1">
+from browser import alert
+
+def show_square(x):
+    alert(x ** 2)
+</script>
+
+Square of <input id="num" value="2"><button id="btn">show</show>
+
+<script>
+document.getElementById('btn').addEventListener('click',
+    function(ev){
+        var v = document.getElementById('num').value
+        __BRYTHON__.getPythonModule('s1').show_square(parseInt(v))
+    }
+)
+</script>
+```
+</blockquote>
+
+Before using a Python module it is required to make sure that it is actually
+loaded and executed. For that, use the "load" event on the HTML element
+`<script type="text/python">`:
+
+<blockquote>
+```xml
+<script type="text/python" debug=1 id="s1">
+x = 0
+</script>
+
+
+<script>
+var s1 = document.getElementById('s1')
+s1.addEventListener('load', function(script){
+  var module = __BRYTHON__.getPythonModule('s1')
+  console.log(module.x)
+})
+</script>
+```
+</blockquote>
+
+*`__BRYTHON__`.pythonToJS(_src_[, _script_id_])*
+
+> converts the Python source code `src` into a string that holds its
+> translation to Javascript. The result can be executed by `eval()`
+> to trigger the script execution.
+
+*`__BRYTHON__`.pythonToAST(_src_[, _filename_, _mode_])*
+
+> gererates the AST (Abstract Syntax Tree) for the Python source code _src_
+> under the forme of a Javascript object with the same structure as described
+> in the [Python documentation](https://docs.python.org/3/library/ast.html)
+
+*`__BRYTHON__`.runPythonSource(_src_[, _attributes_])*
+
+> executes Python source code `src` as if it was a script with the specified
+> _attributes_. If _attributes_ is a string, it is the script `id`, otherwise
+> it must be a Javascript object.
+
+> [Execution options](options.html) such as debug level, path for imports,
+> etc. can be passed as attributes, for instance
+
+<blockquote>
+```xml
+var src = "import some_module"
+__BRYTHON__.runPythonSource(src, {pythonpath: 'my_modules', debug: 2})
+```
+</blockquote>
+
+> Returns the Javascript object that represents the
+> module (also available as `__BRYTHON__.getPythonModule(script_id)`)
+
+<blockquote>
+```xml
+<script type="text/py-disabled" id="s1">
+from browser import alert
+
+string = "script s2"
+integer = 8
+real = 3.14
+
+dictionary = {'a': string, 'b': integer, 'c': real}
+
+alert('run py-disabled')
+</script>
+
+<button id="btn">Run disabled</show>
+
+<script>
+document.getElementById('btn').addEventListener('click',
+    function(ev){
+        var script = document.getElementById('s1'),
+            modobj = __BRYTHON__.runPythonSource(script.innerText, {id: 's1'})
+        console.log(modobj)
+    }
+)
+</script>
+```
+</blockquote>
+
+
+*`__BRYTHON__`.importPythonModule(_module_name_[, _attributes_])*
+
+> imports the Python module using the _attributes_ as defined above. Returns
+> the Javascript object that represents the module.
+
+*`__BRYTHON__`.pyobj2jsobj(pyobj)*
+
+> converts a Python object into the matching Javascript object, following the
+> above conversion table

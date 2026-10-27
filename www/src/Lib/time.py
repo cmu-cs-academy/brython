@@ -1,3 +1,5 @@
+# CS Academy: "import browser" is not allowed in student code (see
+# $B.lockdown), so the time module must not import it
 # from browser import self as window
 import _locale
 import javascript
@@ -228,6 +230,9 @@ def process_time():
 def time():
     return float(date().getTime() / 1000)
 
+def time_ns():
+    return date().getTime() * 1_000_000
+
 def sleep(*args):
     raise Exception("Sorry, you cannot use time.sleep in CMU CS Academy. "
         "Please use sleep(seconds) instead.")
@@ -383,8 +388,7 @@ def to_struct_time(*arg):
     # The 2 last are microseconds and timezone: remove them
     del arg[-2:]
     # Add the rank of day in the week: use Javascript Date
-    from browser import window
-    d = window.Date.new(arg[0], arg[1] - 1, arg[2])
+    d = date(arg[0], arg[1] - 1, arg[2])
     weekday = (d.getDay() + 6) % 7
     arg.append(weekday)
     # Add the rank of day in the year in the range [1, 366]
@@ -408,7 +412,8 @@ def wait(secs):
 
 def strptime(string, _format):
     import _strptime
-    return _strptime._strptime_datetime(to_struct_time, string, _format)
+    tt, fraction, gmtoff_fraction = _strptime._strptime(string, _format)
+    return struct_time(tt[:9])
 
 # All the clock_xx machinery shouldn't work in the browser so some
 # NotImplementedErrors or messages are shown

@@ -77,7 +77,14 @@ var StringIO = $B.make_class("StringIO",
     function(){
         var $ = $B.args("StringIO", 2, {value: null, newline: null},
                 ["value", "newline"], arguments, {value: '', newline: "\n"},
-                null, null)
+                null, null),
+            value = $.value
+        if(value === _b_.None){
+            value = ''
+        }else if(! $B.$isinstance(value, _b_.str)){
+            throw _b_.TypeError.$factory(
+                `initial_value must be str or None, not ${$B.class_name(value)}`)
+        }
         return {
             __class__: StringIO,
             $counter: 0,
@@ -110,12 +117,15 @@ StringIO.truncate = function(self, size){
 StringIO.write = function(){
     var $ = $B.args("write", 2, {self: null, data: null},
             ["self", "data"], arguments, {}, null, null)
-    if(! _b_.isinstance($.data, _b_.str)){
+    if(! $B.$isinstance($.data, _b_.str)){
         throw _b_.TypeError.$factory('string argument expected, got ' +
             `'${$B.class_name($.data)}'`)
     }
     var text = $.self.$content,
         position = $.self.$counter
+    if(position > text.length){
+        text += String.fromCodePoint(0).repeat(position - text.length)
+    }
     text = text.substr(0, position) + $.data +
         text.substr(position + $.data.length)
     $.self.$content = text
@@ -143,7 +153,7 @@ BytesIO.__mro__ = [$B.Reader, _b_.object]
 
 BytesIO.getbuffer = function(){
     var self = get_self("getbuffer", arguments)
-    return self.$content
+    return _b_.memoryview.$factory(self.$content)
 }
 
 BytesIO.getvalue = function(){
@@ -151,12 +161,45 @@ BytesIO.getvalue = function(){
     return self.$content
 }
 
+BytesIO.read = function(){
+    var $ = $B.args("read", 2, {self: null, nbytes: null},
+            ["self", "nbytes"], arguments, {nbytes: _b_.None}, null, null),
+        self = $.self,
+        nbytes = $.nbytes,
+        res
+    var source = self.$content.source
+    if(nbytes === _b_.None){
+        res = $B.fast_bytes(source.slice(self.$counter))
+        self.$counter = source.length
+    }else if(! _b_.isinstance(nbytes, _b_.int)){
+        throw _b_.TypeError.$factory('number of bytes should be int, not ' +
+            $B.class_name(nbytes))
+    }else{
+        res = $B.fast_bytes(source.slice(self.$counter,
+                            self.$counter + nbytes))
+        self.$counter = Math.min(self.$counter + nbytes, source.length)
+    }
+    return res
+}
+
 BytesIO.write = function(){
     var $ = $B.args("write", 2, {self: null, data: null},
             ["self", "data"], arguments, {}, null, null)
-    $.self.$content.source = $.self.$content.source.concat(
-        $.data.source)
-    $.self.$counter += $.data.source.length
+    var data_cls = $B.get_class($.data)
+    if(! data_cls.$buffer_protocol){
+        throw _b_.TypeError.$factory('a bytes-like object is required, ' +
+            `not '${$B.class_name($.data)}'`)
+    }
+    var source = $.self.$content.source,
+        counter = $.self.$counter,
+        data = _b_.bytes.$factory($.data)
+    if(counter > source.length){
+        // pad with 0's
+        var padding = (new Array(counter - source.length)).fill(0)
+        source.splice(source.length, 0, ...padding)
+    }
+    source.splice(counter, data.source.length, ...data.source)
+    $.self.$counter += data.source.length
     return _b_.None
 }
 
@@ -210,3 +253,5 @@ var $module = (function($B){
     }
 })(__BRYTHON__)
 $module._IOBase.__doc__ = "_IOBase"
+
+__BRYTHON__.imported._io_classes = $module

@@ -1,14 +1,26 @@
-;(function($B){
+"use strict";
+(function($B){
 
 var _b_ = $B.builtins,
     object = _b_.object,
-    _window = self
+    _window = globalThis
+
+
+// Convert result of operations on DOMNodes to Brython types
+// Same as jsobj2pyobj, except that `null` and `undefined` are
+// converted to None
+function convertDomValue(v){
+    if(v === null || v === undefined){
+        return _b_.None
+    }
+    return $B.jsobj2pyobj(v)
+}
 
 // Conversion of immutable types between Javascript and Python
 var py_immutable_to_js = $B.py_immutable_to_js = function (pyobj){
-    if(_b_.isinstance(pyobj, _b_.float)){
+    if($B.$isinstance(pyobj, _b_.float)){
         return pyobj.value
-    }else if(_b_.isinstance(pyobj, $B.long_int)){
+    }else if($B.$isinstance(pyobj, $B.long_int)){
         return $B.long_int.$to_js_number(pyobj)
     }
     return pyobj
@@ -28,19 +40,11 @@ function js_immutable_to_py(jsobj){
 }
 
 // cross-browser utility functions
-function $getMouseOffset(target, ev){
-    ev = ev || _window.event;
-    var docPos    = $getPosition(target);
-    var mousePos  = $mouseCoords(ev);
-    return {x:mousePos.x - docPos.x, y:mousePos.y - docPos.y};
-}
-
 function $getPosition(e){
     var left = 0,
         top  = 0,
         width = e.width || e.offsetWidth,
-        height = e.height || e.offsetHeight,
-        scroll = document.scrollingElement.scrollTop
+        height = e.height || e.offsetHeight
 
     while (e.offsetParent){
         left += e.offsetLeft
@@ -61,16 +65,9 @@ function $getPosition(e){
     return {left: left, top: top, width: width, height: height}
 }
 
-function trace(msg){
-    var elt = document.getElementById("trace")
-    if(elt){
-        elt.innerText += msg
-    }
-}
-
-function $mouseCoords(ev){
+var $mouseCoords = $B.$mouseCoords = function(ev){
     if(ev.type.startsWith("touch")){
-        var res = {}
+        let res = {}
         res.x = _b_.int.$factory(ev.touches[0].screenX)
         res.y = _b_.int.$factory(ev.touches[0].screenY)
         res.__getattr__ = function(attr){return this[attr]}
@@ -79,7 +76,9 @@ function $mouseCoords(ev){
     }
     var posx = 0,
         posy = 0
-    if(!ev){var ev = _window.event}
+    if(!ev){
+        ev = _window.event
+    }
     if(ev.pageX || ev.pageY){
         posx = ev.pageX
         posy = ev.pageY
@@ -89,17 +88,13 @@ function $mouseCoords(ev){
         posy = ev.clientY + document.body.scrollTop +
             document.documentElement.scrollTop
     }
-    var res = {}
+    let res = {}
     res.x = _b_.int.$factory(posx)
     res.y = _b_.int.$factory(posy)
     res.__getattr__ = function(attr){return this[attr]}
     res.__class__ = "MouseCoords"
     return res
 }
-
-var $DOMNodeAttrs = ["nodeName", "nodeValue", "nodeType", "parentNode",
-    "childNodes", "firstChild", "lastChild", "previousSibling", "nextSibling",
-    "attributes", "ownerDocument"]
 
 $B.$isNode = function(o){
     // copied from http://stackoverflow.com/questions/384286/
@@ -143,12 +138,19 @@ var $DOMEventAttrs_IE = ["altKey", "altLeft", "button", "cancelBubble",
 
 $B.$isEvent = function(obj){
     var flag = true
-    for(var i = 0; i < $DOMEventAttrs_W3C.length; i++){
-        if(obj[$DOMEventAttrs_W3C[i]] === undefined){flag = false; break}
+    for(let attr of $DOMEventAttrs_W3C){
+        if(obj[attr] === undefined){
+            flag = false
+            break
+        }
     }
-    if(flag){return true}
-    for(var i = 0; i < $DOMEventAttrs_IE.length; i++){
-        if(obj[$DOMEventAttrs_IE[i]] === undefined){return false}
+    if(flag){
+        return true
+    }
+    for(let attr of $DOMEventAttrs_IE){
+        if(obj[attr] === undefined){
+            return false
+        }
     }
     return true
 }
@@ -289,9 +291,9 @@ Attributes.items = function(){
         attrs = $.self.elt.attributes,
         values = []
     for(var i = 0; i < attrs.length; i++){
-        values.push([attrs[i].name, attrs[i].value])
+        values.push($B.$list([attrs[i].name, attrs[i].value]))
     }
-    return _b_.list.__iter__(values)
+    return _b_.list.__iter__($B.$list(values))
 }
 
 Attributes.values = function(){
@@ -302,8 +304,9 @@ Attributes.values = function(){
     for(var i = 0; i < attrs.length; i++){
         values.push(attrs[i].value)
     }
-    return _b_.list.__iter__(values)
+    return _b_.list.__iter__($B.$list(values))
 }
+
 $B.set_func_names(Attributes, "<dom>")
 
 // Class for DOM events
@@ -327,6 +330,10 @@ DOMEvent.__new__ = function(cls, evt_name){
     return ev
 }
 
+DOMEvent.__setattr__ = function(self, attr, value){
+    self[attr] = value
+}
+
 function dom2svg(svg_elt, coords){
     // Used to compute the mouse position relatively to the upper left corner
     // of an SVG element, based on the coordinates coords.x, coords.y that are
@@ -337,41 +344,49 @@ function dom2svg(svg_elt, coords){
     return pt.matrixTransform(svg_elt.getScreenCTM().inverse())
 }
 
-DOMEvent.__getattribute__ = function(self, attr){
+DOMEvent.__getattribute__ = function(ev, attr){
     switch(attr) {
         case '__repr__':
         case '__str__':
             return function(){return '<DOMEvent object>'}
         case 'x':
-            return $mouseCoords(self).x
+            return $mouseCoords(ev).x
         case 'y':
-            return $mouseCoords(self).y
+            return $mouseCoords(ev).y
         case 'data':
-            if(self.dataTransfer !== null){
-                return Clipboard.$factory(self.dataTransfer)
+            if(ev.dataTransfer !== null && ev.dataTransfer !== undefined){
+                return Clipboard.$factory(ev.dataTransfer)
+            }else if(typeof Worker !== 'undefined' && ev.target instanceof Worker){
+                // main script receiving a MessageEvent from a worker
+                return $B.structuredclone2pyobj(ev.data)
+            }else if(typeof DedicatedWorkerGlobalScope !== 'undefined' &&
+                    ev.target instanceof DedicatedWorkerGlobalScope){
+                // web worker receiving a message from the main script
+                return $B.structuredclone2pyobj(ev.data)
             }
-            return $B.$JS2Py(self['data'])
+            return convertDomValue(ev.data)
         case 'target':
-            if(self.target !== undefined){
-                return DOMNode.$factory(self.target)
+            if(ev.target !== undefined){
+                return DOMNode.$factory(ev.target)
             }
+            break
         case 'char':
-            return String.fromCharCode(self.which)
+            return String.fromCharCode(ev.which)
         case 'svgX':
-            if(self.target instanceof SVGSVGElement){
-                return Math.floor(dom2svg(self.target, $mouseCoords(self)).x)
+            if(ev.target instanceof SVGSVGElement){
+                return Math.floor(dom2svg(ev.target, $mouseCoords(ev)).x)
             }
             throw _b_.AttributeError.$factory("event target is not an SVG " +
                 "element")
         case 'svgY':
-            if(self.target instanceof SVGSVGElement){
-                return Math.floor(dom2svg(self.target, $mouseCoords(self)).y)
+            if(ev.target instanceof SVGSVGElement){
+                return Math.floor(dom2svg(ev.target, $mouseCoords(self)).y)
             }
             throw _b_.AttributeError.$factory("event target is not an SVG " +
                 "element")
     }
 
-    var res =  self[attr]
+    var res =  ev[attr]
     if(res !== undefined){
         if(typeof res == "function"){
             var func = function(){
@@ -379,7 +394,7 @@ DOMEvent.__getattribute__ = function(self, attr){
                 for(var i = 0; i < arguments.length; i++){
                     args.push($B.pyobj2jsobj(arguments[i]))
                 }
-                return res.apply(self, arguments)
+                return res.apply(ev, arguments)
             }
             func.$infos = {
                 __name__: res.name,
@@ -387,9 +402,9 @@ DOMEvent.__getattribute__ = function(self, attr){
             }
             return func
         }
-        return $B.$JS2Py(res)
+        return convertDomValue(res)
     }
-    throw $B.attr_error(attr, self)
+    throw $B.attr_error(attr, ev)
 }
 
 // Function to transform a DOM event into an instance of DOMEvent
@@ -427,79 +442,9 @@ Clipboard.__setitem__ = function(self, name, value){
 
 $B.set_func_names(Clipboard, "<dom>")
 
-function $EventsList(elt, evt, arg){
-    // handles a list of callback fuctions for the event evt of element elt
-    // method .remove(callback) removes the callback from the list, and
-    // removes the event listener
-    this.elt = elt
-    this.evt = evt
-    if(_b_.isinstance(arg, _b_.list)){this.callbacks = arg}
-    else{this.callbacks = [arg]}
-    this.remove = function(callback){
-        var found = false
-        for(var i = 0; i < this.callbacks.length; i++){
-            if(this.callbacks[i] === callback){
-                found = true
-                this.callback.splice(i, 1)
-                this.elt.removeEventListener(this.evt, callback, false)
-                break
-            }
-        }
-        if(! found){throw _b_.KeyError.$factory("not found")}
-    }
-}
-
-var OpenFile = $B.OpenFile = $B.make_class('OpenFile')
-OpenFile.__module__ = "<pydom>"
-
-OpenFile.$factory = function(file, mode, encoding) {
-    var res = {
-        __class__: $OpenFileDict,
-        file: file,
-        reader: new FileReader()
-    }
-    if(mode === "r"){
-        res.reader.readAsText(file, encoding)
-    }else if(mode === "rb"){
-        res.reader.readAsBinaryString(file)
-    }
-    return res
-}
-
-OpenFile.__getattr__ = function(self, attr) {
-    if(self["get_" + attr] !== undefined){return self["get_" + attr]}
-    return self.reader[attr]
-}
-
-OpenFile.__setattr__ = function(self, attr, value) {
-    var obj = self.reader
-    if(attr.substr(0,2) == "on"){ // event
-        var callback = function(ev) { return value($DOMEvent(ev)) }
-        obj.addEventListener(attr.substr(2), callback)
-    }else if("set_" + attr in obj){
-        return obj["set_" + attr](value)
-    }else if(attr in obj){
-        obj[attr] = value
-    }else{
-        _b_.setattr(obj, attr, value)
-    }
-}
-
-$B.set_func_names(OpenFile, "<dom>")
-
-var dom = {
-    File : function(){},
-    FileReader : function(){}
-    }
-dom.File.__class__ = _b_.type
-dom.File.__str__ = function(){return "<class 'File'>"}
-dom.FileReader.__class__ = _b_.type
-dom.FileReader.__str__ = function(){return "<class 'FileReader'>"}
-
 
 // Class for DOM nodes
-
-var DOMNode = $B.make_class('browser',
+var DOMNode = $B.make_class('DOMNode',
     function(elt){
         return elt
     }
@@ -508,31 +453,35 @@ var DOMNode = $B.make_class('browser',
 DOMNode.__add__ = function(self, other){
     // adding another element to self returns an instance of TagSum
     var res = TagSum.$factory()
-    res.children = [self], pos = 1
-    if(_b_.isinstance(other, TagSum)){
+    res.children = [self]
+    var pos = 1
+    if($B.$isinstance(other, TagSum)){
         res.children = res.children.concat(other.children)
-    }else if(_b_.isinstance(other,[_b_.str, _b_.int, _b_.float, _b_.list,
+    }else if($B.$isinstance(other,[_b_.str, _b_.int, _b_.float, _b_.list,
                                 _b_.dict, _b_.set, _b_.tuple])){
         res.children[pos++] = DOMNode.$factory(
             document.createTextNode(_b_.str.$factory(other)))
-    }else if(_b_.isinstance(other, DOMNode)){
+    }else if($B.$isinstance(other, DOMNode)){
         res.children[pos++] = other
     }else{
         // If other is iterable, add all items
-        try{res.children = res.children.concat(_b_.list.$factory(other))}
-        catch(err){throw _b_.TypeError.$factory("can't add '" +
+        try{
+            res.children = res.children.concat(_b_.list.$factory(other))
+        }catch(err){throw _b_.TypeError.$factory("can't add '" +
             $B.class_name(other) + "' object to DOMNode instance")
         }
     }
     return res
 }
 
-DOMNode.__bool__ = function(self){return true}
+DOMNode.__bool__ = function(){
+    return true
+}
 
 DOMNode.__contains__ = function(self, key){
     // For document, if key is a string, "key in document" tells if an element
     // with id "key" is in the document
-    if(self.nodeType == 9 && typeof key == "string"){
+    if(self.nodeType == Node.DOCUMENT_NODE && typeof key == "string"){
         return document.getElementById(key) !== null
     }
     if(self.length !== undefined && typeof self.item == "function"){
@@ -562,7 +511,7 @@ DOMNode.__delattr__ = function(self, attr){
 }
 
 DOMNode.__delitem__ = function(self, key){
-    if(self.nodeType == 9){ // document : remove by id
+    if(self.nodeType == Node.DOCUMENT_NODE){ // document : remove by id
         var res = self.getElementById(key)
         if(res){res.parentNode.removeChild(res)}
         else{throw _b_.KeyError.$factory(key)}
@@ -574,11 +523,16 @@ DOMNode.__delitem__ = function(self, key){
 DOMNode.__dir__ = function(self){
     var res = []
     // generic DOM attributes
-    for(var attr in self){
+    for(let attr in self){
         if(attr.charAt(0) != "$"){res.push(attr)}
     }
+    for(let attr in DOMNode){
+        if(res.indexOf(attr) == -1){
+            res.push(attr)
+        }
+    }
     res.sort()
-    return res
+    return $B.$list(res)
 }
 
 DOMNode.__eq__ = function(self, other){
@@ -620,7 +574,7 @@ DOMNode.__getattribute__ = function(self, attr){
                         return 0
                     }
                 }
-                var prop = Math.floor(parseFloat(computed) + 0.5)
+                let prop = Math.floor(parseFloat(computed) + 0.5)
                 return isNaN(prop) ? 0 : prop
             }else if(self.style[attr]){
                 return parseInt(self.style[attr])
@@ -631,27 +585,31 @@ DOMNode.__getattribute__ = function(self, attr){
         case "x":
         case "y":
             if(! (self instanceof SVGElement)){
-                var pos = $getPosition(self)
+                let pos = $getPosition(self)
                 return attr == "x" ? pos.left : pos.top
             }
-        case "clear":
+            break
         case "closest":
+            if(! self[attr]){
+                throw $B.attr_error(self, attr)
+            }
             return function(){
                 return DOMNode[attr].call(null, self, ...arguments)
             }
         case "headers":
-          if(self.nodeType == 9){
+          if(self.nodeType == Node.DOCUMENT_NODE){
               // HTTP headers
-              var req = new XMLHttpRequest();
+              let req = new XMLHttpRequest();
               req.open("GET", document.location, false)
               req.send(null);
               var headers = req.getAllResponseHeaders()
               headers = headers.split("\r\n")
-              var res = $B.empty_dict()
-              for(var i = 0; i < headers.length; i++){
-                  var header = headers[i]
-                  if(header.strip().length == 0){continue}
-                  var pos = header.search(":")
+              let res = $B.empty_dict()
+              for(let header of headers){
+                  if(header.strip().length == 0){
+                      continue
+                  }
+                  let pos = header.search(":")
                   res.__setitem__(header.substr(0, pos),
                       header.substr(pos + 1).lstrip())
               }
@@ -671,22 +629,25 @@ DOMNode.__getattribute__ = function(self, attr){
     if(attr == "select" && self.nodeType == 1 &&
             ["INPUT", "TEXTAREA"].indexOf(self.tagName.toUpperCase()) > -1){
         return function(selector){
-            if(selector === undefined){self.select(); return _b_.None}
+            if(selector === undefined){
+                self.select()
+                return _b_.None
+            }
             return DOMNode.select(self, selector)
         }
     }
-    if(attr == "query" && self.nodeType == 9){
+    if(attr == "query" && self.nodeType == Node.DOCUMENT_NODE){
         // document.query is a instance of class Query, representing the
         // Query String
-        var res = {
+        let res = {
             __class__: Query,
-            _keys : [],
+            _keys : $B.$list([]),
             _values : {}
         }
-        var qs = location.search.substr(1).split('&')
+        let qs = location.search.substr(1).split('&')
         if(location.search != ""){
-            for(var i = 0; i < qs.length; i++){
-                var pos = qs[i].search("="),
+            for(let i = 0; i < qs.length; i++){
+                let pos = qs[i].search("="),
                     elts = [qs[i].substr(0, pos), qs[i].substr(pos + 1)],
                     key = decodeURIComponent(elts[0]),
                     value = decodeURIComponent(elts[1])
@@ -729,9 +690,9 @@ DOMNode.__getattribute__ = function(self, attr){
                 }
             }
             if(show_message){
-                var from_class = $B.$getattr(self.__class__, attr, _b_.None)
+                from_class = $B.$getattr(self.__class__, attr, _b_.None)
                 if(from_class !== _b_.None){
-                    var frame = $B.last($B.frames_stack),
+                    var frame = $B.frame_obj.frame,
                         line = frame.$lineno
                     console.info("Warning: line " + line + ", " + self.tagName +
                         " element has instance attribute '" + attr + "' set." +
@@ -751,7 +712,7 @@ DOMNode.__getattribute__ = function(self, attr){
                 var save_class = self.__class__
                 self.__class__ = ce.$cls
                 try{
-                    var res = _b_.object.__getattribute__(self, attr)
+                    let res = _b_.object.__getattribute__(self, attr)
                     self.__class__ = save_class
                     return res
                 }catch(err){
@@ -770,7 +731,7 @@ DOMNode.__getattribute__ = function(self, attr){
 
     if(res !== undefined){
         if(res === null){
-            return _b_.None
+            return res
         }
         if(typeof res === "function"){
             if(self.__class__ && self.__class__.$webcomponent){
@@ -782,7 +743,7 @@ DOMNode.__getattribute__ = function(self, attr){
                     return res.bind(self)
                 }
             }
-            if(res.$is_func){
+            if(res.$function_infos){
                 // If the attribute was set in __setattr__ (elt.foo = func),
                 // then getattr(elt, "foo") must be "func"
                 return res
@@ -791,7 +752,7 @@ DOMNode.__getattribute__ = function(self, attr){
             // that produces a Python error message in case of failure.
             var func = (function(f, elt){
                 return function(){
-                    var args = [], pos = 0
+                    var args = []
                     for(var i = 0; i < arguments.length; i++){
                         var arg = arguments[i]
                         if(typeof arg == "function"){
@@ -804,10 +765,11 @@ DOMNode.__getattribute__ = function(self, attr){
                             //
                             // it is the same function "f" that is added and
                             // then removed (cf. issue #1157)
+                            var f1
                             if(arg.$cache){
-                                var f1 = arg.$cache
+                                f1 = arg.$cache
                             }else{
-                                var f1 = function(dest_fn){
+                                f1 = function(dest_fn){
                                     return function(){
                                         try{
                                             return dest_fn.apply(null, arguments)
@@ -824,7 +786,7 @@ DOMNode.__getattribute__ = function(self, attr){
                         }
                     }
                     var result = f.apply(elt, args)
-                    return $B.$JS2Py(result)
+                    return convertDomValue(result)
                 }
             })(res, self)
             func.$infos = {__name__ : attr, __qualname__: attr}
@@ -833,7 +795,7 @@ DOMNode.__getattribute__ = function(self, attr){
             return func
         }
         if(attr == 'style'){
-            return $B.JSObj.$factory(self[attr])
+            return $B.jsobj2pyobj(self[attr])
         }
         if(Array.isArray(res)){ // issue #619
             return res
@@ -844,18 +806,18 @@ DOMNode.__getattribute__ = function(self, attr){
 }
 
 DOMNode.__getitem__ = function(self, key){
-    if(self.nodeType == 9){ // Document
+    if(self.nodeType == Node.DOCUMENT_NODE){ // Document
         if(typeof key.valueOf() == "string"){
-            var res = self.getElementById(key)
+            let res = self.getElementById(key)
             if(res){
                 return DOMNode.$factory(res)
             }
             throw _b_.KeyError.$factory(key)
         }else{
             try{
-                var elts = self.getElementsByTagName(key.__name__),
+                let elts = self.getElementsByTagName(key.__name__),
                     res = []
-                    for(var i = 0; i < elts.length; i++){
+                    for(let i = 0; i < elts.length; i++){
                         res.push(DOMNode.$factory(elts[i]))
                     }
                     return res
@@ -870,7 +832,7 @@ DOMNode.__getitem__ = function(self, key){
                 if(key_to_int < 0){
                     key_to_int += self.length
                 }
-                var res = DOMNode.$factory(self.item(key_to_int))
+                let res = DOMNode.$factory(self.item(key_to_int))
                 if(res === undefined){
                     throw _b_.KeyError.$factory(key)
                 }
@@ -878,8 +840,8 @@ DOMNode.__getitem__ = function(self, key){
         }else if(typeof key == "string" &&
                  self.attributes &&
                  typeof self.attributes.getNamedItem == "function"){
-             var attr = self.attributes.getNamedItem(key)
-             if(!!attr){
+             let attr = self.attributes.getNamedItem(key)
+             if(attr !== null){
                  return attr.value
              }
              throw _b_.KeyError.$factory(key)
@@ -895,15 +857,14 @@ DOMNode.__hash__ = function(self){
 
 DOMNode.__iter__ = function(self){
     // iteration on a Node
+    var items = []
     if(self.length !== undefined && typeof self.item == "function"){
-        var items = []
-        for(var i = 0, len = self.length; i < len; i++){
+        for(let i = 0, len = self.length; i < len; i++){
             items.push(DOMNode.$factory(self.item(i)))
         }
     }else if(self.childNodes !== undefined){
-        var items = []
-        for(var i = 0, len = self.childNodes.length; i < len; i++){
-            items.push(DOMNode.$factory(self.childNodes[i]))
+        for(let child of self.childNodes){
+            items.push(DOMNode.$factory(child))
         }
     }
     return $B.$iter(items)
@@ -911,10 +872,10 @@ DOMNode.__iter__ = function(self){
 
 DOMNode.__le__ = function(self, other){
     // for document, append child to document.body
-    if(self.nodeType == 9){
+    if(self.nodeType == Node.DOCUMENT_NODE){
         self = self.body
     }
-    if(_b_.isinstance(other, TagSum)){
+    if($B.$isinstance(other, TagSum)){
         for(var i = 0; i < other.children.length; i++){
             self.appendChild(other.children[i])
         }
@@ -943,7 +904,7 @@ DOMNode.__len__ = function(self){
 }
 
 DOMNode.__mul__ = function(self,other){
-    if(_b_.isinstance(other, _b_.int) && other.valueOf() > 0){
+    if($B.$isinstance(other, _b_.int) && other.valueOf() > 0){
         var res = TagSum.$factory()
         var pos = res.children.length
         for(var i = 0; i < other.valueOf(); i++){
@@ -979,10 +940,9 @@ DOMNode.__str__ = DOMNode.__repr__ = function(self){
         attrs_str = "",
         items = []
     if(attrs !== undefined){
-        var items = []
-        for(var i = 0; i < attrs.length; i++){
-            items.push(attrs[i].name + '="' +
-                self.getAttributeNS(null, attrs[i].name) + '"')
+        for(let attr of attrs){
+            items.push(attr.name + '="' +
+                self.getAttributeNS(null, attr.name) + '"')
         }
     }
 
@@ -1004,85 +964,77 @@ DOMNode.__str__ = DOMNode.__repr__ = function(self){
 DOMNode.__setattr__ = function(self, attr, value){
     // Sets the *property* attr of the underlying element (not its
     // *attribute*)
-
-    if(attr.substr(0,2) == "on" && attr.length > 2){ // event
-        if(!$B.$bool(value)){ // remove all callbacks attached to event
-            DOMNode.unbind(self, attr.substr(2))
-        }else{
-            // value is a function taking an event as argument
-            DOMNode.bind(self, attr.substr(2), value)
-        }
-    }else{
-        switch(attr){
-            case "left":
-            case "top":
-            case "width":
-            case "height":
-                if(_b_.isinstance(value, [_b_.int, _b_.float]) && self.nodeType == 1){
-                    self.style[attr] = value + "px"
-                    return _b_.None
-                }else{
-                    throw _b_.ValueError.$factory(attr + " value should be" +
-                        " an integer or float, not " + $B.class_name(value))
-                }
-                break
-        }
-        if(DOMNode["set_" + attr] !== undefined) {
-          return DOMNode["set_" + attr](self, value)
-        }
-
-        function warn(msg){
-            console.log(msg)
-            var frame = $B.last($B.frames_stack)
-            if(! frame){
-                return
-            }
-            if($B.debug > 0){
-                var file = frame.__file__,
-                    lineno = frame.$lineno
-                console.log("module", frame[2], "line", lineno)
-                if($B.file_cache.hasOwnProperty(file)){
-                    var src = $B.file_cache[file]
-                    console.log(src.split("\n")[lineno - 1])
-                }
+    switch(attr){
+        case "left":
+        case "top":
+        case "width":
+        case "height":
+            if($B.$isinstance(value, [_b_.int, _b_.float]) && self.nodeType == 1){
+                self.style[attr] = value + "px"
+                return _b_.None
             }else{
-                console.log("module", frame[2])
+                throw _b_.ValueError.$factory(attr + " value should be" +
+                    " an integer or float, not " + $B.class_name(value))
             }
-        }
-
-        // Warns if attr is a descriptor of the element's prototype
-        // and it is not writable
-        var proto = Object.getPrototypeOf(self),
-            nb = 0
-        while(!!proto && proto !== Object.prototype && nb++ < 10){
-            var descriptors = Object.getOwnPropertyDescriptors(proto)
-            if(!!descriptors &&
-                    typeof descriptors.hasOwnProperty == "function"){
-                if(descriptors.hasOwnProperty(attr)){
-                    if(!descriptors[attr].writable &&
-                            descriptors[attr].set === undefined){
-                        warn("Warning: property '" + attr +
-                            "' is not writable. Use element.attrs['" +
-                            attr +"'] instead.")
-                    }
-                    break
-                }
-            }else{
-                break
-            }
-            proto = Object.getPrototypeOf(proto)
-        }
-
-        // Warns if attribute is a property of style
-        if(self.style && self.style[attr] !== undefined){
-            warn("Warning: '" + attr + "' is a property of element.style")
-        }
-
-        // Set the property
-        self[attr] = py_immutable_to_js(value)
-
-        return _b_.None
     }
+    if(DOMNode["set_" + attr] !== undefined) {
+      return DOMNode["set_" + attr](self, value)
+    }
+
+    function warn(msg){
+        console.log(msg)
+        var frame = $B.frame_obj.frame
+        if(! frame){
+            return
+        }
+        if($B.get_option('debug') > 0){
+            var file = frame.__file__,
+                lineno = frame.$lineno
+            console.log("module", frame[2], "line", lineno)
+            if($B.file_cache.hasOwnProperty(file)){
+                var src = $B.file_cache[file]
+                console.log(src.split("\n")[lineno - 1])
+            }
+        }else{
+            console.log("module", frame[2])
+        }
+    }
+
+    // Warns if attr is a descriptor of the element's prototype
+    // and it is not writable
+    var proto = Object.getPrototypeOf(self),
+        nb = 0
+    while(!!proto && proto !== Object.prototype && nb++ < 10){
+        var descriptors = Object.getOwnPropertyDescriptors(proto)
+        if(!!descriptors &&
+                typeof descriptors.hasOwnProperty == "function"){
+            if(descriptors.hasOwnProperty(attr)){
+                if(!descriptors[attr].writable &&
+                        descriptors[attr].set === undefined){
+                    warn("Warning: property '" + attr +
+                        "' is not writable. Use element.attrs['" +
+                        attr +"'] instead.")
+                }
+                break
+            }
+        }else{
+            break
+        }
+        proto = Object.getPrototypeOf(proto)
+    }
+
+    // Warns if attribute is a property of style
+    if(self.style && self.style[attr] !== undefined &&
+            attr != 'src' // set by Chrome
+            ){
+        warn("Warning: '" + attr + "' is a property of element.style")
+    }
+
+    // Set the property
+    self[attr] = py_immutable_to_js(value)
+
+    return _b_.None
+
 }
 
 DOMNode.__setitem__ = function(self, key, value){
@@ -1121,7 +1073,7 @@ DOMNode.abs_top = {
 
 DOMNode.attach = DOMNode.__le__ // For allergics to syntax elt <= child
 
-DOMNode.bind = function(self, event){
+DOMNode.bind = function(){
     // bind functions to the event (event = "click", "mouseover" etc.)
     var $ = $B.args("bind", 4,
             {self: null, event: null, func: null, options: null},
@@ -1141,7 +1093,7 @@ DOMNode.bind = function(self, event){
     var callback = (function(f){
         return function(ev){
             try{
-                return f($DOMEvent(ev))
+                return $B.$call(f)($DOMEvent(ev))
             }catch(err){
                 if(err.__class__ !== undefined){
                     $B.handle_error(err)
@@ -1170,37 +1122,44 @@ DOMNode.bind = function(self, event){
 
 DOMNode.children = function(self){
     var res = []
-    if(self.nodeType == 9){
+    if(self.nodeType == Node.DOCUMENT_NODE){
         self = self.body
     }
     for(var child of self.children){
         res.push(DOMNode.$factory(child))
     }
-    return res
+    return $B.$list(res)
 }
 
 
 DOMNode.child_nodes = function(self){
     var res = []
-    if(self.nodeType == 9){self = self.body}
-    for(child of self.childNodes){
+    if(self.nodeType == Node.DOCUMENT_NODE){
+        self = self.body
+    }
+    for(var child of self.childNodes){
         res.push(DOMNode.$factory(child))
     }
-    return res
+    return $B.$list(res)
 }
 
-DOMNode.clear = function(self){
+DOMNode.clear = function(){
     // remove all children elements
     var $ = $B.args("clear", 1, {self: null}, ["self"], arguments, {},
-                null, null)
-    if(self.nodeType == 9){self = self.body}
+                null, null),
+        self = $.self
+    if(self.nodeType == Node.DOCUMENT_NODE){
+        self = self.body
+    }
     while(self.firstChild){
        self.removeChild(self.firstChild)
     }
 }
 
 DOMNode.Class = function(self){
-    if(self.className !== undefined){return self.className}
+    if(self.className !== undefined){
+        return self.className
+    }
     return _b_.None
 }
 
@@ -1221,11 +1180,17 @@ DOMNode.clone = function(self){
     return res
 }
 
-DOMNode.closest = function(self, selector){
+DOMNode.closest = function(){
     // Returns the first parent of self with specified CSS selector
     // Raises KeyError if not found
     var $ = $B.args("closest", 2, {self: null, selector: null},
-                ["self", "selector"], arguments, {}, null, null)
+                ["self", "selector"], arguments, {}, null, null),
+        self = $.self,
+        selector = $.selector
+    if(self.closest === undefined){
+        throw _b_.AttributeError.$factory(_b_.str.$factory(self) +
+            " has no attribute 'closest'")
+    }
     var res = self.closest(selector)
     if(res === null){
         throw _b_.KeyError.$factory("no parent with selector " + selector)
@@ -1246,11 +1211,8 @@ DOMNode.bindings = function(self){
 DOMNode.events = function(self, event){
     self.$events = self.$events || {}
     var evt_list = self.$events[event] = self.$events[event] || [],
-        callbacks = []
-    evt_list.forEach(function(evt){
-        callbacks.push(evt[1])
-    })
-    return callbacks
+        funcs = evt_list.map(x => x[0])
+    return $B.$list(funcs)
 }
 
 function make_list(node_list){
@@ -1258,7 +1220,7 @@ function make_list(node_list){
     for(var i = 0; i < node_list.length; i++){
         res.push(DOMNode.$factory(node_list[i]))
     }
-    return res
+    return $B.$list(res)
 }
 
 DOMNode.get = function(self){
@@ -1266,9 +1228,11 @@ DOMNode.get = function(self){
     // with specified keys/values
     // key can be 'id','name' or 'selector'
     var args = []
-    for(var i = 1; i < arguments.length; i++){args.push(arguments[i])}
+    for(var i = 1; i < arguments.length; i++){
+        args.push(arguments[i])
+    }
     var $ns = $B.args("get", 0, {}, [], args, {}, null, "kw"),
-        $dict = $ns.kw.$jsobj
+        $dict = _b_.dict.$to_obj($ns.kw)
 
     if($dict["name"] !== undefined){
         if(self.getElementsByName === undefined){
@@ -1298,7 +1262,7 @@ DOMNode.get = function(self){
         }
         var id_res = document.getElementById($dict['id'])
         if(! id_res){return []}
-        return [DOMNode.$factory(id_res)]
+        return $B.$list([DOMNode.$factory(id_res)])
     }
     if($dict["selector"] !== undefined){
         if(self.querySelectorAll === undefined){
@@ -1307,7 +1271,7 @@ DOMNode.get = function(self){
         }
         return make_list(self.querySelectorAll($dict['selector']))
     }
-    return res
+    return $B.$list([])
 }
 
 DOMNode.getContext = function(self){ // for CANVAS tag
@@ -1315,7 +1279,7 @@ DOMNode.getContext = function(self){ // for CANVAS tag
       throw _b_.AttributeError.$factory("object has no attribute 'getContext'")
     }
     return function(ctx){
-        return $B.JSObj.$factory(self.getContext(ctx))
+        return $B.jsobj2pyobj(self.getContext(ctx))
     }
 }
 
@@ -1328,7 +1292,7 @@ DOMNode.getSelectionRange = function(self){ // for TEXTAREA
 DOMNode.html = function(self){
     var res = self.innerHTML
     if(res === undefined){
-        if(self.nodeType == 9 && self.body){
+        if(self.nodeType == Node.DOCUMENT_NODE && self.body){
             res = self.body.innerHTML
         }else{
             res = _b_.None
@@ -1359,10 +1323,6 @@ DOMNode.inside = function(self, other){
         elt = elt.parentNode
         if(! elt){return false}
     }
-}
-
-DOMNode.options = function(self){ // for SELECT tag
-    return new $OptionsClass(self)
 }
 
 DOMNode.parent = function(self){
@@ -1420,13 +1380,13 @@ DOMNode.select_one = function(self, selector){
     return DOMNode.$factory(res)
 }
 
-DOMNode.setSelectionRange = function(self){ // for TEXTAREA
+DOMNode.setSelectionRange = function(){ // for TEXTAREA
     if(this["setSelectionRange"] !== undefined){
         return (function(obj){
             return function(){
                 return obj.setSelectionRange.apply(obj, arguments)
             }})(this)
-    }else if (this["createTextRange"] !== undefined){
+    }else if(this["createTextRange"] !== undefined){
         return (function(obj){
             return function(start_pos, end_pos){
                 if(end_pos == undefined){end_pos = start_pos}
@@ -1445,7 +1405,9 @@ DOMNode.set_class_name = function(self, arg){
 }
 
 DOMNode.set_html = function(self, value){
-    if(self.nodeType == 9){self = self.body}
+    if(self.nodeType == Node.DOCUMENT_NODE){
+        self = self.body
+    }
     self.innerHTML = _b_.str.$factory(value)
 }
 
@@ -1453,7 +1415,7 @@ DOMNode.set_style = function(self, style){ // style is a dict
     if(typeof style === 'string'){
         self.style = style
         return
-    }else if(!_b_.isinstance(style, _b_.dict)){
+    }else if(!$B.$isinstance(style, _b_.dict)){
         throw _b_.TypeError.$factory("style must be str or dict, not " +
             $B.class_name(style))
     }
@@ -1471,7 +1433,7 @@ DOMNode.set_style = function(self, style){ // style is a dict
                 case "width":
                 case "height":
                 case "borderWidth":
-                    if(_b_.isinstance(value,_b_.int)){value = value + "px"}
+                    if($B.$isinstance(value,_b_.int)){value = value + "px"}
             }
             self.style[key] = value
         }
@@ -1479,7 +1441,9 @@ DOMNode.set_style = function(self, style){ // style is a dict
 }
 
 DOMNode.set_text = function(self,value){
-    if(self.nodeType == 9){self = self.body}
+    if(self.nodeType == Node.DOCUMENT_NODE){
+        self = self.body
+    }
     self.innerText = _b_.str.$factory(value)
     self.textContent = _b_.str.$factory(value)
 }
@@ -1493,7 +1457,9 @@ DOMNode.submit = function(self){ // for FORM
 }
 
 DOMNode.text = function(self){
-    if(self.nodeType == 9){self = self.body}
+    if(self.nodeType == Node.DOCUMENT_NODE){
+        self = self.body
+    }
     var res = self.innerText || self.textContent
     if(res === null){
         res = _b_.None
@@ -1521,12 +1487,13 @@ DOMNode.unbind = function(self, event){
     // unbind functions from the event (event = "click", "mouseover" etc.)
     // if no function is specified, remove all callback functions
     // If no event is specified, remove all callbacks for all events
-    self.$events = self.$events || {}
-    if(self.$events === {}){return _b_.None}
+    if(! self.$events){
+        return _b_.None
+    }
 
     if(event === undefined){
-        for(var event in self.$events){
-            DOMNode.unbind(self, event)
+        for(let evt in self.$events){
+            DOMNode.unbind(self, evt)
         }
         return _b_.None
     }
@@ -1539,50 +1506,34 @@ DOMNode.unbind = function(self, event){
     var events = self.$events[event]
     if(arguments.length == 2){
         // remove all callback functions
-        for(var i = 0; i < events.length; i++){
-            var callback = events[i][1]
+        for(let evt of events){
+            var callback = evt[1]
             self.removeEventListener(event, callback, false)
         }
         self.$events[event] = []
         return _b_.None
     }
 
-    for(var i = 2; i < arguments.length; i++){
-        var callback = arguments[i],
-            flag = false,
-            func = callback.$func
-        if(func === undefined){
-            // If a callback is created by an assignment to an existing
-            // function
-            var found = false
-            for(var j = 0; j < events.length; j++){
-                if(events[j][0] === callback){
-                    var func = callback,
-                        found = true
-                    break
-                }
-            }
-            if(!found){
-                throw _b_.TypeError.$factory("function is not an event callback")
-            }
-        }
-        for(var j = 0; j < events.length; j++){
-            if($B.$getattr(func, '__eq__')(events[j][0])){
-                var callback = events[j][1]
-                self.removeEventListener(event, callback, false)
+    for(let i = 2; i < arguments.length; i++){
+        let func = arguments[i],
+            flag = false
+        for(let j = 0, len = events.length; j < len; j++){
+            if($B.is_or_equals(func, events[j][0])){
+                let _callback = events[j][1]
+                self.removeEventListener(event, _callback, false)
                 events.splice(j, 1)
                 flag = true
                 break
             }
         }
         // The indicated func was not found, error is thrown
-        if(!flag){
+        if(! flag){
             throw _b_.KeyError.$factory('missing callback for event ' + event)
         }
     }
 }
 
-$B.set_func_names(DOMNode, "browser")
+$B.set_func_names(DOMNode, "builtins")
 
 // return query string as an object with methods to access keys and values
 // same interface as cgi.FieldStorage, with getvalue / getlist / getfirst
@@ -1641,15 +1592,16 @@ Query.getfirst = function(self, key, _default){
 
 Query.getlist = function(self, key){
     // always return a list
-    var result = self._values[key]
-    if(result === undefined){return []}
-    return result
+    return $B.$list(self._values[key] ?? [])
 }
 
 Query.getvalue = function(self, key, _default){
-    try{return Query.__getitem__(self, key)}
-    catch(err){
-        if(_default === undefined){return _b_.None}
+    try{
+        return Query.__getitem__(self, key)
+    }catch(err){
+        if(_default === undefined){
+            return _b_.None
+        }
         return _default
     }
 }
@@ -1678,11 +1630,13 @@ TagSum.appendChild = function(self, child){
 TagSum.__add__ = function(self, other){
     if($B.get_class(other) === TagSum){
         self.children = self.children.concat(other.children)
-    }else if(_b_.isinstance(other, [_b_.str, _b_.int, _b_.float,
+    }else if($B.$isinstance(other, [_b_.str, _b_.int, _b_.float,
                                _b_.dict, _b_.set, _b_.list])){
         self.children = self.children.concat(
             DOMNode.$factory(document.createTextNode(other)))
-    }else{self.children.push(other)}
+    }else{
+        self.children.push(other)
+    }
     return self
 }
 
@@ -1718,21 +1672,8 @@ $B.set_func_names(TagSum, "<dom>")
 
 $B.TagSum = TagSum // used in _html.js and _svg.js
 
-var win = $B.JSObj.$factory(_window)
-
-win.get_postMessage = function(msg,targetOrigin){
-    if(_b_.isinstance(msg, dict)){
-        var temp = {__class__:"dict"},
-            items = _b_.list.$factory(_b_.dict.items(msg))
-        items.forEach(function(item){
-            temp[item[0]] = item[1]
-        })
-        msg = temp
-    }
-    return _window.postMessage(msg, targetOrigin)
-}
 
 $B.DOMNode = DOMNode
 
-$B.win = win
-})(__BRYTHON__)
+
+})(__BRYTHON__);

@@ -960,6 +960,35 @@ assert_raises(TypeError, f, 1, h=2, k=4,
 def f(f=5, *g: 6, h):
     pass
 
+def f(x, y=0):
+    pass
+
+assert_raises(TypeError, f,
+    msg="f() missing 1 required positional argument: 'x'")
+
+def f(x, y=0, *args):
+    pass
+
+assert_raises(TypeError, f,
+    msg="f() missing 1 required positional argument: 'x'")
+
+def f(x, y, z=0, /):
+    pass
+
+assert_raises(TypeError, f,
+    msg="f() missing 2 required positional arguments: 'x' and 'y'")
+
+
+def f(x, y, /, z):
+    pass
+
+assert_raises(TypeError, f,
+    msg="f() missing 3 required positional arguments: 'x', 'y', and 'z'")
+
+assert_raises(TypeError, f, 1,
+    msg="f() missing 2 required positional arguments: 'y' and 'z'")
+
+
 # issue 2041
 def optional_keyword_only_arg(*, a, b=None):
     assert b is None
@@ -1063,5 +1092,127 @@ def f2167_3(x='a', /, **kwargs):
   assert kwargs['x'] == 'b'
 
 f2167_3('A', x='b')
+
+# argument with "is not"
+def f(x, y, z):
+    return z
+
+assert f(1, True is not False, 'ok') == 'ok'
+
+# call function with **kw where kw has keys() and __getitem__
+class D:
+    def keys(self):
+        return 'a'
+    def __getitem__(self, key):
+        return 7
+
+d = D()
+
+def f(**kw):
+    return kw
+
+assert f(**d) == {'a': 7}
+
+# issue 2422
+a2422 = 0
+del globals()['a2422']
+assert_raises(NameError, eval, 'a2422')
+
+a2422 = 9
+assert a2422 == 9
+
+del globals()['a2422']
+assert_raises(NameError, eval, 'a2422')
+
+# issue 2443
+m = map(str, range(42))
+assert iter(m) is m
+assert next(m) == '0'
+
+def f(x, y):
+  return str(x + y)
+
+m = map(f, range(42), range(9))
+assert [x for x in m] == ['0', '2', '4', '6', '8', '10', '12', '14', '16']
+
+# issue 2501
+def f():
+    if True:
+        if False:
+            xjq = 0
+    else:
+        xjq = None
+    print(xjq)
+
+assert_raises(UnboundLocalError, f)
+
+# sequence multiplication
+assert_raises(TypeError, exec, "2.4 * [2]",
+  msg="can't multiply sequence by non-int of type 'float'")
+assert_raises(TypeError, exec, "[2] * 2.4",
+  msg="can't multiply sequence by non-int of type 'float'")
+
+assert float.__mul__(2.4, [2]) is NotImplemented
+assert_raises(TypeError, list.__mul__, [2], 2.4,
+  msg="'float' object cannot be interpreted as an integer")
+
+# issue 2561
+def f(arg = 1):
+  if arg:
+    a = 1
+  else:
+    a = 0
+  def g():
+    nonlocal a
+    a = 2
+  g()
+  return a
+
+assert f() == 2
+
+# issue 2578
+x = 1
+
+def f():
+  global x
+  del x
+
+f()
+
+try:
+  x
+  raise AssertionError('should have raised NameError')
+except NameError:
+  pass
+
+def f():
+  x = 9
+  def g():
+      nonlocal x
+      del x
+  g()
+  x
+
+assert_raises(UnboundLocalError, f)
+
+def f():
+    def g():
+        del abc
+    assert_raises(UnboundLocalError, g)
+f()
+
+def h():
+  del foo
+
+assert_raises(NameError, h)
+
+from bisect import *
+insort
+del insort
+try:
+  insort
+  raise AssertionError('should have raised NameError')
+except NameError:
+  pass
 
 print('passed all tests...')

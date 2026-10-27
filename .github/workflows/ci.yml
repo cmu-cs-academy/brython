@@ -12,35 +12,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
+      # make_dist.py requires the same Python version as Brython's
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
-      - name: Install Firefox
-        uses: browser-actions/setup-firefox@v1
-
-      - name: Install testem
+      - name: Install Playwright
         run: |
-          npm install testem
-          ./node_modules/.bin/testem launchers
+          pip install playwright
+          playwright install --with-deps chromium
 
-      - name: Build docs and dist
+      - name: Build dist
         run: |
-          (cd scripts && python3 make_doc.py)
+          mkdir -p setup/brython/data
           (cd scripts && python3 make_dist.py)
 
-      # Some day, put back Chrome or "Headless Chrome" as well. For some reason
-      # as of 2022 Aug 23, the testem websocket connection is sometimes reset,
-      # which prevents the browser from reporting results to the testem process
-      # when running on Chrome.
       - name: Run browser tests
-        run: xvfb-run --auto-servernum ./node_modules/.bin/testem --launch Firefox -t www/tests/run_tests.html ci
+        run: python3 scripts/run_browser_tests.py
 
   # flake8:
   #   runs-on: ubuntu-latest
@@ -50,7 +39,7 @@ jobs:
   #     - name: Set up Python
   #       uses: actions/setup-python@v5
   #       with:
-  #         python-version: '3.11'
+  #         python-version: '3.14'
   #
   #     - name: Install dependencies
   #       run: |

@@ -483,5 +483,38 @@ assert [1, 2, 3] > [1, 2]
 assert not [1, 2] > [1, 2]
 assert [1, 2] >= [1, 2]
 
+# issue 2374
+*a, b = [1]
+assert a == []
+assert b == 1
 
+a, *b, c = [1, 2]
+assert a == 1
+assert b == []
+assert c == 2
+
+# issue 2526
+t = [1, 1]
+t[True] = 5
+assert t[1] == 5
+assert t[True] == 5
+
+# issue 2528
+t = [1, 2]
+u = [item for item in list.__reversed__(t)]
+assert u == [2, 1]
+
+# issue 2592
+example_list = [1, 2, 3, 4, 5, 6, 7, 8, 9]
+assert example_list[-16:] == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+assert example_list[-16:-14] == []
+assert list.__getitem__(example_list, slice(-16, None)) == \
+    [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+example_tuple = (1, 2, 3, 4, 5, 6, 7, 8, 9)
+assert example_tuple[-16:] == (1, 2, 3, 4, 5, 6, 7, 8, 9)
+assert example_tuple[-16:-14] == ()
+assert tuple.__getitem__(example_tuple, slice(-16, None)) == \
+    (1, 2, 3, 4, 5, 6, 7, 8, 9)
+    
 print("passed all tests..")

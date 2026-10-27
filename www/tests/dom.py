@@ -1,10 +1,11 @@
 from browser import window, document, html, svg
+from tester import assert_raises
 
 assert window.empty_list() == []
 assert window.list1() == [1, 2, 'a', ['b']]
 assert window.jsobj().to_dict() == {'a':1}
 
-c = window.subscriptable('abracadabra')
+c = window.subscriptable.new('abracadabra')
 assert len(c) == 11
 assert c[2] == 'r'
 
@@ -39,6 +40,11 @@ element = document.getElementById('dom-test-element-id')
 element.addEventListener('click', f, True)
 element.click()
 assert f_called
+
+# issue 2338
+assert "yellow" in element.classList
+assert "blue" not in element.classList
+assert len(element.classList) == 2
 
 # issue 829
 # HTML attributes are case-insensitive
@@ -143,3 +149,40 @@ def func():
 
 element.foo = func
 assert element.foo == func
+
+# issue 2245
+elt = document['elt_with_dataset']
+dataset = elt.dataset
+
+# existing key
+assert dataset['value'] == "coucou"
+assert getattr(dataset, 'value') == "coucou"
+assert 'value' in dataset
+
+# absent key
+assert elt.getAttribute('absent') is None
+
+try:
+    dataset['absent']
+    raise Exception('should have raised KeyError')
+except KeyError:
+    pass
+assert_raises(AttributeError, getattr, dataset, 'absent')
+assert 'absent' not in dataset
+
+# set new key
+dataset.toto = "tutu"
+assert dataset.toto == 'tutu'
+
+assert dataset.to_dict() == {'value': 'coucou', 'toto': 'tutu'}
+
+# issue 2489
+assert not hasattr(document, 'closest')
+assert_raises(AttributeError, exec, "document.closest", globals())
+
+# issue 2495
+target = document["test_closest_2495"]
+assert target.closest('.test') is document['test_2495']
+
+
+print('all tests pass...')

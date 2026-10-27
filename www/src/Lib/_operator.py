@@ -27,6 +27,6 @@ def index(a):
         index_method = a.__index__
     except AttributeError as e:
         # For compatibility with CPython (and also PyPy), raise a TypeError here instead of an AttributeError.
-        raise TypeError(f"'{type(a)}' object cannot be interpreted as an integer") from e
+        raise TypeError(f"'{type(a).__name__}' object cannot be interpreted as an integer") from e
     else:
         return index_method()

@@ -311,7 +311,7 @@ async def main(secs, urls):
     await test_fstring_with_global()
 
     await test_issue_1906()
-    
+
     await test_issue_2158()
 
     await raise_error()
@@ -333,3 +333,30 @@ async def main():
 
 exec(src, globals())
 aio.run(main())
+
+# issue 2320
+from tester import async_tester
+
+from tester import async_tester
+async def a():
+  await ""
+
+async def wait_error():
+    try:
+        await a()
+        input('should have raised TypeError')
+    except Exception as exc:
+        async_tester.assertIs(type(exc), TypeError)
+
+aio.run(wait_error())
+
+# anext(async_iterator, default)
+async def async_it_yield_one():
+  yield 1
+
+async def test_anext_with_default():
+  gen = async_it_yield_one()
+  async_tester.assertEqual(await anext(gen), 1)
+  async_tester.assertEqual(await anext(gen, 99), 99)
+
+aio.run(test_anext_with_default())

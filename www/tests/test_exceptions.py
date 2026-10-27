@@ -113,7 +113,8 @@ except TypeError as exc:
     assert frames == ['<module>'], frames
 
 
-# exception happens in iteration: error trace includes <listcomp>
+# exception happens in iteration: error trace includes gen (since Python 3.12,
+# comprehensions are inlined, so there is no <listcomp> frame - PEP 709)
 def gen():
     yield 1/0
 
@@ -131,7 +132,7 @@ except ZeroDivisionError as exc:
         if append:
             frames.append(frame.f_code.co_name)
         tb = tb.tb_next
-    assert frames == ['<module>', '<listcomp>', 'gen'], frames
+    assert frames == ['<module>', 'gen'], frames
 
 # issue 2092
 out = io.StringIO()
@@ -276,4 +277,22 @@ except TypeError as exc:
     message = out.getvalue()
     assert f'line {lineno + 2}' in message
 
+# issue 2530
+assert IOError is OSError
+assert WindowsError is OSError
+assert EnvironmentError is OSError
+
+ioerror = IOError()
+assert type(ioerror) is OSError
+
+# issue 2540
+import exception_traces
+
+# issue 2582
+a = {'key': 1}
+try:
+  a['missing']
+except KeyError as e:
+  assert str(e) == "'missing'"
+  
 print('all tests passed...')
