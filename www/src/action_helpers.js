@@ -936,14 +936,13 @@ $B._PyPegen.raise_error_known_location = function(p, errtype,
         exc.offset = col_offset + 1
         exc.end_lineno = end_lineno
         exc.end_offset = end_col_offset + 1
-        var src = $B.file_cache[p.filename]
-        if(src !== undefined){
-            var lines = src.split('\n'),
-                line = lines[exc.lineno - 1]
-            exc.text = line + '\n'
-        }else{
-            exc.text = _b_.None
-        }
+        // CS Academy: read the line from the parser's own source. exec() of a
+        // string doesn't put it in $B.file_cache, so the text was None, or a
+        // line of another program cached under the same filename ('<string>')
+        var src = p.src !== undefined ? p.src : $B.file_cache[p.filename]
+        var line = (typeof src == 'string' || src instanceof String) &&
+            exc.lineno > 0 ? src.split('\n')[exc.lineno - 1] : undefined
+        exc.text = line === undefined ? _b_.None : line + '\n'
     }
     exc.args[1] = $B.fast_tuple([p.filename, exc.lineno, exc.offset, exc.text,
         exc.end_lineno, exc.end_offset])

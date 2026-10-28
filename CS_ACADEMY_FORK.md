@@ -187,6 +187,12 @@ worker.
     (`scripts/adapt_grammar_actions.py`, and `www/src/gen_parse.js` edited by
     hand). `f'{x!z}'` gave the message "undefined" (`formatted_value` in
     `www/src/action_helpers.js`).
+  - `SyntaxError.text` was `None` for errors raised at a known location (most
+    messages with a hint, like "Perhaps you forgot a comma?" or "cannot
+    assign to expression here") in code run by `exec()` of a string, or a
+    line of another program cached in `$B.file_cache` under `'<string>'`.
+    It now comes from the parser's source (`raise_error_known_location` in
+    `www/src/action_helpers.js`; still a bug upstream).
   - `print(x, end=None)` and `sep=None` raised `TypeError` with a stream that
     only accepts strings; as in CPython, `None` now means the default value
     (`www/src/py_builtin_functions.js`).
