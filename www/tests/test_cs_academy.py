@@ -247,6 +247,26 @@ assert syntax_error("print(f'{1+}')") == \
 assert syntax_error("f'{x!z}'") == \
     "f-string: invalid conversion character 'z': expected 's', 'r', or 'a'"
 
+# SyntaxError.text of errors raised at a known location (messages with a hint)
+# is the line of the source given to exec(), even when $B.file_cache has
+# another source for '<string>'
+def syntax_error_text(src):
+    try:
+        exec(src, {})
+    except SyntaxError as exc:
+        return exc.text
+    raise AssertionError(f'no SyntaxError for {src!r}')
+
+compile("first = 1", "<string>", "exec")
+for src, text in [
+        ("print(1 2)", "print(1 2)\n"),
+        ("x = 1\nsun/centerY = 1", "sun/centerY = 1\n"),
+        ("if (boat=-10):\n    pass", "if (boat=-10):\n"),
+        ("import", "import\n"),
+        ("def f():\n    if 1:\n        pass\n    else (x >= 200):\n        pass",
+         "    else (x >= 200):\n")]:
+    assert syntax_error_text(src) == text, (src, syntax_error_text(src))
+
 # print() with None for end / sep uses the default values
 import io
 out = io.StringIO()
