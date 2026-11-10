@@ -2516,17 +2516,10 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
     js += prefix + `}catch(err){\n`
     indent()
 
-    if(func_scope.needs_frames){
-        // CS Academy: leave the frame even if the trace function raises
-        js += prefix + `try{\n` +
-              `$B.set_exc_and_trace(frame, err)\n` +
-              `}finally{\n` +
-              `$B.leave_frame()\n` +
-              `}\n` +
-              `throw err\n`
-    }else{
-        js += prefix + `$B.set_exc_and_leave(frame, err)\n`
-    }
+    // CS Academy: $B.set_exc_and_leave() for all functions. It leaves the
+    // frame even if the trace function raises; the code for functions that
+    // need frames did the same thing inline without that protection
+    js += prefix + `$B.set_exc_and_leave(frame, err)\n`
     dedent()
     js += prefix + `}\n`
     dedent()
