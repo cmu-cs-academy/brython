@@ -1626,8 +1626,15 @@ $B.enter_frame = function(frame, __file__, lineno){
                 frame.$f_trace = res
                 return
             }catch(err){
-                $B.set_exc(err, frame)
-                $B.frame_obj = $B.frame_obj.prev
+                // CS Academy: as in CPython, a trace function that raises
+                // an exception is unset. Leave the frame even if set_exc()
+                // fails (e.g. Javascript stack overflow)
+                $B.tracefunc = _b_.None
+                try{
+                    $B.set_exc(err, frame)
+                }finally{
+                    $B.frame_obj = $B.frame_obj.prev
+                }
                 err.$in_trace_func = true
                 throw err
             }
@@ -1635,38 +1642,58 @@ $B.enter_frame = function(frame, __file__, lineno){
     }
 }
 
-$B.trace_exception = function(){
-    var frame = $B.frame_obj.frame
-    if(frame[0] == $B.tracefunc.$current_frame_id){
+// CS Academy: as in CPython, a trace function that raises an exception is
+// unset, like sys.settrace(None). Otherwise a trace function that fails
+// (for instance in a Javascript stack overflow) stays set after the error
+$B.call_trace_func = function(trace_func, frame, event, arg){
+    try{
+        return trace_func(frame, event, arg)
+    }catch(err){
+        $B.tracefunc = _b_.None
+        throw err
+    }
+}
+
+$B.trace_exception = function(frame){
+    // CS Academy: use the frame passed by $B.set_exc_and_trace() instead of
+    // the top of the frame stack, and do nothing if the trace function was
+    // unset (sys.settrace(None) or an exception in the trace function)
+    frame = frame ?? $B.frame_obj.frame
+    if($B.tracefunc === _b_.None ||
+            frame[0] == $B.tracefunc.$current_frame_id){
         return _b_.None
     }
     var trace_func = frame.$f_trace,
         exc = frame[1].$current_exception
-    return trace_func(frame, 'exception', $B.fast_tuple([
+    return $B.call_trace_func(trace_func, frame, 'exception', $B.fast_tuple([
         exc.__class__, exc, $B.traceback.$factory(exc)]))
 }
 
 $B.trace_line = function(){
     var frame = $B.frame_obj.frame
-    if(frame[0] == $B.tracefunc.$current_frame_id){
+    // CS Academy: do nothing if the trace function was unset
+    if($B.tracefunc === _b_.None ||
+            frame[0] == $B.tracefunc.$current_frame_id){
         return _b_.None
     }
     var trace_func = frame.$f_trace
     if(trace_func === undefined){
         console.log('trace line, frame', frame)
     }
-    return trace_func(frame, 'line', _b_.None)
+    return $B.call_trace_func(trace_func, frame, 'line', _b_.None)
 }
 
 $B.trace_return = function(value){
     var frame = $B.frame_obj.frame,
         trace_func = frame.$f_trace
-    if(frame[0] == $B.tracefunc.$current_frame_id){
+    // CS Academy: do nothing if the trace function was unset
+    if($B.tracefunc === _b_.None ||
+            frame[0] == $B.tracefunc.$current_frame_id){
         // don't call trace func when returning from the frame where
         // sys.settrace was called
         return _b_.None
     }
-    trace_func(frame, 'return', value)
+    $B.call_trace_func(trace_func, frame, 'return', value)
 }
 
 $B.leave_frame = function(arg){

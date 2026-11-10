@@ -169,6 +169,32 @@ worker.
   of its source to the compiler, so a function or class with annotations
   raised "JavascriptError: scopes.src.split is not a function"
   (`www/src/py_builtin_functions.js`, `$$eval`; still a bug upstream).
+- Tracing (`sys.settrace`) and Javascript stack overflows (still bugs
+  upstream; tested in `www/tests/test_cs_academy.py`). `testFunction` in
+  cmu_cpcs_utils sets a trace function, and a student's infinite recursion
+  in a test function could overflow the Javascript stack before Brython's
+  recursion limit. Brython then never left the frames, refused to call
+  `__exit__` (RecursionError), and the trace function stayed set: every
+  later run of the program failed with "type object 'code' has no attribute
+  'co_argcount'" until the page was reloaded.
+  - `$B.trace_exception(frame)` uses the frame passed by
+    `$B.set_exc_and_trace()` instead of the top of the frame stack, which is
+    another frame when a frame above was not left
+    (`www/src/py_utils.js`, `www/src/py_exceptions.js`).
+  - Frames are left in a `finally` when an exception goes through a
+    function, a module or interactive code, so an exception raised by the trace
+    function doesn't keep the frame in `$B.frame_obj`
+    (`$B.set_exc_and_leave` in `www/src/py_exceptions.js`, the code
+    generated in `www/src/ast_to_js.js`, the "call" event in
+    `$B.enter_frame` in `www/src/py_utils.js`).
+  - As in CPython, a trace function that raises an exception is unset
+    (`$B.call_trace_func` and `$B.enter_frame` in `www/src/py_utils.js`), and
+    the "line", "return" and "exception" events are not sent after the trace
+    function is unset.
+  - A Javascript stack overflow that goes through a frame is a
+    `RecursionError` instead of a `JavascriptError`, so `except
+    RecursionError` catches it (`$B.set_exc` in `www/src/py_exceptions.js`;
+    `$B.exception` already did this, but `$B.set_exc` set the class first).
 - Bugs of upstream 3.14.0 that changed the errors and output of student
   programs compared to the previous version of the fork (tested in
   `www/tests/test_cs_academy.py`):

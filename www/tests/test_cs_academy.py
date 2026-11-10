@@ -298,4 +298,95 @@ exec(compile('def f(x: int) -> str:\n    return str(x)\n', 'test', 'exec'), ns)
 assert ns['f'](1) == '1'
 assert ns['f'].__annotations__ == {'x': int, 'return': str}
 
+# A trace function that raises an exception is unset, as in CPython
+import sys
+
+
+def bad_tracer(frame, event, arg):
+    if event == 'call' and frame.f_code.co_name == 'traced':
+        raise ValueError('tracer failed')
+    return bad_tracer
+
+
+def traced():
+    return 1
+
+
+sys.settrace(bad_tracer)
+assert_raises(ValueError, traced)
+assert sys.gettrace() is None
+
+
+def exc_tracer(frame, event, arg):
+    if event == 'exception':
+        raise KeyError('in exception event')
+    return exc_tracer
+
+
+def raiser():
+    raise ZeroDivisionError
+
+
+sys.settrace(exc_tracer)
+assert_raises(KeyError, raiser)
+assert sys.gettrace() is None
+
+
+# A Javascript stack overflow (reported as RecursionError) while a trace
+# function is set unwinds Brython's frame stack: __exit__ runs and restores
+# the previous trace function. Before the fix, $B.trace_exception() read the
+# top of the frame stack instead of the frame that was being left, failed,
+# and skipped $B.leave_frame() in every frame, so __exit__ was refused with
+# another RecursionError and the trace function stayed set (testFunction in
+# cmu_cpcs_utils).
+def stack_depth():
+    depth = 0
+    frame = sys._getframe()
+    while frame is not None:
+        depth += 1
+        frame = frame.f_back
+    return depth
+
+
+def tracer(frame, event, arg):
+    return tracer
+
+
+def recurse(n):
+    for i in range(1):
+        for x in recurse(n + 1):
+            pass
+    return []
+
+
+class TraceContext:
+    exits = []
+
+    def __enter__(self):
+        self.old_tracer = sys.gettrace()
+        sys.settrace(tracer)
+
+    def __exit__(self, exc_type, exc_value, tb):
+        sys.settrace(self.old_tracer)
+        TraceContext.exits.append(exc_type)
+
+
+depth = stack_depth()
+limit = sys.getrecursionlimit()
+# A limit that Brython never reaches, so that the error is a Javascript
+# stack overflow
+sys.setrecursionlimit(1_000_000)
+try:
+    with TraceContext():
+        recurse(0)
+except RecursionError:
+    pass
+else:
+    raise AssertionError('expected RecursionError')
+finally:
+    sys.setrecursionlimit(limit)
+assert TraceContext.exits == [RecursionError], TraceContext.exits
+assert sys.gettrace() is None
+assert stack_depth() == depth, (stack_depth(), depth)
+
 print('passed all tests...')
