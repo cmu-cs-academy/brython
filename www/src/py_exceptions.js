@@ -11,6 +11,13 @@ $B.set_exc = function(exc, frame){
     exc.__traceback__ = exc.__traceback__ === _b_.None ? make_tb() : exc.__traceback__
     if(! exc.__class__){
         console.log('no class', exc)
+        if($B.is_recursion_error(exc)){
+            // CS Academy: a Javascript stack overflow is a RecursionError,
+            // as in $B.exception(), not a JavascriptError, so that
+            // "except RecursionError" catches it
+            exc.__class__ = _b_.RecursionError
+            exc.args = $B.fast_tuple(["maximum recursion depth exceeded"])
+        }
     }
     exc.__class__ = exc.__class__ ?? _b_.JavascriptError
     exc.args = exc.args ?? [exc.message]
@@ -32,13 +39,22 @@ $B.set_exc = function(exc, frame){
 $B.set_exc_and_trace = function(frame, exc){
     $B.set_exc(exc, frame)
     if((! exc.$in_trace_func) && frame.$f_trace !== _b_.None){
-        frame.$f_trace = $B.trace_exception()
+        // CS Academy: pass the frame. $B.trace_exception() used the top of
+        // the frame stack, which is another frame if a frame above was not
+        // left (e.g. after a Javascript stack overflow)
+        frame.$f_trace = $B.trace_exception(frame)
     }
 }
 
 $B.set_exc_and_leave = function(frame, exc){
-    $B.set_exc_and_trace(frame, exc)
-    $B.leave_frame()
+    // CS Academy: leave the frame even if the trace function raises an
+    // exception, otherwise the frame stays in $B.frame_obj and the frames
+    // below it can't call functions anymore (RecursionError)
+    try{
+        $B.set_exc_and_trace(frame, exc)
+    }finally{
+        $B.leave_frame()
+    }
     throw exc
 }
 

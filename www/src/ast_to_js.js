@@ -2516,13 +2516,10 @@ $B.ast.FunctionDef.prototype.to_js = function(scopes){
     js += prefix + `}catch(err){\n`
     indent()
 
-    if(func_scope.needs_frames){
-        js += prefix + `$B.set_exc_and_trace(frame, err)\n` +
-              `$B.leave_frame()\n` +
-              `throw err\n`
-    }else{
-        js += prefix + `$B.set_exc_and_leave(frame, err)\n`
-    }
+    // CS Academy: $B.set_exc_and_leave() for all functions. It leaves the
+    // frame even if the trace function raises; the code for functions that
+    // need frames did the same thing inline without that protection
+    js += prefix + `$B.set_exc_and_leave(frame, err)\n`
     dedent()
     js += prefix + `}\n`
     dedent()
@@ -3012,8 +3009,13 @@ $B.ast.Interactive.prototype.to_js = function(scopes){
               add_body(this.body, scopes) + '\n' +
               `$B.leave_frame({locals, value: _b_.None})\n` +
           `}catch(err){\n` +
+              // CS Academy: leave the frame even if the trace function
+              // raises
+              `try{\n` +
               `$B.set_exc_and_trace(frame, err)\n` +
+              `}finally{\n` +
               `$B.leave_frame({locals, value: _b_.None})\n` +
+              `}\n` +
               'throw err\n' +
           `}`
     scopes.pop()
@@ -3407,8 +3409,12 @@ $B.ast.Module.prototype.to_js = function(scopes){
     dedent()
     js += prefix + `}catch(err){\n`
     indent()
-    js += prefix + `$B.set_exc_and_trace(frame, err)\n` +
-              prefix + `$B.leave_frame({locals, value: _b_.None})\n` +
+    // CS Academy: leave the frame even if the trace function raises
+    js += prefix + `try{\n` +
+              prefix + tab + `$B.set_exc_and_trace(frame, err)\n` +
+              prefix + `}finally{\n` +
+              prefix + tab + `$B.leave_frame({locals, value: _b_.None})\n` +
+              prefix + `}\n` +
               prefix + 'throw err\n'
     dedent()
     js += prefix + `}\n`
