@@ -829,7 +829,9 @@ function _is_end_of_source(p) {
 
 function inside_fstring(p){
     var res = false
-    for(var token of p.tokens){
+    // CS Academy: p._tokens has all the tokens up to the tokenizer error;
+    // p.tokens only those read by the parser, which may stop before it
+    for(var token of p._tokens){
         if(token.type == $B.py_tokens.FSTRING_START){
             res = true
         }else if(token.type == $B.py_tokens.FSTRING_END){
@@ -859,7 +861,13 @@ $B._PyPegen.tokenize_full_source_to_check_for_errors = function(p){
                 err_lineno = brace.line_num
             }
         }
-        if(p.tokens.length == 0 || $B.last(p.tokens).lineno >= err_lineno){
+        // CS Academy: as in CPython, a closing bracket that is unmatched or
+        // doesn't match is an error of the tokenizer, reported even if the
+        // parser failed before it, except in an f-string. An opening bracket
+        // that is never closed is only reported if the parser reached it
+        var closing_error = ! '([{'.includes(brace.char) && ! inside_fstring(p)
+        if(closing_error || p.tokens.length == 0 ||
+                $B.last(p.tokens).lineno >= err_lineno){
             if('([{'.includes(brace.char)){
                 msg = `'${brace.char}' was never closed`
             }else if(p.braces.length > 1){
