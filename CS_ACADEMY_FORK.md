@@ -219,6 +219,17 @@ worker.
     line of another program cached in `$B.file_cache` under `'<string>'`.
     It now comes from the parser's source (`raise_error_known_location` in
     `www/src/action_helpers.js`; still a bug upstream).
+  - "unexpected indent" was reported on the last line of the source instead
+    of the indented line: `tokenize_full_source_to_check_for_errors` in
+    `www/src/pegen.js` replaced the tokens read by the parser with all the
+    tokens of the source (upstream commit 003c1c78e, in 3.13.1). It now only
+    tokenizes the source to find unclosed brackets. This also fixes
+    `lineno` being Javascript `undefined` when the indented line has a
+    character Python rejects (` ´`, `x = 1\n y ?`). As in CPython, an
+    unclosed opening bracket is reported only if the parser reached it (`a
+    b\nx = (1,` is "invalid syntax" on line 1, not "'(' was never closed"),
+    and an unmatched closing bracket outside an f-string is reported even
+    after an earlier error (`a b\nx = 1)` is "unmatched ')'" on line 2).
   - `print(x, end=None)` and `sep=None` raised `TypeError` with a stream that
     only accepts strings; as in CPython, `None` now means the default value
     (`www/src/py_builtin_functions.js`).
@@ -324,6 +335,12 @@ returns `2.68` (CPython: `2.67`), `float('inf') > 10**400` is `False`,
   the statements that fail are exactly the ones in `KNOWN_FAILURES`, with the
   same errors.
 - `www/tests/test_cs_academy.py` tests the features of this document.
+- `www/tests/test_syntax_errors.py` compares Brython's syntax errors (type,
+  message, line) with CPython's for the programs listed in
+  `scripts/make_syntax_error_cases.py`, which writes CPython's errors to
+  `www/tests/syntax_error_cases.py` (run it with Python 3.14 after adding a
+  program). Programs where Brython's error differs today are in
+  `KNOWN_FAILURES`, with Brython's error, so that any change shows up.
 - Other test changes: tests for fork-specific fixes added to `issues.py`,
   `test_math.py`, `test_strings.py`, `test_classes.py`, `test_numbers.py`,
   `test_set.py`, `test_exceptions.py`, `test_suite.py`. In
