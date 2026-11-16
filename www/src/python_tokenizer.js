@@ -301,6 +301,11 @@ function nesting_level(token_modes){
 }
 
 
+// CS Academy: used for number literals in $B.tokenizer
+const NUM_KINDS = {x: 'hexadecimal', o: 'octal', b: 'binary', '': 'decimal'},
+      KEYWORDS_AFTER_NUMBER = ['and', 'else', 'for', 'if', 'in', 'is', 'not',
+          'or']
+
 $B.tokenizer = function(src, filename, mode, parser){
     var string_prefix = /^(r|u|R|U|f|F|t|T||fr|Fr|fR|FR|rf|rF|Rf|RF||tr|Tr|tR|TR|rt|rT|Rt|RT)$/,
         bytes_prefix = /^(b|B|br|Br|bR|BR|rb|rB|Rb|RB)$/,
@@ -358,6 +363,27 @@ $B.tokenizer = function(src, filename, mode, parser){
 
     if(parser){
         parser.braces = braces
+    }
+
+    // CS Academy: helpers for number literals (state 'NUMBER')
+    function number_error(msg){
+        return ErrorToken(_b_.SyntaxError, filename,
+            line_num, pos - line_start - number.length - 1,
+            line_num, pos - line_start, line, msg)
+    }
+    // As verify_end_of_number() in CPython: a number can be followed by some
+    // keywords (1if x else 2), but not by another ASCII letter, digit or _
+    function bad_end_of_number(ix){
+        var c = src[ix]
+        if(c === undefined || ! /[A-Za-z0-9_]/.test(c)){
+            return false
+        }
+        for(var kw of KEYWORDS_AFTER_NUMBER){
+            if(src.startsWith(kw, ix)){
+                return false
+            }
+        }
+        return true
     }
 
     t.push(Token('ENCODING', 'utf-8', 0, 0, 0, 0, ''))
@@ -1104,25 +1130,9 @@ $B.tokenizer = function(src, filename, mode, parser){
             case 'NUMBER':
                 // CS Academy: errors in number literals are reported as in
                 // CPython, as error tokens (they were Javascript errors
-                // raised by number_parser.js, or wrong messages)
-                var num_kind = {x: 'hexadecimal', o: 'octal', b: 'binary',
-                    '': 'decimal'}[num_type]
-                var number_error = function(msg){
-                    return ErrorToken(_b_.SyntaxError, filename,
-                        line_num, pos - line_start - number.length - 1,
-                        line_num, pos - line_start, line, msg)
-                }
-                // As verify_end_of_number() in CPython: a number can be
-                // followed by some keywords (1if x else 2), but not by
-                // another ASCII letter, digit or _
-                var keyword_follows = function(ix){
-                    return ['and', 'else', 'for', 'if', 'in', 'is', 'not',
-                        'or'].some(kw => src.startsWith(kw, ix))
-                }
-                var bad_end_of_number = function(ix){
-                    return src[ix] !== undefined &&
-                        /[A-Za-z0-9_]/.test(src[ix]) && ! keyword_follows(ix)
-                }
+                // raised by number_parser.js, or wrong messages). The helpers
+                // are defined before the loop
+                var num_kind = NUM_KINDS[num_type]
                 if(test_num(num_type, char)){
                     number += char
                 }else if(char == '_' && ! number.endsWith('.')){
