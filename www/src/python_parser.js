@@ -358,6 +358,17 @@ Parser.prototype.read_token = function(){
                         value.end_lineno, value.end_col_offset, value.line,
                         value.message)
                 }
+                // CS Academy: set the bracket depth, as CPython's tokenizer
+                // does. The grammar uses it, e.g. "Perhaps you forgot a
+                // comma?" is only for errors inside brackets
+                if(value.type == $B.py_tokens.OP){
+                    if('([{'.includes(value.string)){
+                        this.level++
+                    }else if(')]}'.includes(value.string) && this.level > 0){
+                        this.level--
+                    }
+                }
+                value.level = this.level
                 this.tokens[this.tokens.length] = value
                 return value
             }

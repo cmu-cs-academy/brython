@@ -280,6 +280,15 @@ function test_num(num_type, char){
     }
 }
 
+// CS Academy: the mode of the innermost f-string or t-string, if any
+function enclosing_ft_mode(token_modes){
+    for(var ix = token_modes.length - 1; ix >= 0; ix--){
+        if(token_modes[ix].quote !== undefined){
+            return token_modes[ix]
+        }
+    }
+}
+
 function nesting_level(token_modes){
     var ix = token_modes.length - 1
     while(ix >= 0){
@@ -457,6 +466,17 @@ $B.tokenizer = function(src, filename, mode, parser){
                         continue
                     }
                     ft_buffer += '\\'
+                }
+                if(char == '\n' && ! token_mode.triple_quote){
+                    // CS Academy: as in CPython (it was a Javascript
+                    // TypeError at the end of the source)
+                    let start = token_mode.start
+                    t.push(ErrorToken(_b_.SyntaxError, filename,
+                        start[0], start[1], start[0], start[1],
+                        lines[start[0] - 1],
+                        `unterminated ${token_mode.ft_type}-string literal ` +
+                        `(detected at line ${line_num})`))
+                    return t
                 }
                 ft_buffer += char
                 ft_escape = false
@@ -843,7 +863,36 @@ $B.tokenizer = function(src, filename, mode, parser){
                                 if(braces.length && $last(braces).char == closing[char]){
                                     braces.pop()
                                 }else{
+                                    // CS Academy: as in CPython, a closing
+                                    // bracket that is unmatched or doesn't
+                                    // match stops the tokenizer with an error
+                                    let msg
+                                    // In an f-string expression, the last
+                                    // brace is the f-string's '{' if there is
+                                    // no bracket inside the expression
+                                    if(token_mode == 'regular_within_ft' &&
+                                            nesting_level(token_modes) ==
+                                            braces.length - 1){
+                                        msg = `f-string: unmatched '${char}'`
+                                    }else if(braces.length == 0){
+                                        msg = `unmatched '${char}'`
+                                    }else{
+                                        let opening = $last(braces)
+                                        msg = `closing parenthesis '${char}' ` +
+                                            `does not match opening parenthesis ` +
+                                            `'${opening.char}'` +
+                                            (opening.line_num == line_num ? '' :
+                                                ` on line ${opening.line_num}`)
+                                    }
                                     braces.push({char, pos, line_num, line_start, line})
+                                    let err = ErrorToken(_b_.SyntaxError,
+                                        filename,
+                                        line_num, pos - line_start - 1,
+                                        line_num, pos - line_start,
+                                        line, msg)
+                                    err.in_fstring = token_mode == 'regular_within_ft'
+                                    t.push(err)
+                                    return t
                                 }
                             }
                             t.push(Token('OP', op,
@@ -924,6 +973,9 @@ $B.tokenizer = function(src, filename, mode, parser){
                             token_mode.quote = quote
                             token_mode.triple_quote = triple_quote
                             token_mode.raw = prefix.toLowerCase().includes('r')
+                            token_mode.ft_type = ft_type
+                            token_mode.start = [line_num, pos - line_start -
+                                name.length - (triple_quote ? 3 : 1)]
                             token_modes.push(token_mode)
                             var s = triple_quote ? quote.repeat(3) : quote
                             var end_col = ft_start + name.length + s.length
@@ -1003,8 +1055,17 @@ $B.tokenizer = function(src, filename, mode, parser){
                         if(! escaped && ! triple_quote){
                             // unterminated string
                             var msg
-                            if(token_mode == 'regular_within_fstring'){
-                                msg = "f-string: missing '}'"
+                            // CS Academy: as in CPython, a string in the
+                            // expression of an f-string that starts with the
+                            // f-string's quote means a missing '}'. The mode
+                            // was tested against 'regular_within_fstring',
+                            // which doesn't exist
+                            var enclosing_ft = token_mode == 'regular_within_ft' ?
+                                enclosing_ft_mode(token_modes) :
+                                undefined
+                            if(enclosing_ft && enclosing_ft.quote == quote &&
+                                    ! enclosing_ft.triple_quote){
+                                msg = `${enclosing_ft.ft_type}-string: expecting '}'`
                             }else{
                                 var msg = `unterminated string literal ` +
                                           `(detected at line ${line_num})`,
@@ -1041,31 +1102,64 @@ $B.tokenizer = function(src, filename, mode, parser){
                 break
 
             case 'NUMBER':
+                // CS Academy: errors in number literals are reported as in
+                // CPython, as error tokens (they were Javascript errors
+                // raised by number_parser.js, or wrong messages)
+                var num_kind = {x: 'hexadecimal', o: 'octal', b: 'binary',
+                    '': 'decimal'}[num_type]
+                var number_error = function(msg){
+                    return ErrorToken(_b_.SyntaxError, filename,
+                        line_num, pos - line_start - number.length - 1,
+                        line_num, pos - line_start, line, msg)
+                }
+                // As verify_end_of_number() in CPython: a number can be
+                // followed by some keywords (1if x else 2), but not by
+                // another ASCII letter, digit or _
+                var keyword_follows = function(ix){
+                    return ['and', 'else', 'for', 'if', 'in', 'is', 'not',
+                        'or'].some(kw => src.startsWith(kw, ix))
+                }
+                var bad_end_of_number = function(ix){
+                    return src[ix] !== undefined &&
+                        /[A-Za-z0-9_]/.test(src[ix]) && ! keyword_follows(ix)
+                }
                 if(test_num(num_type, char)){
                     number += char
                 }else if(char == '_' && ! number.endsWith('.')){
-                    if(number.endsWith('_')){
-                        throw SyntaxError('consecutive _ in number')
-                    }else if(src[pos] === undefined ||
+                    if(number.endsWith('_') || src[pos] === undefined ||
                             ! test_num(num_type, src[pos])){
-                        // eg 12_
-                        t.push(Token('NUMBER', number,
-                            line_num, pos - line_start - number.length,
-                            line_num, pos - line_start,
-                            line))
-                        state = null
-                        pos--
-                    }else{
-                        number += char
+                        // eg 12_ or 1__2
+                        t.push(number_error(`invalid ${num_kind} literal`))
+                        return t
                     }
-                }else if(char == '.' && ! number.includes(char)){
                     number += char
-                }else if(char.toLowerCase() == 'e' &&
+                }else if((num_type == 'o' || num_type == 'b') &&
+                        $B.in_unicode_category('Nd', ord(char))){
+                    t.push(number_error(`invalid digit '${char}' in ` +
+                        `${num_kind} literal`))
+                    return t
+                }else if(num_type == '' && char == '.' &&
+                        ! number.includes(char) &&
                         ! number.toLowerCase().includes('e')){
-                    if('+-'.includes(src[pos]) ||
-                            $B.in_unicode_category('Nd', ord(src[pos]))){
+                    number += char
+                }else if(num_type == '' && char.toLowerCase() == 'e' &&
+                        ! number.toLowerCase().includes('e')){
+                    if('+-'.includes(src[pos])){
+                        if(! $B.in_unicode_category('Nd', ord(src[pos + 1] || ' '))){
+                            // eg 32e-+4
+                            t.push(number_error('invalid decimal literal'))
+                            return t
+                        }
+                        number += char + src[pos]
+                        pos++
+                    }else if($B.in_unicode_category('Nd', ord(src[pos]))){
                         number += char
+                    }else if(bad_end_of_number(pos - 1)){
+                        // eg 1e, 1.e, 1ex
+                        t.push(number_error('invalid decimal literal'))
+                        return t
                     }else{
+                        // eg 1else
                         t.push(Token('NUMBER', number,
                             line_num, pos - line_start - number.length,
                             line_num, pos - line_start,
@@ -1073,22 +1167,23 @@ $B.tokenizer = function(src, filename, mode, parser){
                         state = null
                         pos--
                     }
-                }else if((char == '+' || char == '-') &&
-                        number.toLowerCase().endsWith('e')){
+                }else if(num_type == '' && char.toLowerCase() == 'j'){
+                    // complex number
                     number += char
-                }else if(char.toLowerCase() == 'j'){ // complex number
-                    number += char
+                    if(bad_end_of_number(pos)){
+                        // eg 1jx
+                        t.push(number_error('invalid imaginary literal'))
+                        return t
+                    }
                     t.push(Token('NUMBER', number,
                         line_num, pos - line_start - number.length + 1,
                         line_num, pos - line_start + 1,
                         line))
                     state = null
-                }else if(char.match(/\p{Letter}/u)){
-                    raise_error(_b_.SyntaxError,
-                        filename,
-                        line_num, pos - line_start,
-                        line_num, pos - line_start,
-                        line, 'invalid decimal literal')
+                }else if((num_type != '' && number.length == 2) ||
+                        bad_end_of_number(pos - 1)){
+                    // eg 1abc, 0x1g, 0o1a, 1._, or 0x without digits
+                    t.push(number_error(`invalid ${num_kind} literal`))
                     return t
                 }else{
                     t.push(Token('NUMBER', number,
@@ -1120,6 +1215,19 @@ $B.tokenizer = function(src, filename, mode, parser){
               line))
             break
         case 'STRING':
+            var enclosing_ft = enclosing_ft_mode(token_modes)
+            if(enclosing_ft){
+                // CS Academy: end of the source in an f-string or t-string
+                // (it was a Javascript TypeError)
+                let start = enclosing_ft.start
+                t.push(ErrorToken(_b_.SyntaxError, filename,
+                    start[0], start[1], start[0], start[1],
+                    lines[start[0] - 1],
+                    `unterminated ${enclosing_ft.triple_quote ? 'triple-quoted ' : ''}` +
+                    `${enclosing_ft.ft_type}-string literal ` +
+                    `(detected at line ${Math.max(1, line_num - 1)})`))
+                return t
+            }
             // src ends with a newline, so line_num is past the last line
             var msg = `unterminated ${triple_quote ? 'triple-quoted ' : ''}` +
                 `string literal (detected at line ${Math.max(1, line_num - 1)})`
@@ -1133,6 +1241,19 @@ $B.tokenizer = function(src, filename, mode, parser){
                 msg))
             return t
 }
+
+    if(token_mode.quote !== undefined){
+        // CS Academy: end of the source in the text of an f-string or
+        // t-string, after a replacement field (it was "invalid syntax")
+        let start = token_mode.start
+        t.push(ErrorToken(_b_.SyntaxError, filename,
+            start[0], start[1], start[0], start[1],
+            lines[start[0] - 1],
+            `unterminated ${token_mode.triple_quote ? 'triple-quoted ' : ''}` +
+            `${token_mode.ft_type}-string literal ` +
+            `(detected at line ${Math.max(1, line_num - 1)})`))
+        return t
+    }
 
     if(! src.endsWith('\n') && state != line_start){
         t.push(Token('NEWLINE', '', line_num, pos - line_start + 1,

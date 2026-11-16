@@ -95,6 +95,45 @@ SOURCES = [
     "y = 1 if True else",
     "x: 1, 2",
 
+    # Comma hint: only inside brackets
+    "a b\n", "x = a b\n", "(a b)\n", "[a b]\n", "f(a b)\n", "[a, b c]\n",
+    "{a b}\n", "(a b c)\n",
+    # Bracket never closed at the end of the source
+    "class A:\n    def f(self):\n        return [5\n",
+    "class A:\n    def __init__(self:\n       self.x = 1\n\n",
+    # Indentation error of the tokenizer after another error
+    "def g():\ntry:\n        return\n    except:\n        pass\n",
+    # Brackets in f-strings
+    "x = f'{(1]}'\n", "x = f'{1]}'\n", "x = f'{[1)}'\n",
+    "x = f'{f\"{(1]}\"}'\n",
+    # Number literals
+    "x = 1.e\n", "x = 1ex\n", "x = 1e\n", "x = 1jx\n", "x = 1.ej\n",
+    "x = 0x1for\n", "x = 1.5e3x\n", "x = 1_e3\n", "x = 0b2\n", "x = 0o\n",
+    "x = 1__0\n", "x = 1_\n", "x = 1.__class__\n",
+    # Valid: a keyword right after a number, number literals
+    "x = 1if 1 else 2\n", "x = [1for i in y]\n", "x = 1or 2\n",
+    "x = 1and 2\n", "x = 1in y\n", "x = 1not in y\n", "x = 1 if 1else 2\n",
+    "x = 0b1if 1 else 2\n", "x = 1jif 1 else 2\n",
+    "x = [0, 00, 0_0, 1_000, 1.5, 1., .5, 1.5e10, 1E+5, 1e-5, 1.e5, 1j, "
+    "1.5j, 1e5j, 0xFF, 0x_ff, 0b1010, 0b_1, 0o17, 0o_7, 1 .real]\n",
+    # __future__ imports that are allowed
+    '"""doc"""\nfrom __future__ import annotations\n'
+    'from __future__ import division, generator_stop\nx = 1\n',
+    # Unterminated f-strings (they were Javascript TypeErrors)
+    'f"a\n', 'x = 1\nprint(f"a {x}\n)\ny = 2\n', 't"a\n', 'f"""abc\n\nx\n',
+    'x = 1\ny = f"""ab {x}\nc\n', 'rf"a\n', 'f"a', 'f"{x}', 'f"{x\n',
+    'f"a\\\n', 'f"""a\nb"""\n',
+    # Not the same as CPython yet
+    'f"{x:3\n',
+    "if 1:\n        x = 1\n\ty = 2\n",
+    "x = b'\\x]0'\n",
+    "x = f'(1):.3g}'\n",
+    "x = f'{z:=5'\n",
+    "x = F\"a, 1\n",
+    "x = {'a': 'b', 'c'],\n",
+    "x = {'a': 1, {'b': 2,\n",
+    "x = f('a', 'b'c')\n",
+
     # CPython test_exceptions.testSyntaxErrorOffset (str sources)
     'def fact(x):\n\treturn x!\n',
     '1 +\n',

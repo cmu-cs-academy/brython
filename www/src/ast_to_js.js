@@ -2937,7 +2937,10 @@ $B.ast.Import.prototype.to_js = function(scopes){
 
 $B.ast.ImportFrom.prototype.to_js = function(scopes){
     if(this.module === '__future__'){
-        if(! ($B.last(scopes).ast instanceof $B.ast.Module)){
+        // CS Academy: also reject a __future__ import at module level after
+        // other statements ($at_file_start is set by $B.future_features)
+        if(! ($B.last(scopes).ast instanceof $B.ast.Module) ||
+                ! this.$at_file_start){
             compiler_error(this,
                 'from __future__ imports must occur at the beginning of the file',
                 $B.last(this.names))
@@ -3605,6 +3608,12 @@ $B.ast.TemplateStr.prototype.to_js = function(scopes){
 
 $B.ast.Try.prototype.to_js = function(scopes){
     compiler_check(this)
+    // CS Academy: as in CPython (compile.c)
+    for(var i = 0; i < this.handlers.length - 1; i++){
+        if(! this.handlers[i].type){
+            compiler_error(this.handlers[i], "default 'except:' must be last")
+        }
+    }
     var id = make_id(),
         has_except_handlers = this.handlers.length > 0,
         has_else = this.orelse.length > 0,
