@@ -841,8 +841,11 @@ function inside_fstring(p){
 
 $B._PyPegen.tokenize_full_source_to_check_for_errors = function(p){
     var last_token = p.tokens[p.fill - 1]
+    // CS Academy: only tokenize to fill p.braces. Upstream also sets p.tokens
+    // to all the tokens of the source, so errors raised after this (e.g.
+    // "unexpected indent") were reported on the last token of the file
+    // instead of the last token read by the parser
     $B.tokenizer(p.src, p.filename, p.mode, p)
-    p.tokens = p._tokens
     if(p.braces.length > 0){
         var brace = $B.last(p.braces),
             err_lineno,

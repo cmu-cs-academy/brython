@@ -219,6 +219,13 @@ worker.
     line of another program cached in `$B.file_cache` under `'<string>'`.
     It now comes from the parser's source (`raise_error_known_location` in
     `www/src/action_helpers.js`; still a bug upstream).
+  - "unexpected indent" was reported on the last line of the source instead
+    of the indented line: `tokenize_full_source_to_check_for_errors` in
+    `www/src/pegen.js` replaced the tokens read by the parser with all the
+    tokens of the source (upstream commit 003c1c78e, in 3.13.1). It now only
+    tokenizes the source to find unclosed brackets. This also fixes
+    `lineno` being Javascript `undefined` when the indented line has a
+    character Python rejects (` ´`, `x = 1\n y ?`).
   - `print(x, end=None)` and `sep=None` raised `TypeError` with a stream that
     only accepts strings; as in CPython, `None` now means the default value
     (`www/src/py_builtin_functions.js`).

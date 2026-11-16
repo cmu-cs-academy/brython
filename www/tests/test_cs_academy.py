@@ -267,6 +267,27 @@ for src, text in [
          "    else (x >= 200):\n")]:
     assert syntax_error_text(src) == text, (src, syntax_error_text(src))
 
+# "unexpected indent" is reported on the indented line, not at the end of
+# the source
+def syntax_error_location(src):
+    try:
+        exec(src, {})
+    except SyntaxError as exc:
+        return type(exc), exc.msg, exc.lineno, exc.text
+    raise AssertionError(f'no SyntaxError for {src!r}')
+
+for src, lineno, text in [
+        ("x = 1\n    y = 2\nz = 3\nw = 4\n", 2, "    y = 2\n"),
+        ("  x = 1\ny = 2\n", 1, "  x = 1\n"),
+        ("def f():\n    a = 1\n        b = 2\n    return a\nprint(f())\n",
+         3, "        b = 2\n"),
+        # an invalid character on the line gave lineno undefined
+        (" \u00b4", 1, " \u00b4\n"),
+        ("x = 1\n y ?", 2, " y ?\n")]:
+    assert syntax_error_location(src) == \
+        (IndentationError, "unexpected indent", lineno, text), \
+        (src, syntax_error_location(src))
+
 # print() with None for end / sep uses the default values
 import io
 out = io.StringIO()
