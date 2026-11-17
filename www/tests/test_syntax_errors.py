@@ -10,48 +10,16 @@
 from syntax_error_cases import CASES
 
 KNOWN_FAILURES = {
-    'x = 1\n    y = (2,\n':
-        ('SyntaxError', "'(' was never closed", 2),
-    'x = 1\n    y = 2)\n':
-        ('SyntaxError', "unmatched ')'", 2),
-    'x = 1\n    y = 2\nz = 3)\n':
-        ('SyntaxError', "unmatched ')'", 3),
-    'func(\n    a=["unclosed], # Need a quote in this comment: "\n    b=2,\n)\n':
-        ('SyntaxError', "closing parenthesis ')' does not match opening parenthesis '['", 4),
-    'def f(:\n    pass\nx = 1\n':
-        ('SyntaxError', "'(' was never closed", 1),
-    'g(1)\nx))\n':
-        ('SyntaxError', "closing parenthesis ')' does not match opening parenthesis ')'", 2),
-    "f'{a b}'\n":
-        ('SyntaxError', "f-string: expecting '=', or '!', or ':', or '}'", 1),
-    "f'{a'\nx = (\n":
-        ('SyntaxError', 'unterminated string literal (detected at line 1)', 1),
-    '[a b c d e f]':
+    'f"{x:3\n':
+        ('SyntaxError', "f-string: expecting '}', or format specs", 1),
+    'if 1:\n        x = 1\n\ty = 2\n':
+        None,
+    "x = b'\\x]0'\n":
+        ('SyntaxError', ["(unicode error) 'unicodeescape' codec can't decode bytes in position 0-1: truncated \\xXX escape"], 1),
+    "x = f'(1):.3g}'\n":
         ('SyntaxError', 'invalid syntax', 1),
-    'try:\n  pass\nexcept:\n  pass\nexcept ValueError:\n  pass':
-        None,
-    '(0x+1)':
-        ('not a SyntaxError', 'JavascriptError', None),
-    'x = 0xI':
-        ('SyntaxError', 'invalid decimal literal', 1),
-    'x = 32e-+4':
-        ('not a SyntaxError', 'JavascriptError', None),
-    'x = 0o9':
-        ('not a SyntaxError', 'JavascriptError', None),
-    'α = 0xI':
-        ('SyntaxError', 'invalid decimal literal', 1),
-    "f'''\n            {\n            (123_a)\n            }'''":
-        ('SyntaxError', 'invalid syntax. Perhaps you forgot a comma?', 3),
-    'f\'\'\'\n            {\n            f"""\n            {\n            (123_a)\n            }\n            """\n            }\'\'\'':
-        ('SyntaxError', 'invalid syntax. Perhaps you forgot a comma?', 5),
-    'f"""\n\n\n            {\n            6\n            0="""':
-        ('SyntaxError', "'{' was never closed", 4),
-    'from __future__ import doesnt_exist':
-        ('not a SyntaxError', 'JavascriptError', None),
-    'from __future__ import braces':
-        ('not a SyntaxError', 'JavascriptError', None),
-    'x=1\nfrom __future__ import division':
-        None,
+    "x = f'{z:=5'\n":
+        ('SyntaxError', 'unterminated f-string literal (detected at line 1)', 1),
 }
 
 

@@ -222,14 +222,42 @@ worker.
   - "unexpected indent" was reported on the last line of the source instead
     of the indented line: `tokenize_full_source_to_check_for_errors` in
     `www/src/pegen.js` replaced the tokens read by the parser with all the
-    tokens of the source (upstream commit 003c1c78e, in 3.13.1). It now only
-    tokenizes the source to find unclosed brackets. This also fixes
-    `lineno` being Javascript `undefined` when the indented line has a
-    character Python rejects (` ´`, `x = 1\n y ?`). As in CPython, an
-    unclosed opening bracket is reported only if the parser reached it (`a
-    b\nx = (1,` is "invalid syntax" on line 1, not "'(' was never closed"),
-    and an unmatched closing bracket outside an f-string is reported even
-    after an earlier error (`a b\nx = 1)` is "unmatched ')'" on line 2).
+    tokens of the source (upstream commit 003c1c78e, in 3.13.1). This also
+    fixes `lineno` being Javascript `undefined` when the indented line has a
+    character Python rejects (` ´`, `x = 1\n y ?`).
+  - Syntax errors are chosen as in CPython (`www/tests/test_syntax_errors.py`
+    compares them with CPython's):
+    - The tokenizer (`www/src/python_tokenizer.js`) stops with an error token
+      on an unmatched or mismatched closing bracket ("... on line N" when the
+      opening bracket is on another line; "f-string: unmatched" only for the
+      f-string's own `{`), on errors in number literals ("invalid
+      hexadecimal literal", "invalid digit '9' in octal literal", `1e`,
+      `1_`, `1jx`...; they were Javascript errors raised by
+      `number_parser.js`), and at the end of a line or of the source in an
+      f-string ("unterminated f-string literal"; it was a Javascript
+      `TypeError`). As in CPython's `verify_end_of_number`, a number can be
+      followed by `and`, `else`, `for`, `if`, `in`, `is`, `not`, `or`
+      (`1if x else 2` was rejected).
+    - `set_syntax_error` (`www/src/pegen.js`) tokenizes the whole source only
+      for the generic "invalid syntax", so "unexpected indent" is no longer
+      replaced by a bracket error on a later line.
+      `tokenize_full_source_to_check_for_errors` raises the error of the
+      tokenizer found after the parser failed, except in an f-string and
+      except indentation errors, and reports an opening bracket that is never
+      closed only if the parser read a token on a later line (`a b\nx = (1,`
+      is "invalid syntax" on line 1, `def f(:\n...` too). End of the source
+      inside brackets is "'(' was never closed", not "unexpected unindent".
+    - "Perhaps you forgot a comma?" was never given after a name (`[a b]`):
+      `soft_keyword_token` (`www/src/pegen.js`, translated from C) treated
+      every name as a soft keyword. Tokens now have the bracket depth `level`
+      (`Parser.read_token` in `www/src/python_parser.js`), so the hint is only
+      given inside brackets.
+    - "f-string: expecting '}'" when a string in an f-string expression
+      starts with the f-string's quote (`f'{a'`).
+    - `from __future__ import braces` or an unknown feature raised a
+      `ReferenceError` (`www/src/py2js.js`); a `__future__` import after
+      other statements and `except:` before another handler were accepted
+      (`www/src/ast_to_js.js`).
   - `print(x, end=None)` and `sep=None` raised `TypeError` with a stream that
     only accepts strings; as in CPython, `None` now means the default value
     (`www/src/py_builtin_functions.js`).

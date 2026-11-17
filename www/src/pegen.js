@@ -587,13 +587,11 @@ $B._PyPegen.soft_keyword_token = function(p) {
     if (t == NULL) {
         return NULL;
     }
-    var the_token;
-    var size;
-    the_token = t.string; // _b_.bytes.decode(t.bytes, 'iso-8859-1');
-    for (let keyword = p.soft_keywords; keyword != NULL; keyword++) {
-        if (strncmp(keyword, the_token, size) == 0) {
-            return $B._PyPegen.name_from_token(p, t);
-        }
+    // CS Academy: the loop translated from C (keyword++ on an array) made
+    // every name a soft keyword, so e.g. "[a b]" lost the hint "Perhaps you
+    // forgot a comma?"
+    if(p.soft_keywords.includes(t.string)){
+        return $B._PyPegen.name_from_token(p, t);
     }
     return NULL;
 }
@@ -827,11 +825,9 @@ function _is_end_of_source(p) {
     return p.tokens[p.tokens.length - 1].type == $B.py_tokens.ENDMARKER
 }
 
-function inside_fstring(p){
+function inside_fstring(tokens){
     var res = false
-    // CS Academy: p._tokens has all the tokens up to the tokenizer error;
-    // p.tokens only those read by the parser, which may stop before it
-    for(var token of p._tokens){
+    for(var token of tokens){
         if(token.type == $B.py_tokens.FSTRING_START){
             res = true
         }else if(token.type == $B.py_tokens.FSTRING_END){
@@ -842,52 +838,38 @@ function inside_fstring(p){
 }
 
 $B._PyPegen.tokenize_full_source_to_check_for_errors = function(p){
-    var last_token = p.tokens[p.fill - 1]
-    // CS Academy: only tokenize to fill p.braces. Upstream also sets p.tokens
-    // to all the tokens of the source, so errors raised after this (e.g.
+    // CS Academy: as in CPython, tokenize the whole source to find an error
+    // after the point where the parser failed. Upstream also set p.tokens to
+    // all the tokens of the source, so errors raised after this (e.g.
     // "unexpected indent") were reported on the last token of the file
     // instead of the last token read by the parser
-    $B.tokenizer(p.src, p.filename, p.mode, p)
-    if(p.braces.length > 0){
-        var brace = $B.last(p.braces),
-            err_lineno,
-            msg
-        if('([{'.includes(brace.char)){
-            err_lineno =  brace.line_num
-        }else{
-            if(p.braces.length > 1){
-                err_lineno = p.braces[p.braces.length - 2].line_num
-            }else{
-                err_lineno = brace.line_num
-            }
+    var tokens = $B.tokenizer(p.src, p.filename, p.mode, p),
+        last = $B.last(tokens)
+    if(last && last.num_type == $B.py_tokens.ERRORTOKEN &&
+            last.message !== undefined){
+        // An error of the tokenizer (unmatched bracket, invalid character,
+        // ...) replaces the parser's, unless it is inside an f-string. In
+        // CPython, indentation errors of the tokenizer only become exceptions
+        // when the parser reads them, so they don't replace it either
+        if(! last.in_fstring && ! inside_fstring(tokens) &&
+                ! _b_.issubclass(last.err_type, _b_.IndentationError)){
+            $B.raise_error_known_location(last.err_type, last.filename,
+                last.lineno, last.col_offset, last.end_lineno,
+                last.end_col_offset, last.line, last.message)
         }
-        // CS Academy: as in CPython, a closing bracket that is unmatched or
-        // doesn't match is an error of the tokenizer, reported even if the
-        // parser failed before it, except in an f-string. An opening bracket
-        // that is never closed is only reported if the parser reached it
-        var closing_error = ! '([{'.includes(brace.char) && ! inside_fstring(p)
-        if(closing_error || p.tokens.length == 0 ||
-                $B.last(p.tokens).lineno >= err_lineno){
-            if('([{'.includes(brace.char)){
-                msg = `'${brace.char}' was never closed`
-            }else if(p.braces.length > 1){
-                var closing = brace.char,
-                    opening = p.braces[p.braces.length - 2].char
-                if(inside_fstring(p)){
-                    msg = `f-string: unmatched '${closing}'`
-                }else{
-                    msg = `closing parenthesis '${closing}' does not match ` +
-                      `opening parenthesis '${opening}'`
-                }
-            }else{
-                msg = `unmatched '${brace.char}'`
-            }
+        return
+    }
+    if(p.braces.length > 0){
+        // An opening bracket that is never closed is reported only if the
+        // parser read a token on a later line
+        var brace = $B.last(p.braces)
+        if(p.tokens.length == 0 || $B.last(p.tokens).lineno > brace.line_num){
             $B.raise_error_known_location(_b_.SyntaxError,
                             p.filename,
                             brace.line_num, brace.pos - brace.line_start,
                             brace.line_num, brace.pos - brace.line_start + 1,
                             brace.line,
-                            msg)
+                            `'${brace.char}' was never closed`)
         }
     }
 }
@@ -898,7 +880,9 @@ $B._PyPegen.set_syntax_error = function(p, last_token) {
         $B.helper_functions.RAISE_SYNTAX_ERROR(p,
             "error at start before reading any input");
     }
-    $B._PyPegen.tokenize_full_source_to_check_for_errors(p);
+    // CS Academy: CPython checks the full source only for the generic error
+    // below, so that e.g. "unexpected indent" wins over a bracket error on a
+    // later line
 
     // Parser encountered EOF (End of File) unexpectedtly
     if (last_token.num_type == ERRORTOKEN && p.tok.done == E_EOF) {
@@ -908,6 +892,17 @@ $B._PyPegen.set_syntax_error = function(p, last_token) {
             $B.helper_functions.RAISE_SYNTAX_ERROR(p, "unexpected EOF while parsing");
         }
         return
+    }
+    // CS Academy: CPython's tokenizer stops at the end of the source inside
+    // brackets, and the parser reports the bracket that was never closed.
+    // Brython's tokenizer adds the DEDENT tokens and ENDMARKER instead
+    if((last_token.num_type == DEDENT || last_token.num_type == ENDMARKER) &&
+            p.braces.length > 0 && '([{'.includes($B.last(p.braces).char)){
+        var brace = $B.last(p.braces)
+        $B.raise_error_known_location(_b_.SyntaxError, p.filename,
+            brace.line_num, brace.pos - brace.line_start,
+            brace.line_num, brace.pos - brace.line_start + 1,
+            brace.line, `'${brace.char}' was never closed`)
     }
     // Indentation error in the tokenizer
     if (last_token.num_type == INDENT || last_token.num_type == DEDENT) {
